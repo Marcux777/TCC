@@ -1,0 +1,118 @@
+﻿PONTIFÍCIA UNIVERSIDADE CATÓLICA DE GOIÁS
+ESCOLA POLITÉCNICA E DE ARTES
+GRADUAÇÃO EM CIÊNCIAS DA COMPUTAÇÃO
+
+
+
+
+
+
+PEQUIFLUX: ORQUESTRAÇÃO DINÂMICA DE FILAS DE CAMINHÕES EM PÁTIOS AGROINDUSTRIAIS COM OTIMIZAÇÃO SOB RESTRIÇÕES
+
+
+
+
+
+MARCUS VINICIUS SANTOS DA SILVA
+
+
+
+
+GOIÂNIA
+2026
+
+MARCUS VINICIUS SANTOS DA SILVA
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PEQUIFLUX: ORQUESTRAÇÃO DINÂMICA DE FILAS DE CAMINHÕES EM PÁTIOS AGROINDUSTRIAIS COM OTIMIZAÇÃO SOB RESTRIÇÕES
+
+
+Projeto de Pesquisa elaborado para fins de avaliação da disciplina Trabalho de Conclusão de Curso 1 CMP1071 disciplina do curso de Ciência da Computação da Pontifícia Universidade Católica de Goiás. 
+                 
+Orientadora: Profa. Dra. Maria Jose Dantas
+
+
+
+GOIÂNIA
+
+2026
+INTRODUÇÃO
+A gestão de filas de caminhões em pátios de recebimento e expedição é um problema recorrente em sistemas logísticos de alta movimentação, especialmente quando a operação depende de recursos compartilhados, como portarias, balanças, docas, moegas e áreas de espera. A literatura mostra que, em contextos desse tipo, políticas estáticas de atendimento tendem a ampliar congestionamentos, elevar tempos de espera e degradar a utilização dos recursos, o que motivou o desenvolvimento de sistemas de agendamento de caminhões, modelos de otimização e mecanismos de reagendamento dinâmico em portos, terminais e centros de cross-docking (Abdelmagid et al., 2022; Zhang et al., 2019; Gracia et al., 2025). Em particular, trabalhos recentes sobre truck appointment systems indicam que a simples distribuição prévia de janelas de atendimento não é suficiente quando há variabilidade significativa de chegada, picos operacionais e competição por capacidade ao longo do dia (Xu et al., 2021; Bouyahia et al., 2025). Esse desafio se torna ainda mais relevante quando se considera a presença de incerteza. A literatura clássica de scheduling sob incerteza já argumenta que perturbações como atrasos, quebras, flutuações de demanda e variações de tempo de processamento comprometem a qualidade de cronogramas estáticos e exigem abordagens mais robustas, estocásticas ou reativas (Li & Ierapetritou, 2008). No domínio logístico, essa discussão aparece em estudos sobre rescheduling de caminhões sob incerteza de chegada, gestão flexível de pátio e sequenciamento em cross-docking, mostrando que decisões adaptativas tendem a melhorar desempenho operacional em comparação com políticas fixas ou puramente manuais (Konur, 2013; Xu et al., 2022; Wang et al., 2023; Fonseca et al., 2025). Além disso, abordagens que integram previsão, simulação e replanejamento em tempo real têm mostrado potencial para reduzir filas e custos operacionais em sistemas com alta variabilidade (Silva et al., 2023). No contexto agroindustrial, esse problema assume contornos ainda mais críticos. Pátios de cooperativas e armazéns precisam lidar simultaneamente com sazonalidade intensa, heterogeneidade de cargas, restrições de qualidade, prioridades contratuais, eventos climáticos, indisponibilidade de equipamentos e necessidade de rastreabilidade das decisões. Apesar de a literatura oferecer contribuições relevantes em terminais portuários, container yards e operações de cross-docking, a aplicação dessas ideias a pátios agroindustriais de recebimento de grãos ainda aparece de forma menos consolidada, sobretudo quando se exige, ao mesmo tempo, resposta dinâmica a eventos disruptivos, explicabilidade das decisões e possibilidade de intervenção humana. Nesse sentido, estudos sobre scheduling em tempo real e sistemas multiagentes para alocação dinâmica de caminhões oferecem uma base conceitual importante, mas não resolvem integralmente o recorte operacional e institucional aqui considerado (Zouhaier & Ben Said, 2016; Cota et al., 2022). É nesse cenário que se insere o projeto PequiFlux, concebido como uma solução de apoio à decisão para a orquestração dinâmica de caminhões em pátios agroindustriais com alto fluxo operacional. A proposta parte da premissa de que decisões de sequenciamento e alocação de recursos não devem ser tratadas apenas como uma fila passiva, mas como um problema de escalonamento sob restrições, sujeito a reavaliação contínua à medida que o estado do sistema se altera. Em um cenário ilustrativo, a redução de duas horas de espera para 400 caminhões por dia pode representar economia potencial de aproximadamente 2.423 litros de diesel e 6,52 toneladas de CO2 evitadas por dia de safra, o que indica que melhorias operacionais desse tipo podem produzir também impacto socioambiental mensurável. Diante disso, este Trabalho de Conclusão de Curso investiga como modelar e avaliar um mecanismo de orquestração dinâmica de caminhões em pátios de recebimento de grãos capaz de superar regras estáticas, como FIFO, em cenários com múltiplas restrições operacionais, sem abrir mão de auditabilidade, explicabilidade e supervisão humana. A hipótese central é que uma abordagem baseada em otimização sob restrições tende a produzir decisões superiores às políticas estáticas em contextos marcados por incerteza e heterogeneidade de recursos, em linha com os resultados já observados na literatura de scheduling dinâmico, truck appointment systems e gestão operacional sob incerteza (Li & Ierapetritou, 2008; Xu et al., 2022; Silva et al., 2023; Bouyahia et al., 2025). Assim, a contribuição deste trabalho está na delimitação, modelagem e avaliação inicial de um artefato computacional voltado ao contexto agroindustrial, estabelecendo uma base técnica para etapas futuras de validação em ambiente mais próximo da operação real.
+PROBLEMA DE PESQUISA
+Problema de pesquisa: Como modelar e avaliar um mecanismo de orquestração dinâmica de caminhões em pátios de recebimento de grãos, capaz de superar regras estáticas como FIFO em cenários com múltiplas restrições operacionais, mantendo explicabilidade e possibilidade de intervenção humana?
+OBJETIVOS
+OBJETIVO GERAL
+    • Projetar e avaliar um artefato computacional, no contexto do PequiFlux, para apoio à decisão na orquestração dinâmica de filas de caminhões em pátios agroindustriais, visando reduzir tempo de espera, melhorar o uso de recursos operacionais e preservar rastreabilidade das decisões.
+OBJETIVOS ESPECÍFICO
+    1. Modelar formalmente o problema de pátio como um problema de escalonamento sob restrições.
+    2. Definir variáveis, restrições rígidas e critérios de decisão coerentes com a operação real.
+    3. Construir um protótipo ou simulador inicial do motor de decisão.
+    4. Comparar o comportamento do motor com uma política baseline, como FIFO.
+    5. Avaliar o artefato com métricas como tempo de espera, throughput, makespan e auditabilidade da decisão.
+    6. Discutir riscos operacionais, limites da modelagem e condições de adoção prática.
+
+HIPÓTESE CENTRAL
+Uma abordagem de orquestração dinâmica baseada em otimização sob restrições tende a produzir decisões operacionais superiores a regras estáticas de fila, sobretudo em cenários com eventos disruptivos e heterogeneidade de recursos, sem eliminar a supervisão humana.
+
+CONTRIBUIÇÃO ACADÊMICA
+A principal contribuição acadêmica deste Trabalho de Conclusão de Curso (TCC) reside na delimitação e verificação de um recorte específico do projeto PequiFlux. O foco está triplamente definido em: 1) Modelagem formal do problema de orquestração de pátios como um problema de escalonamento sob restrições; 2) Desenvolvimento de um artefato computacional (protótipo/motor de decisão); e 3) Avaliação rigorosa em um ambiente controlado. Essa abordagem se alinha ao estágio inicial do projeto (TRL 1), permitindo validação laboratorial através de um gêmeo digital, replay offline e cenários sintéticos, estabelecendo uma base robusta para futuras etapas de implementação em campo.
+2. FUNDAMENTAÇÃO TEÓRICA
+Logística agroindustrial, escalonamento, FJSSP, otimização sob restrições, decisão em tempo real, explicabilidade e humano no loop.
+3. METODOLOGIA
+DSR, definição dos requisitos do artefato, critérios de avaliação, cenários de teste e métricas.
+O arcabouço metodológico para este Trabalho de Conclusão de Curso é o Design Science Research (DSR), que é o mais coerente com o objetivo de construir e avaliar um artefato computacional (o motor de decisão) para solucionar um problema logístico. Diferentemente das ciências explicativas, a DSR é uma epistemologia focada na criação e validação de soluções tecnológicas para problemas complexos, seguindo um processo iterativo.
+O processo de pesquisa será estruturado nas seguintes fases, alinhadas com as diretrizes do DSR:
+    1. Identificação do problema;
+    2. Definição dos requisitos do artefato;
+    3. Desenvolvimento do modelo e do protótipo;
+    4. Demonstração em cenários simulados;
+    5. Avaliação comparativa;
+    6. Discussão de limitações e implicações.
+Este TCC está inserido no ciclo de P&D do projeto PequiFlux, cuja meta é evoluir de TRL 1 (Concepção Técnica) para TRL 4 (Protótipo Beta Validado em Laboratório) em 12 meses. A validação do artefato ocorrerá integralmente em ambiente controlado, utilizando técnicas como:
+    7. Gêmeo Digital (Digital Twin): Um simulador computacional do pátio para reproduzir o fluxo operacional, recursos e restrições.
+    8. Replay Offline: Uso de cenários sintéticos calibrados e/ou históricos anonimizados para ajuste de parâmetros e teste de robustez.
+    9. Testes de Estresse: Uso de cenários de Monte Carlo para avaliar a estabilidade do algoritmo sob condições extremas.
+4. MODELAGEM DO PROBLEMA
+A modelagem formal do problema exigirá a representação das seguintes entidades, dados de entrada e restrições:
+    • Dados de Entrada: A solução consolida informações como check-in e horários, tipo e qualidade da carga, prioridades contratuais, status documental, disponibilidade de recursos (moegas, docas, balanças) e ocorrências operacionais (chuva, quebra de equipamento).
+    • Restrições: O motor de decisão deve aplicar restrições rígidas como FIFO (quando aplicável), janelas de recebimento, segregação por produto/qualidade e, crucialmente, restrições de capacidade em moegas, docas e balanças.
+    • Política de Reotimização: O algoritmo será baseado em um mecanismo de reavaliação dinâmica da sequência (Receding Horizon Scheduling), acionada automaticamente por eventos disruptivos (quebra, chuva, atraso, mudança de prioridade), registrando o antes e depois da decisão para auditoria.
+5. DESENVOLVIMENTO DO ARTEFATO
+Arquitetura do motor, fluxo de decisão, baseline FIFO, trilha de auditoria e interface conceitual.
+6. AVALIAÇÃO
+A avaliação do artefato será feita mediante comparação com políticas baseline (como FIFO e agenda fixa) em cenários simulados. As principais métricas a serem utilizadas são:
+    • Eficiência Operacional: Tempo de espera (p50/p95), Throughput (vazão de descarga) e Latência (p95).
+    • Impacto Socioambiental: Estimativa de diesel e CO2 evitados a partir da redução do tempo de espera.
+    • Governança e Rastreabilidade: Trilha auditável de decisão e registro das mudanças operacionais.
+7. CONCLUSÃO
+Achados, limitações, próximos passos e conexão com a evolução do PequiFlux.
+
+REFERÊNCIAS – TUDO QUE CITAR NO TEXTO COLOCAR AQUI
+COLOCAR EM ORDEM ALFABETICA
+GIL, Antonio Carlos. Como elaborar projetos de pesquisa. 6. ed. São Paulo: Atlas, 2017. 
+ISO/IEC - ISO/IEC 27000:2018: Information technology — Security techniques — Information security management systems — Overview and vocabulary. Geneva: ISO, 2018. Disponível em: https://cdn.standards.iteh.ai/samples/73906/276f4738dd1 d4b2a8763522181030053/ISO-IEC-27000-2018.pdf. Acesso em: 23 mar. 2026.
+ISO. What is artificial intelligence? 2023. Disponível em: https://www.iso.org/artificial-intelligence/what-is-ai. Acesso em: 24 mar. 2026
+ScienceDirect. Intrusion Detection System. Disponível em: https://www.sciencedirect.com/ topics/computer-science/intrusion-detection-system. Acesso em: 23 mar. 2026.
+JAFFAL, Niveen O.; ALKHANAFSEH, Mohammed; MOHAISEN, David. Large Language Models in Cybersecurity: A Survey of Applications, Vulnerabilities, and Defense Techniques. AI, v. 6, 2025. DOI: https://doi.org/10.3390/ai6090216. Acesso em: 23 mar. 2026.
+NOOR, Kinzah at al. A review of machine learning and transfer learning strategies for intrusion detection systems in 5G and beyond. Mathematics, v. 13, 2025. DOI: https://doi.org/10.3390/math13071088. Acesso em: 15 de mar. 2026.
+PINTO, Andrea et al. Survey on intrusion detection systems based on machine learning techniques for the protection of critical infrastructure. Sensors, v. 23, 2023. DOI: https://doi.org/10.3390/s23052415. Acesso em: 15 de mar. 2026.
+POURRAHMANI, Hossein; YAVARINASAB, Adel; HOSSEINI MONAZZAH, Amir Mahdi; VAN HERLE, Jan. A review of the security vulnerabilities and countermeasures in the Internet of Things solutions: A bright future for the Blockchain. Internet of Things, v. 23, 2023. DOI: https://doi.org/10.1016/j.iot.2023.100888. Acesso em: 23 mar. 2026.
+SHARMA, Shashi Bhushan; BAIRWA, Amit Kumar. Leveraging AI for Intrusion Detection in IoT Ecosystems: A Comprehensive Study. IEEE Access, v. 13, 2025. DOI: https://doi.org/10.1109/ACCESS.2025.3550392. Acesso em: 20 mar. 2026.
+SHYAA, M. A. et al. Evolving cybersecurity frontiers: A comprehensive survey on concept drift and feature dynamics aware machine and deep learning in intrusion detection systems. Engineering Applications of Artificial Intelligence, v. 137, 2024. DOI: https://doi.org/10.1016/j.engappai.2024.109143. Acesso em: 15 de mar. 2026
+USMAN, Yusuf et al. AI, ML, and LLM Integration in 5G/6G Networks: A Comprehensive Survey of Architectures, Challenges, and Future Directions. IEEE Access, v. 13, 2025. DOI: https://doi.org/10.1109/ACCESS.2025.3608736. Acesso em: 23 mar. 2026.
+WAZLAWICK, Raul Sidnei. Metodologia de pesquisa para ciência da computação. 3. ed. Rio de Janeiro: 2021.
+XU, Hanxiang et al. Large Language Models for Cyber Security: A Systematic Literature Review. arXiv preprint, 2025. Disponível em: https://arxiv.org/html/2405.04760v5. Acesso em: 16 mar. 2026.

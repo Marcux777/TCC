@@ -1,0 +1,10 @@
+build/
+missfont.log
+tmp/
+EXPERIMENTS.md
+autoresearch-state.json
+autoresearch-lessons.md
+autoresearch-hook-context.json
+autoresearch-launch.json
+autoresearch-runtime.json
+autoresearch-runtime.log
