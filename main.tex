@@ -95,7 +95,13 @@
 \onehalfspacing
 \justifying
 
-A gest\~ao de filas de caminh\~oes em p\'atios de recebimento e expedi\c{c}\~ao \'e um problema recorrente em sistemas log\'isticos de alta movimenta\c{c}\~ao, especialmente quando a opera\c{c}\~ao depende de recursos compartilhados, como portarias, balan\c{c}as, docas, moegas e \'areas de espera. A literatura mostra que, em contextos desse tipo, pol\'iticas est\'aticas de atendimento tendem a ampliar congestionamentos, elevar tempos de espera e degradar a utiliza\c{c}\~ao dos recursos, o que motivou o desenvolvimento de sistemas de agendamento de caminh\~oes, modelos de otimiza\c{c}\~ao e mecanismos de reagendamento din\^amico em portos, terminais e centros de cross-docking (Abdelmagid et al., 2022; Zhang et al., 2019; Gracia et al., 2025). Em particular, trabalhos recentes sobre truck appointment systems indicam que a simples distribui\c{c}\~ao pr\'evia de janelas de atendimento n\~ao \'e suficiente quando h\'a variabilidade significativa de chegada, picos operacionais e competi\c{c}\~ao por capacidade ao longo do dia (Xu et al., 2021; Bouyahia et al., 2025). Esse desafio se torna ainda mais relevante quando se considera a presen\c{c}a de incerteza. A literatura cl\'assica de scheduling sob incerteza j\'a argumenta que perturba\c{c}\~oes como atrasos, quebras, flutua\c{c}\~oes de demanda e varia\c{c}\~oes de tempo de processamento comprometem a qualidade de cronogramas est\'aticos e exigem abordagens mais robustas, estoc\'asticas ou reativas (Li \& Ierapetritou, 2008). No dom\'inio log\'istico, essa discuss\~ao aparece em estudos sobre rescheduling de caminh\~oes sob incerteza de chegada, gest\~ao flex\'ivel de p\'atio e sequenciamento em cross-docking, mostrando que decis\~oes adaptativas tendem a melhorar desempenho operacional em compara\c{c}\~ao com pol\'iticas fixas ou puramente manuais (Konur, 2013; Xu et al., 2022; Wang et al., 2023; Fonseca et al., 2025). Al\'em disso, abordagens que integram previs\~ao, simula\c{c}\~ao e replanejamento em tempo real t\^em mostrado potencial para reduzir filas e custos operacionais em sistemas com alta variabilidade (Silva et al., 2023). No contexto agroindustrial, esse problema assume contornos ainda mais cr\'iticos. P\'atios de cooperativas e armaz\'ens precisam lidar simultaneamente com sazonalidade intensa, heterogeneidade de cargas, restri\c{c}\~oes de qualidade, prioridades contratuais, eventos clim\'aticos, indisponibilidade de equipamentos e necessidade de rastreabilidade das decis\~oes. Apesar de a literatura oferecer contribui\c{c}\~oes relevantes em terminais portu\'arios, container yards e opera\c{c}\~oes de cross-docking, a aplica\c{c}\~ao dessas ideias a p\'atios agroindustriais de recebimento de gr\~aos ainda aparece de forma menos consolidada, sobretudo quando se exige, ao mesmo tempo, resposta din\^amica a eventos disruptivos, explicabilidade das decis\~oes e possibilidade de interven\c{c}\~ao humana. Nesse sentido, estudos sobre scheduling em tempo real e sistemas multiagentes para aloca\c{c}\~ao din\^amica de caminh\~oes oferecem uma base conceitual importante, mas n\~ao resolvem integralmente o recorte operacional e institucional aqui considerado (Zouhaier \& Ben Said, 2016; Cota et al., 2022). \'E nesse cen\'ario que se insere o projeto PequiFlux, concebido como uma solu\c{c}\~ao de apoio \`a decis\~ao para a orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios agroindustriais com alto fluxo operacional. A proposta parte da premissa de que decis\~oes de sequenciamento e aloca\c{c}\~ao de recursos n\~ao devem ser tratadas apenas como uma fila passiva, mas como um problema de escalonamento sob restri\c{c}\~oes, sujeito a reavalia\c{c}\~ao cont\'inua \`a medida que o estado do sistema se altera. Em um cen\'ario ilustrativo, a redu\c{c}\~ao de duas horas de espera para 400 caminh\~oes por dia pode representar economia potencial de aproximadamente 2.423 litros de diesel e 6,52 toneladas de CO2 evitadas por dia de safra, o que indica que melhorias operacionais desse tipo podem produzir tamb\'em impacto socioambiental mensur\'avel. Diante disso, este Trabalho de Conclus\~ao de Curso investiga como modelar e avaliar um mecanismo de orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios de recebimento de gr\~aos capaz de superar regras est\'aticas, como FIFO, em cen\'arios com m\'ultiplas restri\c{c}\~oes operacionais, sem abrir m\~ao de auditabilidade, explicabilidade e supervis\~ao humana. A hip\'otese central \'e que uma abordagem baseada em otimiza\c{c}\~ao sob restri\c{c}\~oes tende a produzir decis\~oes superiores \`as pol\'iticas est\'aticas em contextos marcados por incerteza e heterogeneidade de recursos, em linha com os resultados j\'a observados na literatura de scheduling din\^amico, truck appointment systems e gest\~ao operacional sob incerteza (Li \& Ierapetritou, 2008; Xu et al., 2022; Silva et al., 2023; Bouyahia et al., 2025). Assim, a contribui\c{c}\~ao deste trabalho est\'a na delimita\c{c}\~ao, modelagem e avalia\c{c}\~ao inicial de um artefato computacional voltado ao contexto agroindustrial, estabelecendo uma base t\'ecnica para etapas futuras de valida\c{c}\~ao em ambiente mais pr\'oximo da opera\c{c}\~ao real.
+A gest\~ao de filas de caminh\~oes em p\'atios de recebimento de gr\~aos \'e um problema recorrente em sistemas log\'isticos de alta movimenta\c{c}\~ao, especialmente quando a opera\c{c}\~ao depende de recursos compartilhados, como portarias, balan\c{c}as, moegas e \'areas de espera. A literatura de truck appointment systems e de scheduling log\'istico mostra que pol\'iticas est\'aticas de atendimento tendem a ampliar congestionamentos, elevar tempos de espera e reduzir a utiliza\c{c}\~ao dos recursos quando a demanda se concentra em janelas curtas ou quando h\'a forte competi\c{c}\~ao por capacidade (Abdelmagid et al., 2022; Gracia et al., 2025). Trabalhos recentes tamb\'em indicam que agendar previamente n\~ao resolve, por si s\'o, o problema de coordena\c{c}\~ao do p\'atio quando h\'a volatilidade de chegada, picos operacionais e restri\c{c}\~oes simult\^aneas de capacidade, compatibilidade e prioridade (Xu et al., 2021; Bouyahia et al., 2025).
+
+O desafio se torna mais complexo quando a opera\c{c}\~ao precisa reagir a incertezas. A literatura cl\'assica de scheduling sob incerteza argumenta que atrasos, indisponibilidade de recursos e varia\c{c}\~oes de processamento degradam rapidamente a qualidade de cronogramas est\'aticos, exigindo mecanismos robustos, reativos ou preditivo-reativos (Li \& Ierapetritou, 2008). No campo log\'istico, isso aparece em estudos sobre rescheduling de cross-docking, gest\~ao flex\'ivel de p\'atio e sequenciamento em tempo real, nos quais decis\~oes adaptativas t\^em desempenho superior a regras puramente fixas em ambientes sujeitos a perturba\c{c}\~oes (Boysen \& Fliedner, 2010; Nasiri et al., 2022; Wang et al., 2023; Torbali \& Alpan, 2023; Fonseca et al., 2025).
+
+No contexto agroindustrial, esse problema assume contornos ainda mais cr\'iticos. P\'atios de cooperativas e armaz\'ens precisam lidar simultaneamente com sazonalidade intensa, heterogeneidade de cargas, prioridades contratuais, bloqueios documentais, eventos clim\'aticos, indisponibilidade de equipamentos e exig\^encias de rastreabilidade das decis\~oes. A literatura do dom\'inio de gr\~aos mostra que mesmo opera\c{c}\~oes aparentemente simples de recebimento e eleva\c{c}\~ao j\'a envolvem gargalos relevantes de fila, mistura indesejada de cargas, planejamento de carga de terminal e necessidade de simula\c{c}\~ao espec\'ifica do fluxo f\'isico (LeBlanc \& Stover, 1978; Berruto \& Maier, 2001; Ingles et al., 2006; Van Der Heyden \& Ottjes, 1985; Fioroni et al., 2015). Embora existam contribui\c{c}\~oes relevantes para portos, terminais conteinerizados e opera\c{c}\~oes de cross-docking, a aplica\c{c}\~ao dessas ideias a p\'atios agroindustriais de recebimento de gr\~aos ainda n\~ao aparece consolidada no mesmo n\'ivel, sobretudo quando se exige resposta din\^amica a eventos disruptivos, auditabilidade e supervis\~ao humana. Nesse sentido, abordagens multiagentes e modelos integrados de sequenciamento e roteamento ajudam a estruturar o problema, mas n\~ao resolvem integralmente o recorte operacional e institucional aqui considerado (Zouhaier \& Ben Said, 2016; Cota et al., 2022).
+
+\'E nesse cen\'ario que se insere o projeto PequiFlux, concebido como uma solu\c{c}\~ao de apoio \`a decis\~ao para a orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios agroindustriais com alto fluxo operacional. A proposta parte da premissa de que decis\~oes de sequenciamento e aloca\c{c}\~ao de recursos n\~ao devem ser tratadas como uma fila passiva, mas como um problema de escalonamento sob restri\c{c}\~oes, sujeito a reavalia\c{c}\~ao cont\'inua \`a medida que o estado do sistema se altera. Diante disso, este Trabalho de Conclus\~ao de Curso investiga como modelar e avaliar um mecanismo de orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios de recebimento de gr\~aos capaz de superar regras est\'aticas, como FIFO, em cen\'arios com m\'ultiplas restri\c{c}\~oes operacionais, sem abrir m\~ao de auditabilidade, explicabilidade e supervis\~ao humana. A hip\'otese central \'e que uma abordagem baseada em otimiza\c{c}\~ao sob restri\c{c}\~oes tende a produzir decis\~oes superiores \`as pol\'iticas est\'aticas em contextos marcados por incerteza e heterogeneidade de recursos, em linha com resultados da literatura sobre appointment systems, rescheduling e gest\~ao operacional sob incerteza (Li \& Ierapetritou, 2008; Abdelmagid et al., 2022; Nasiri et al., 2022; Bouyahia et al., 2025). Assim, a contribui\c{c}\~ao deste trabalho est\'a na delimita\c{c}\~ao, modelagem e avalia\c{c}\~ao inicial de um artefato computacional voltado ao contexto agroindustrial, estabelecendo uma base t\'ecnica para etapas futuras de valida\c{c}\~ao em ambiente controlado.
 
 \sectionheading{PROBLEMA DE PESQUISA}
 Problema de pesquisa: Como modelar e avaliar um mecanismo de orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios de recebimento de gr\~aos, capaz de superar regras est\'aticas como FIFO em cen\'arios com m\'ultiplas restri\c{c}\~oes operacionais, mantendo explicabilidade e possibilidade de interven\c{c}\~ao humana?
@@ -106,99 +112,172 @@ Problema de pesquisa: Como modelar e avaliar um mecanismo de orquestra\c{c}\~ao 
   \item Projetar e avaliar um artefato computacional, no contexto do PequiFlux, para apoio \`a decis\~ao na orquestra\c{c}\~ao din\^amica de filas de caminh\~oes em p\'atios agroindustriais, visando reduzir tempo de espera, melhorar o uso de recursos operacionais e preservar rastreabilidade das decis\~oes.
 \end{itemize}
 
-\plainheading{OBJETIVOS ESPEC\'IFICO}
+\plainheading{OBJETIVOS ESPEC\'IFICOS}
 \begin{enumerate}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
   \item Modelar formalmente o problema de p\'atio como um problema de escalonamento sob restri\c{c}\~oes.
   \item Definir vari\'aveis, restri\c{c}\~oes r\'igidas e crit\'erios de decis\~ao coerentes com a opera\c{c}\~ao real.
-  \item Construir um prot\'otipo ou simulador inicial do motor de decis\~ao.
+  \item Construir um prot\'otipo inicial do motor de decis\~ao e seu ambiente de simula\c{c}\~ao.
   \item Comparar o comportamento do motor com uma pol\'itica baseline, como FIFO.
   \item Avaliar o artefato com m\'etricas como tempo de espera, throughput, makespan e auditabilidade da decis\~ao.
   \item Discutir riscos operacionais, limites da modelagem e condi\c{c}\~oes de ado\c{c}\~ao pr\'atica.
 \end{enumerate}
 
 \sectionheading{HIP\'OTESE CENTRAL}
-Uma abordagem de orquestra\c{c}\~ao din\^amica baseada em otimiza\c{c}\~ao sob restri\c{c}\~oes tende a produzir decis\~oes operacionais superiores a regras est\'aticas de fila, sobretudo em cen\'arios com eventos disruptivos e heterogeneidade de recursos, sem eliminar a supervis\~ao humana.
+Uma abordagem de orquestra\c{c}\~ao din\^amica baseada em otimiza\c{c}\~ao sob restri\c{c}\~oes tende a produzir decis\~oes operacionais superiores a regras est\'aticas de fila, sobretudo em cen\'arios com eventos disruptivos e heterogeneidade de recursos, sem eliminar a supervis\~ao humana. Para evitar sobrecarga conceitual, a hip\'otese ser\'a decomposta em H1 (desempenho), H2 (factibilidade) e H3 (governan\c{c}a da decis\~ao). Para fins de teste no TCC, esse conjunto ser\'a considerado corroborado se, em compara\c{c}\~ao com os baselines definidos, o artefato simultaneamente:
+\begin{itemize}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
+  \item reduzir em pelo menos 15\% o p95 do tempo de espera em cen\'arios de m\'edia e alta congest\~ao;
+  \item manter taxa nula de recomenda\c{c}\~oes invi\'aveis;
+  \item registrar justificativa leg\'ivel e motivo da decis\~ao em pelo menos 95\% das recomenda\c{c}\~oes;
+  \item preservar possibilidade de interven\c{c}\~ao humana por meio de override expl\'icito e logado.
+\end{itemize}
 
 \sectionheading{CONTRIBUI\c{C}\~AO ACAD\^EMICA}
-A principal contribui\c{c}\~ao acad\^emica deste Trabalho de Conclus\~ao de Curso (TCC) reside na delimita\c{c}\~ao e verifica\c{c}\~ao de um recorte espec\'ifico do projeto PequiFlux. O foco est\'a triplamente definido em: 1) Modelagem formal do problema de orquestra\c{c}\~ao de p\'atios como um problema de escalonamento sob restri\c{c}\~oes; 2) Desenvolvimento de um artefato computacional (prot\'otipo/motor de decis\~ao); e 3) Avalia\c{c}\~ao rigorosa em um ambiente controlado. Essa abordagem se alinha ao est\'agio inicial do projeto (TRL 1), permitindo valida\c{c}\~ao laboratorial atrav\'es de um g\^emeo digital, replay offline e cen\'arios sint\'eticos, estabelecendo uma base robusta para futuras etapas de implementa\c{c}\~ao em campo.
+A principal contribui\c{c}\~ao acad\^emica deste Trabalho de Conclus\~ao de Curso reside na transforma\c{c}\~ao de um problema operacional difuso em um objeto de pesquisa computacional reprodut\'ivel. O foco est\'a em quatro entregas: uma proposta de taxonomia de restri\c{c}\~oes e eventos do p\'atio; uma modelagem formal m\'inima para despacho din\^amico de caminh\~oes; a especifica\c{c}\~ao de um artefato principal claramente definido como motor de decis\~ao orientado a eventos; e um protocolo de avalia\c{c}\~ao replic\'avel em ambiente controlado, com baselines, m\'etricas e crit\'erios de sucesso. Assim, a contribui\c{c}\~ao pretendida n\~ao se limita ao prot\'otipo em si, mas organiza uma proposta de representa\c{c}\~ao, teste e auditoria para esse tipo de decis\~ao em p\'atios agroindustriais.
 
 \sectionheading{2. FUNDAMENTA\c{C}\~AO TE\'ORICA}
-Log\'istica agroindustrial, escalonamento, FJSSP, otimiza\c{c}\~ao sob restri\c{c}\~oes, decis\~ao em tempo real, explicabilidade e humano no loop.
+A fundamenta\c{c}\~ao te\'orica do trabalho combina tr\^es eixos. O primeiro eixo \'e a literatura de truck appointment systems e de coordena\c{c}\~ao de p\'atios. Revis\~oes recentes mostram que o problema envolve decis\~oes de sequenciamento, aloca\c{c}\~ao de janelas, compatibilidade entre carga e recurso e gest\~ao de congestionamento ao longo do dia, sendo inadequado trat\'a-lo apenas com uma fila cronol\'ogica simples (Abdelmagid et al., 2022; Gracia et al., 2025). Al\'em disso, modelos mais recentes refor\c{c}am que m\'ultiplas restri\c{c}\~oes operacionais precisam ser incorporadas simultaneamente, como disponibilidade de equipamento, limites de capacidade e varia\c{c}\~ao entre picos matinais e vespertinos (Xu et al., 2021; Bouyahia et al., 2025).
+
+O segundo eixo \'e a literatura de scheduling din\^amico sob incerteza. Em opera\c{c}\~oes reais, atrasos, falhas, mudan\c{c}as de prioridade e varia\c{c}\~oes de tempo de processamento tornam rapidamente obsoleto qualquer plano fixo, exigindo mecanismos de replanejamento e crit\'erios de estabilidade para que o sistema n\~ao se torne err\'atico (Li \& Ierapetritou, 2008). No campo log\'istico, esse debate aparece em estudos sobre cross-docking, armazenagem e agendamento em tempo real, nos quais abordagens preditivo-reativas, modelos multiagentes e heur\'isticas com controle de estabilidade tendem a melhorar o desempenho operacional diante de perturba\c{c}\~oes (Boysen \& Fliedner, 2010; Nasiri et al., 2022; Wang et al., 2023; Torbali \& Alpan, 2023; Fonseca et al., 2025). Para o recorte do PequiFlux, esse corpo te\'orico oferece elementos para tratar eventos como chuva, bloqueios documentais, indisponibilidade de moega e altera\c{c}\~ao de prioridade contratual.
+
+O terceiro eixo \'e o Design Science Research (DSR), adotado porque o objetivo do trabalho n\~ao \'e apenas descrever o problema, mas propor e avaliar um artefato computacional para enfrent\'a-lo. Hevner et al. (2004) definem a DSR como uma abordagem voltada \`a constru\c{c}\~ao e avalia\c{c}\~ao de artefatos relevantes para problemas organizacionais, enquanto Peffers et al. (2007) detalham um processo com etapas de identifica\c{c}\~ao do problema, defini\c{c}\~ao de objetivos, desenvolvimento, demonstra\c{c}\~ao e avalia\c{c}\~ao. No recorte deste TCC, a tradi\c{c}\~ao de sistemas de apoio \`a decis\~ao tamb\'em \'e relevante porque a sa\'ida esperada n\~ao \'e automa\c{c}\~ao cega, mas recomenda\c{c}\~ao operacional justific\'avel e pass\'ivel de interven\c{c}\~ao pelo operador (Van Der Heyden \& Ottjes, 1985; Mardaneh et al., 2021). Essa base metodol\'ogica \'e compat\'ivel com a proposta do PequiFlux porque permite articular modelagem formal, prototipa\c{c}\~ao, experimenta\c{c}\~ao em ambiente controlado e produ\c{c}\~ao de conhecimento aplic\'avel.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{|p{0.18\textwidth}|p{0.34\textwidth}|p{0.34\textwidth}|}
+\hline
+\textbf{Eixo} & \textbf{Cobertura da literatura} & \textbf{Lacuna para o recorte do PequiFlux} \\
+\hline
+Truck appointment systems & Modelos de janelas, capacidade e congestionamento para terminais e portos (Abdelmagid et al., 2022; Gracia et al., 2025; Xu et al., 2021). & N\~ao tratam de forma central bloqueios documentais, chuva, segrega\c{c}\~ao de carga e interven\c{c}\~ao humana no recebimento agroindustrial. \\
+\hline
+Scheduling sob incerteza & Replanejamento, estabilidade e despacho din\^amico em cross-docking e p\'atios (Nasiri et al., 2022; Wang et al., 2023; Fonseca et al., 2025). & Faltam protocolos adaptados ao contexto de gr\~aos com justificativa audit\'avel de cada decis\~ao. \\
+\hline
+Dom\'inio de gr\~aos & Estudos sobre recebimento, mistura, elevadores e simula\c{c}\~ao de terminais (LeBlanc \& Stover, 1978; Berruto \& Maier, 2001; Fioroni et al., 2015). & A literatura de gr\~aos raramente formula o problema como orquestra\c{c}\~ao din\^amica de fila com restri\c{c}\~oes e baselines comparativos. \\
+\hline
+Rastreabilidade digital & G\^emeos digitais e rastreabilidade p\'os-colheita (Dyck et al., 2023). & Ainda n\~ao h\'a um encadeamento claro entre traceabilidade, otimiza\c{c}\~ao de fila e humano no loop para o caso estudado. \\
+\hline
+\end{tabular}
+\caption{S\'intese da lacuna te\'orica que fundamenta o recorte do TCC.}
+\end{table}
 
 \sectionheading{3. METODOLOGIA}
-DSR, defini\c{c}\~ao dos requisitos do artefato, crit\'erios de avalia\c{c}\~ao, cen\'arios de teste e m\'etricas.
-
-O arcabou\c{c}o metodol\'ogico para este Trabalho de Conclus\~ao de Curso \'e o Design Science Research (DSR), que \'e o mais coerente com o objetivo de construir e avaliar um artefato computacional (o motor de decis\~ao) para solucionar um problema log\'istico. Diferentemente das ci\^encias explicativas, a DSR \'e uma epistemologia focada na cria\c{c}\~ao e valida\c{c}\~ao de solu\c{c}\~oes tecnol\'ogicas para problemas complexos, seguindo um processo iterativo.
-
-O processo de pesquisa ser\'a estruturado nas seguintes fases, alinhadas com as diretrizes do DSR:
+O arcabou\c{c}o metodol\'ogico adotado \'e o Design Science Research, por ser o mais coerente com a constru\c{c}\~ao e avalia\c{c}\~ao de um artefato computacional voltado a um problema log\'istico complexo (Hevner et al., 2004; Peffers et al., 2007). Para evitar ambiguidade, o artefato principal deste trabalho ser\'a o \textbf{motor de decis\~ao orientado a eventos}; o \textbf{simulador de eventos discretos} e o \textbf{g\^emeo digital simplificado} funcionar\~ao como ambiente de demonstra\c{c}\~ao e avalia\c{c}\~ao do artefato, e n\~ao como contribui\c{c}\~ao central isolada. O processo de pesquisa ser\'a estruturado nas seguintes fases:
 \begin{enumerate}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
-  \item Identifica\c{c}\~ao do problema;
-  \item Defini\c{c}\~ao dos requisitos do artefato;
-  \item Desenvolvimento do modelo e do prot\'otipo;
-  \item Demonstra\c{c}\~ao em cen\'arios simulados;
-  \item Avalia\c{c}\~ao comparativa;
-  \item Discuss\~ao de limita\c{c}\~oes e implica\c{c}\~oes.
+  \item Identifica\c{c}\~ao e delimita\c{c}\~ao do problema a partir do contexto operacional do PequiFlux;
+  \item Elicita\c{c}\~ao dos requisitos funcionais e restri\c{c}\~oes do artefato, incluindo regras de neg\'ocio, restri\c{c}\~oes r\'igidas e crit\'erios de prioriza\c{c}\~ao;
+  \item Modelagem formal do problema e defini\c{c}\~ao da estrat\'egia de decis\~ao;
+  \item Desenvolvimento de um prot\'otipo com baseline FIFO para compara\c{c}\~ao;
+  \item Demonstra\c{c}\~ao e avalia\c{c}\~ao do prot\'otipo em cen\'arios simulados;
+  \item Discuss\~ao dos resultados, limita\c{c}\~oes e condi\c{c}\~oes de evolu\c{c}\~ao futura.
 \end{enumerate}
 
-Este TCC est\'a inserido no ciclo de P\&D do projeto PequiFlux, cuja meta \'e evoluir de TRL 1 (Concep\c{c}\~ao T\'ecnica) para TRL 4 (Prot\'otipo Beta Validado em Laborat\'orio) em 12 meses. A valida\c{c}\~ao do artefato ocorrer\'a integralmente em ambiente controlado, utilizando t\'ecnicas como:
-\begin{enumerate}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt,start=7]
-  \item \textbf{G\^emeo Digital (Digital Twin):} Um simulador computacional do p\'atio para reproduzir o fluxo operacional, recursos e restri\c{c}\~oes.
-  \item \textbf{Replay Offline:} Uso de cen\'arios sint\'eticos calibrados e/ou hist\'oricos anonimizados para ajuste de par\^ametros e teste de robustez.
-  \item \textbf{Testes de Estresse:} Uso de cen\'arios de Monte Carlo para avaliar a estabilidade do algoritmo sob condi\c{c}\~oes extremas.
-\end{enumerate}
+Os requisitos do artefato ser\~ao levantados a partir de tr\^es fontes explicitadas no texto: regras operacionais e decis\~oes j\'a documentadas no projeto PequiFlux; par\^ametros e padr\~oes de fluxo extra\'idos da literatura sobre p\'atios, terminais de gr\~aos e sistemas de agendamento; e cen\'arios sint\'eticos calibrados para respeitar faixas plaus\'iveis de chegada, processamento e indisponibilidade. Esse levantamento ser\'a registrado em uma matriz simples `requisito -> origem -> prioridade -> impacto na decis\~ao`, para reduzir conhecimento t\'acito n\~ao audit\'avel. A valida\c{c}\~ao ser\'a conduzida integralmente em ambiente controlado, por meio de um simulador de eventos discretos que representar\'a o p\'atio, seus recursos e eventos disruptivos. Em vez de buscar infer\^encias causais em campo nesta etapa, o TCC pretende verificar se o artefato produz recomenda\c{c}\~oes fact\'iveis, justific\'aveis e superiores ao baseline em um conjunto de cen\'arios relevantes.
+
+Para isso, o desenho experimental considerar\'a pelo menos quatro fam\'ilias de cen\'arios: opera\c{c}\~ao nominal, pico de congestionamento, indisponibilidade de recurso cr\'itico e mudan\c{c}a abrupta de prioridade. O horizonte de simula\c{c}\~ao ser\'a di\'ario, com inst\^ancias de 60, 120 e 180 caminh\~oes, 1 a 3 moegas e 1 a 2 balan\c{c}as; as chegadas ser\~ao geradas por processo n\~ao homog\^eneo com dois picos de demanda, e os tempos de processamento por distribui\c{c}\~oes triangulares calibradas pelas faixas encontradas na literatura e nos documentos do projeto. Cada configura\c{c}\~ao ser\'a executada com 30 repeti\c{c}\~oes e sementes controladas, permitindo comparar o artefato com os baselines sob condi\c{c}\~oes equivalentes. A an\'alise usar\'a compara\c{c}\~oes pareadas entre execu\c{c}\~oes correspondentes, reportando medianas, intervalo interquartil e teste de Wilcoxon para as m\'etricas prim\'arias. Com isso, a contribui\c{c}\~ao metodol\'ogica deixa de ser apenas program\'atica e passa a definir um protocolo reprodut\'ivel.
 
 \sectionheading{4. MODELAGEM DO PROBLEMA}
-A modelagem formal do problema exigir\'a a representa\c{c}\~ao das seguintes entidades, dados de entrada e restri\c{c}\~oes:
+O problema ser\'a modelado como um problema de escalonamento sob restri\c{c}\~oes com reotimiza\c{c}\~ao por eventos. Sejam $T$ o conjunto de caminh\~oes, $R$ o conjunto de recursos operacionais, $E$ o conjunto de eventos disruptivos e $K$ o conjunto de instantes de decis\~ao. Cada caminh\~ao $i \\in T$ ter\'a atributos como hor\'ario de chegada, tipo de carga, prioridade, situa\c{c}\~ao documental e conjunto de recursos eleg\'iveis. Os recursos do p\'atio incluir\~ao portarias, balan\c{c}as, moegas e \'areas de espera, cada um com capacidade, estado operacional e regras de compatibilidade.
+
+A formula\c{c}\~ao proposta distingue restri\c{c}\~oes r\'igidas e crit\'erios de otimiza\c{c}\~ao. Entre as restri\c{c}\~oes r\'igidas est\~ao:
 \begin{itemize}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
-  \item \textbf{Dados de Entrada:} A solu\c{c}\~ao consolida informa\c{c}\~oes como check-in e hor\'arios, tipo e qualidade da carga, prioridades contratuais, status documental, disponibilidade de recursos (moegas, docas, balan\c{c}as) e ocorr\^encias operacionais (chuva, quebra de equipamento).
-  \item \textbf{Restri\c{c}\~oes:} O motor de decis\~ao deve aplicar restri\c{c}\~oes r\'igidas como FIFO (quando aplic\'avel), janelas de recebimento, segrega\c{c}\~ao por produto/qualidade e, crucialmente, restri\c{c}\~oes de capacidade em moegas, docas e balan\c{c}as.
-  \item \textbf{Pol\'itica de Reotimiza\c{c}\~ao:} O algoritmo ser\'a baseado em um mecanismo de reavalia\c{c}\~ao din\^amica da sequ\^encia (Receding Horizon Scheduling), acionada automaticamente por eventos disruptivos (quebra, chuva, atraso, mudan\c{c}a de prioridade), registrando o antes e depois da decis\~ao para auditoria.
+  \item compatibilidade entre carga e recurso;
+  \item disponibilidade e capacidade do recurso no instante da decis\~ao;
+  \item bloqueios documentais ou sanit\'arios;
+  \item impossibilidade de encaminhamento para destinos temporariamente fechados, como em cen\'arios de chuva;
+  \item atendimento de prioridades mandat\'orias definidas pela opera\c{c}\~ao.
 \end{itemize}
+
+Para cada instante $k \\in K$, a vari\'avel bin\'aria $x_{ir}^k$ indicar\'a se o caminh\~ao $i$ ser\'a encaminhado ao recurso $r$, e a vari\'avel $y_i^k$ representar\'a sua posi\c{c}\~ao relativa na sequ\^encia recomendada. As restri\c{c}\~oes centrais incluem: unicidade de encaminhamento ($\\sum_{r \\in R} x_{ir}^k \\leq 1$), bloqueio de recursos incompat\'iveis ou indispon\'iveis ($x_{ir}^k = 0$ quando o recurso n\~ao puder receber a carga), e respeito \`as prioridades mandat\'orias antes de qualquer ganho de fila. Como crit\'erios de otimiza\c{c}\~ao, o artefato dever\'a minimizar tempo de espera e ociosidade dos recursos, reduzir viola\c{c}\~oes desnecess\'arias de FIFO, conter a instabilidade entre uma decis\~ao e outra e evitar recomenda\c{c}\~oes invi\'aveis. Em termos pr\'aticos, isso sugere uma fun\c{c}\~ao objetivo lexicogr\'afica
+\[
+\min \langle z_1, z_2, z_3, z_4 \rangle
+\]
+em que $z_1$ representa inviabilidade, $z_2$ tempo de espera acumulado, $z_3$ ociosidade de recursos e $z_4$ instabilidade por reordena\c{c}\~ao. A pol\'itica de reotimiza\c{c}\~ao seguir\'a a l\'ogica de horizonte deslizante: a fila \'e reavaliada sempre que ocorrer um evento relevante em $E$, preservando trilha de auditoria sobre o estado anterior, a decis\~ao gerada, as regras ativadas e a justificativa para a mudan\c{c}a.
 
 \sectionheading{5. DESENVOLVIMENTO DO ARTEFATO}
-Arquitetura do motor, fluxo de decis\~ao, baseline FIFO, trilha de auditoria e interface conceitual.
+O artefato proposto para o PequiFlux \'e um motor de apoio \`a decis\~ao composto por cinco blocos l\'ogicos: captura do estado operacional, aplica\c{c}\~ao de regras r\'igidas, gera\c{c}\~ao de alternativas fact\'iveis, ranqueamento/reotimiza\c{c}\~ao e emiss\~ao de recomenda\c{c}\~ao audit\'avel ao operador. Essa arquitetura busca garantir que a otimiza\c{c}\~ao n\~ao produza sugest\~oes incompat\'iveis com a realidade operacional, adotando um comportamento fail-closed: quando n\~ao houver alternativa segura, o sistema deve explicitar a restri\c{c}\~ao bloqueadora em vez de for\c{c}ar uma recomenda\c{c}\~ao.
+
+\begin{figure}[h]
+\centering
+\fbox{%
+\begin{minipage}{0.91\textwidth}
+\centering
+\small
+Eventos do p\'atio e estado operacional \\
+$\downarrow$ \\
+Motor de regras e restri\c{c}\~oes \\
+$\downarrow$ \\
+Gerador de alternativas fact\'iveis \\
+$\downarrow$ \\
+Ranqueador/reotimizador \\
+$\downarrow$ \\
+Recomenda\c{c}\~ao explic\'avel + trilha de auditoria + interven\c{c}\~ao humana
+\end{minipage}}
+\caption{Fluxo conceitual do artefato principal proposto no PequiFlux.}
+\end{figure}
+
+Como baseline, ser\~ao implementadas pelo menos duas pol\'iticas: `FIFO puro` e `prioridade + factibilidade local`, na qual prioridades mandat\'orias e restri\c{c}\~oes r\'igidas s\~ao respeitadas, mas sem reotimiza\c{c}\~ao global. O prot\'otipo do artefato dever\'a registrar, para cada decis\~ao, os dados de entrada considerados, as restri\c{c}\~oes ativadas, a alternativa selecionada, o motivo de eventual quebra de FIFO e a possibilidade de override humano. Neste trabalho, `justificativa leg\'ivel` significar\'a um log textual contendo recurso escolhido, regras ativadas e motivo da decis\~ao; `override` significar\'a altera\c{c}\~ao manual explicitamente registrada com motivo. Esse requisito n\~ao \'e acess\'orio: a proposta do PequiFlux pressup\~oe que o operador possa entender, contestar e, se necess\'ario, sobrepor a sugest\~ao do sistema. O uso de g\^emeos digitais e trilhas de rastreabilidade tamb\'em se alinha ao potencial de digital twins no p\'os-colheita, especialmente para representar eventos e auditoria de processo (Dyck et al., 2023).
 
 \sectionheading{6. AVALIA\c{C}\~AO}
-A avalia\c{c}\~ao do artefato ser\'a feita mediante compara\c{c}\~ao com pol\'iticas baseline (como FIFO e agenda fixa) em cen\'arios simulados. As principais m\'etricas a serem utilizadas s\~ao:
+A avalia\c{c}\~ao do artefato ser\'a feita mediante compara\c{c}\~ao com pol\'iticas baseline em cen\'arios simulados. O objetivo n\~ao \'e provar ado\c{c}\~ao em campo nesta etapa, mas verificar se o mecanismo proposto produz ganho operacional sem sacrificar factibilidade e auditabilidade. As principais m\'etricas a serem utilizadas s\~ao:
 \begin{itemize}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
-  \item \textbf{Efici\^encia Operacional:} Tempo de espera (p50/p95), Throughput (vaz\~ao de descarga) e Lat\^encia (p95).
-  \item \textbf{Impacto Socioambiental:} Estimativa de diesel e CO2 evitados a partir da redu\c{c}\~ao do tempo de espera.
-  \item \textbf{Governan\c{c}a e Rastreabilidade:} Trilha audit\'avel de decis\~ao e registro das mudan\c{c}as operacionais.
+  \item \textbf{Efici\^encia operacional:} tempo de espera por caminh\~ao (p50 e p95), throughput, makespan e utiliza\c{c}\~ao dos recursos;
+  \item \textbf{Qualidade da decis\~ao:} taxa de recomenda\c{c}\~oes fact\'iveis, n\'umero de reordena\c{c}\~oes, estabilidade entre replanejamentos e incid\^encia de viola\c{c}\~oes evit\'aveis de FIFO;
+  \item \textbf{Governan\c{c}a e rastreabilidade:} presen\c{c}a de justificativa leg\'ivel para cada decis\~ao, trilha audit\'avel e possibilidade de interven\c{c}\~ao humana;
+  \item \textbf{Impacto operacional indireto:} estimativa de redu\c{c}\~ao de ociosidade e de tempo parado em fila, que poder\'a ser convertida em indicadores econ\^omicos e ambientais de forma explorat\'oria.
 \end{itemize}
 
+Os resultados ser\~ao analisados por compara\c{c}\~ao entre cen\'arios equivalentes executados com cada baseline e com o artefato proposto. A expectativa \'e observar ganhos mais claros em cen\'arios com maior variabilidade e maior press\~ao sobre recursos, pois \'e nesses casos que a literatura aponta limita\c{c}\~oes mais fortes para pol\'iticas est\'aticas (Abdelmagid et al., 2022; Nasiri et al., 2022; Wang et al., 2023). As m\'etricas prim\'arias ser\~ao p95 de espera, taxa de inviabilidade e throughput; as secund\'arias ser\~ao estabilidade, viola\c{c}\~oes evit\'aveis de FIFO e presen\c{c}a de justificativa no log. Como crit\'erios m\'inimos de sucesso, espera-se que o artefato: mantenha taxa nula de recomenda\c{c}\~oes invi\'aveis; reduza em pelo menos 15\% o p95 do tempo de espera em rela\c{c}\~ao aos dois baselines; produza justificativa leg\'ivel em pelo menos 95\% das decis\~oes; e registre interven\c{c}\~oes humanas sem perda de auditabilidade. Assim, a avalia\c{c}\~ao passa a observar simultaneamente efici\^encia, estabilidade, governan\c{c}a e reprodutibilidade.
+
 \sectionheading{7. CONCLUS\~AO}
-Achados, limita\c{c}\~oes, pr\'oximos passos e conex\~ao com a evolu\c{c}\~ao do PequiFlux.
+Este projeto de pesquisa delimita um recorte tecnicamente defens\'avel para o TCC 1 do PequiFlux: transformar a gest\~ao de fila de caminh\~oes em p\'atios agroindustriais em um problema de escalonamento sob restri\c{c}\~oes, propor um artefato de apoio \`a decis\~ao e definir um protocolo de avalia\c{c}\~ao em ambiente controlado. A revis\~ao de literatura indica que o problema tem ader\^encia direta \`a agenda de truck appointment systems, scheduling sob incerteza e replanejamento em tempo real, mas tamb\'em evidencia a necessidade de adaptar esse conhecimento ao contexto agroindustrial, no qual auditabilidade, fail-closed e humano no loop s\~ao requisitos centrais.
+
+Como limita\c{c}\~ao assumida, esta etapa n\~ao pretende validar o artefato em opera\c{c}\~ao real nem esgotar toda a complexidade institucional do problema. O foco est\'a em produzir um modelo consistente, um prot\'otipo inicial e um desenho experimental capaz de sustentar a etapa seguinte do projeto. Se a hip\'otese central for corroborada nos cen\'arios simulados, o TCC estabelecer\'a uma base robusta para evolu\c{c}\~ao futura do PequiFlux em dire\c{c}\~ao a prot\'otipos laboratoriais mais completos.
 
 \clearpage
-\sectionheading{REFER\^ENCIAS -- TUDO QUE CITAR NO TEXTO COLOCAR AQUI}
-\sectionheading{COLOCAR EM ORDEM ALFABETICA}
+\sectionheading{REFER\^ENCIAS}
 \begingroup
 \raggedright
-GIL, Antonio Carlos. \textit{Como elaborar projetos de pesquisa}. 6. ed. S\~ao Paulo: Atlas, 2017.
+ABDELMAGID, Ahmed Mohssen; GHEITH, Mohamed Samir; ELTAWIL, Amr Bahgat. A comprehensive review of the truck appointment scheduling models and directions for future research. \textit{Transport Reviews}, v. 42, n. 1, p. 102--126, 2022. DOI: \url{https://doi.org/10.1080/01441647.2021.1955034}.
 
-ISO/IEC - ISO/IEC 27000:2018: Information technology -- Security techniques -- Information security management systems -- Overview and vocabulary. Geneva: ISO, 2018. Dispon\'ivel em: \url{https://cdn.standards.iteh.ai/samples/73906/276f4738dd1d4b2a8763522181030053/ISO-IEC-27000-2018.pdf}. Acesso em: 23 mar. 2026.
+BOUYAHIA, Fatima; BELAQZIZ, Sara; MELIANI, Youssef; ELHAQ, Sa\^ad Lissane; BOUKACHOUR, Jaouad. A novel truck appointment system for container terminals. \textit{Sustainability}, v. 17, n. 13, 2025. DOI: \url{https://doi.org/10.3390/su17135740}.
 
-ISO. What is artificial intelligence? 2023. Dispon\'ivel em: \url{https://www.iso.org/artificial-intelligence/what-is-ai}. Acesso em: 24 mar. 2026.
+BOYSEN, Nils; FLIEDNER, Malte. Cross dock scheduling: classification, literature review and research agenda. \textit{Omega}, v. 38, n. 6, p. 413--422, 2010. DOI: \url{https://doi.org/10.1016/j.omega.2009.10.008}.
 
-ScienceDirect. Intrusion Detection System. Dispon\'ivel em: \url{https://www.sciencedirect.com/topics/computer-science/intrusion-detection-system}. Acesso em: 23 mar. 2026.
+BERRUTO, R.; MAIER, D. E. Analyzing the receiving operation of different grain types in a singlepit country elevator. \textit{Transactions of the ASAE}, v. 44, n. 3, 2001. DOI: \url{https://doi.org/10.13031/2013.6090}.
 
-JAFFAL, Niveen O.; ALKHANAFSEH, Mohammed; MOHAISEN, David. Large Language Models in Cybersecurity: A Survey of Applications, Vulnerabilities, and Defense Techniques. \textit{AI}, v. 6, 2025. DOI: \url{https://doi.org/10.3390/ai6090216}. Acesso em: 23 mar. 2026.
+COTA, Priscila M.; NOGUEIRA, Thiago H.; JUAN, Angel A.; RAVETTI, Mart\'in G. Integrating vehicle scheduling and open routing decisions in a cross-docking center with multiple docks. \textit{Computers \& Industrial Engineering}, v. 164, 2022. DOI: \url{https://doi.org/10.1016/j.cie.2021.107869}.
 
-NOOR, Kinzah at al. A review of machine learning and transfer learning strategies for intrusion detection systems in 5G and beyond. \textit{Mathematics}, v. 13, 2025. DOI: \url{https://doi.org/10.3390/math13071088}. Acesso em: 15 de mar. 2026.
+DYCK, George; HAWLEY, Eric; HILDEBRAND, Kurt; PALIWAL, Jitendra. Digital twins: a novel traceability concept for post-harvest handling. \textit{Smart Agricultural Technology}, v. 3, p. 100079, 2023. DOI: \url{https://doi.org/10.1016/j.atech.2022.100079}.
 
-PINTO, Andrea et al. Survey on intrusion detection systems based on machine learning techniques for the protection of critical infrastructure. \textit{Sensors}, v. 23, 2023. DOI: \url{https://doi.org/10.3390/s23052415}. Acesso em: 15 de mar. 2026.
+FONSECA, Gabriela B.; NOGUEIRA, Thiago H.; RAVETTI, Mart\'in G. Stability approach to CDC truck scheduling problem under uncertainty. \textit{Optimization Letters}, v. 19, n. 4, p. 811--832, 2025. DOI: \url{https://doi.org/10.1007/s11590-024-02137-6}.
 
-POURRAHMANI, Hossein; YAVARINASAB, Adel; HOSSEINI MONAZZAH, Amir Mahdi; VAN HERLE, Jan. A review of the security vulnerabilities and countermeasures in the Internet of Things solutions: A bright future for the Blockchain. \textit{Internet of Things}, v. 23, 2023. DOI: \url{https://doi.org/10.1016/j.iot.2023.100888}. Acesso em: 23 mar. 2026.
+FIORONI, Marcelo Moretti; FRANZESE, Luiz Augusto G.; SANTANA, Isac Reis de; LELIS, Pavel Emmanuel Pereira; SILVA, Camila Batista da; TELLES, Gustavo Dezem; QUINTANS, Jose Alexandre Sereno; MAEDA, Fabio Kikuda; VARANI, Rafael. From farm to port: simulation of the grain logistics in Brazil. In: \textit{2015 Winter Simulation Conference}. Huntington Beach: IEEE, 2015. p. 1936--1947. DOI: \url{https://doi.org/10.1109/WSC.2015.7408310}.
 
-SHARMA, Shashi Bhushan; BAIRWA, Amit Kumar. Leveraging AI for Intrusion Detection in IoT Ecosystems: A Comprehensive Study. \textit{IEEE Access}, v. 13, 2025. DOI: \url{https://doi.org/10.1109/ACCESS.2025.3550392}. Acesso em: 20 mar. 2026.
+GRACIA, Maria D.; MAR-ORTIZ, Julio; VARGAS, Manuel. Truck appointment scheduling: a review of models and algorithms. \textit{Mathematics}, v. 13, n. 3, p. 503--527, 2025. DOI: \url{https://doi.org/10.3390/math13030503}.
 
-SHYAA, M. A. et al. Evolving cybersecurity frontiers: A comprehensive survey on concept drift and feature dynamics aware machine and deep learning in intrusion detection systems. \textit{Engineering Applications of Artificial Intelligence}, v. 137, 2024. DOI: \url{https://doi.org/10.1016/j.engappai.2024.109143}. Acesso em: 15 de mar. 2026.
+HEVNER, Alan R.; MARCH, Salvatore T.; PARK, Jinsoo; RAM, Sudha. Design science in information systems research. \textit{MIS Quarterly}, v. 28, n. 1, p. 75--106, 2004. DOI: \url{https://doi.org/10.2307/25148625}.
 
-USMAN, Yusuf et al. AI, ML, and LLM Integration in 5G/6G Networks: A Comprehensive Survey of Architectures, Challenges, and Future Directions. \textit{IEEE Access}, v. 13, 2025. DOI: \url{https://doi.org/10.1109/ACCESS.2025.3608736}. Acesso em: 23 mar. 2026.
+INGLES, M. E. A.; CASADA, M. E.; MAGHIRANG, R. G.; HERRMAN, T. J.; HARNER III, J. P. Effects of grain-receiving system on commingling in a country elevator. \textit{Applied Engineering in Agriculture}, v. 22, n. 5, p. 713--721, 2006. DOI: \url{https://doi.org/10.13031/2013.21986}.
 
-WAZLAWICK, Raul Sidnei. \textit{Metodologia de pesquisa para ci\^encia da computa\c{c}\~ao}. 3. ed. Rio de Janeiro: 2021.
+LEBLANC, Louis A.; STOVER, Vergil G. A queuing model for the simulation of a port grain elevator. 1978. DOI: \url{https://doi.org/10.22004/AG.ECON.318737}.
 
-XU, Hanxiang et al. Large Language Models for Cyber Security: A Systematic Literature Review. arXiv preprint, 2025. Dispon\'ivel em: \url{https://arxiv.org/html/2405.04760v5}. Acesso em: 16 mar. 2026.
+LI, Zukui; IERAPETRITOU, Marianthi. Process scheduling under uncertainty: review and challenges. \textit{Computers \& Chemical Engineering}, v. 32, n. 4, p. 715--727, 2008. DOI: \url{https://doi.org/10.1016/j.compchemeng.2007.03.001}.
+
+NASIRI, Mohammad Mahdi; AHMADI, Naeime; KONUR, Din\c{c}er; RAHBARI, Ali. A predictive-reactive cross-dock rescheduling system under truck arrival uncertainty. \textit{Expert Systems with Applications}, v. 188, 2022. DOI: \url{https://doi.org/10.1016/j.eswa.2021.115986}.
+
+MARDANEH, Elham; LOXTON, Ryan; MEKA, Shiv; GAMBLE, Luke. A decision support system for grain harvesting, storage, and distribution logistics. \textit{Knowledge-Based Systems}, v. 223, p. 107037, 2021. DOI: \url{https://doi.org/10.1016/j.knosys.2021.107037}.
+
+PEFFERS, Ken; TUUNANEN, Tuure; ROTHENBERGER, Marcus A.; CHATTERJEE, Samir. A design science research methodology for information systems research. \textit{Journal of Management Information Systems}, v. 24, n. 3, p. 45--77, 2007. DOI: \url{https://doi.org/10.2753/MIS0742-1222240302}.
+
+TORBALI, Bilge; ALPAN, G\"ulg\"un. A multi-agent-based real-time truck scheduling model for cross-docking problems with single inbound and outbound doors. \textit{Supply Chain Analytics}, v. 3, 2023. DOI: \url{https://doi.org/10.1016/j.sca.2023.100028}.
+
+VAN DER HEYDEN, W. P. A.; OTTJES, J. A. A decision support system for the planning of the workload on a grain terminal. \textit{Decision Support Systems}, v. 1, n. 4, p. 293--297, 1985. DOI: \url{https://doi.org/10.1016/0167-9236(85)90169-1}.
+
+WANG, Wencheng; LIN, Shumin; ZHEN, Lu. Flexible storage yard management in container terminals under uncertainty. \textit{Computers \& Industrial Engineering}, v. 186, 2023. DOI: \url{https://doi.org/10.1016/j.cie.2023.109753}.
+
+XU, Bowei; LIU, Xiaoyan; YANG, Yongsheng; LI, Junjun; POSTOLACHE, Octavian. Optimization for a multi-constraint truck appointment system considering morning and evening peak congestion. \textit{Sustainability}, v. 13, n. 3, p. 1--19, 2021. DOI: \url{https://doi.org/10.3390/su13031181}.
+
+ZOUHAIER, Houda; BEN SAID, Lamjed. An application oriented multi-agent based approach to dynamic truck scheduling at cross-dock. In: \textit{2016 17th International Conference on Parallel and Distributed Computing, Applications and Technologies (PDCAT)}. [S.l.: s.n.], 2016. p. 233--239. DOI: \url{https://doi.org/10.1109/PDCAT.2016.058}.
 
 \endgroup
 \end{document}
