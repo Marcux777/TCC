@@ -1,6 +1,7 @@
 build/
 missfont.log
 tmp/
+.codex
 EXPERIMENTS.md
 autoresearch-state.json
 autoresearch-lessons.md
