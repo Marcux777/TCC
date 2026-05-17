@@ -192,6 +192,36 @@ Rastreabilidade digital & G\^emeos digitais e rastreabilidade p\'os-colheita (Dy
 \caption{S\'intese da lacuna te\'orica que fundamenta o recorte do TCC.}
 \end{table}
 
+\section{Trabalhos correlatos e transfer\^encia anal\'ogica}
+A busca por trabalhos diretamente equivalentes ao PequiFlux indica que a literatura espec\'ifica de gr\~aos cobre bem filas, recebimento, segrega\c{c}\~ao e simula\c{c}\~ao de elevadores, mas ainda oferece poucos estudos que combinem, no mesmo artefato, despacho online, restri\c{c}\~oes r\'igidas, replanejamento por eventos, compara\c{c}\~ao com baselines din\^amicos e log audit\'avel. Bouland (1967) j\'a tratava filas de caminh\~oes em elevadores de gr\~aos como problema operacional mensur\'avel; LeBlanc e Stover (1978) modelaram filas em terminal graneleiro portu\'ario; e Berruto e Maier (2001) compararam FIFO com uma pol\'itica BATCH para recebimento de diferentes tipos de gr\~aos em elevador de uma \'unica moega, mostrando que a regra alternativa podia reduzir esperas quando a utiliza\c{c}\~ao se aproximava da capacidade m\'axima, mas podia ser inferior ao FIFO em cargas menores. Esses resultados s\~ao relevantes porque sustentam duas decis\~oes deste TCC: a necessidade de comparar contra FIFO e a impossibilidade de afirmar superioridade universal de uma pol\'itica sem separar cen\'arios por n\'ivel de congest\~ao.
+
+Tamb\'em existem trabalhos pr\'oximos em sistemas de apoio \`a decis\~ao para log\'istica de gr\~aos e n\'os log\'isticos. Van Der Heyden e Ottjes (1985) descreveram um DSS para planejamento de carga de trabalho em terminal graneleiro com aloca\c{c}\~ao de ber\c{c}os e equipamentos; Mardaneh et al. (2021) propuseram apoio \`a decis\~ao para colheita, armazenagem e distribui\c{c}\~ao de gr\~aos; e Hill e B\"ose (2017) trataram planejamento de recursos e roteamento de caminh\~oes em n\'os log\'isticos com previs\~ao de chegadas e tempos de espera. Esses estudos refor\c{c}am a pertin\^encia de DSS e planejamento assistido por dados, mas n\~ao fecham o recorte operacional deste TCC, pois n\~ao formulam a decis\~ao como um despachante local de p\'atio agroindustrial que deve explicar cada recomenda\c{c}\~ao e bloquear automaticamente alternativas invi\'aveis.
+
+Por isso, a literatura de terminais de cont\^eineres e cross-docking ser\'a usada como transfer\^encia anal\'ogica controlada. Carlo, Vis e Roodbergen (2014) organizam os problemas de transporte interno em terminais de cont\^eineres e mostram a centralidade de roteamento, despacho, dimensionamento de ve\'iculos e decis\~oes em tempo real. No lado terrestre, Phan e Kim (2016) integram agendamento colaborativo entre transportadoras e terminal; Azab, Karam e Eltawil (2017) combinam MIP e simula\c{c}\~ao de eventos discretos para um sistema din\^amico e colaborativo de appointment; Li et al. (2018) tratam gest\~ao de disrup\c{c}\~oes em TAS com preocupa\c{c}\~ao ambiental; e Xu et al. (2022) modelam reagendamento din\^amico sob incerteza de chegada. Em trabalhos mais recentes, Bett et al. (2024) e Bouyahia et al. (2025) refor\c{c}am o uso de simula\c{c}\~ao, otimiza\c{c}\~ao e mecanismos adaptativos para reduzir congestionamento em gates e p\'atios. Essa literatura n\~ao substitui valida\c{c}\~ao no dom\'inio agroindustrial, mas oferece repert\'orio metodol\'ogico para construir baselines din\^amicos, cen\'arios de disrup\c{c}\~ao, m\'etricas de espera e protocolo comparativo.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.18\textwidth}|p{0.3\textwidth}|p{0.34\textwidth}|}
+\hline
+\textbf{Linha correlata} & \textbf{Exemplos de trabalhos} & \textbf{Uso concreto no TCC} \\
+\hline
+Recebimento de gr\~aos e elevadores & Bouland (1967); LeBlanc e Stover (1978); Berruto e Maier (2001); Herrman et al. (2002) & Ancora a sem\^antica do dom\'inio, a escolha de simula\c{c}\~ao discreta e a compara\c{c}\~ao contra FIFO em cen\'arios de congestionamento. \\
+\hline
+DSS para gr\~aos e n\'os log\'isticos & Van Der Heyden e Ottjes (1985); Hill e B\"ose (2017); Mardaneh et al. (2021) & Justifica o artefato como apoio \`a decis\~ao, com operador no loop, planejamento de recursos e sa\'idas explic\'aveis. \\
+\hline
+Truck appointment e terminais de cont\^eineres & Phan e Kim (2016); Abdelmagid et al. (2022); Gracia et al. (2025); Bouyahia et al. (2025) & Informa baselines, m\'etricas de gate/p\'atio, janelas de atendimento e tratamento de stakeholders. \\
+\hline
+Replanejamento din\^amico e disrup\c{c}\~oes & Li et al. (2018); Xu et al. (2022); Nasiri et al. (2022); Wang et al. (2023); Fonseca et al. (2025) & Sustenta a reavalia\c{c}\~ao por eventos, o uso de sementes pareadas e a compara\c{c}\~ao em cen\'arios de falha, chuva, atraso e mudan\c{c}a de prioridade. \\
+\hline
+Simula\c{c}\~ao-otimiza\c{c}\~ao em p\'atios & Azab, Karam e Eltawil (2017); Neagoe et al. (2021); Bett et al. (2024) & Fornece base para o simulador de eventos discretos, protocolo de benchmark e separa\c{c}\~ao entre pol\'itica de despacho e infraestrutura de avalia\c{c}\~ao. \\
+\hline
+\end{tabular}
+\caption{Trabalhos correlatos usados para posicionar o PequiFlux e delimitar a transfer\^encia anal\'ogica.}
+\end{table}
+
+Com essa organiza\c{c}\~ao, o TCC n\~ao afirma que p\'atios agroindustriais sejam equivalentes a terminais de cont\^eineres. A equival\^encia adotada \'e apenas funcional: ambos possuem chegadas de caminh\~oes, recursos compartilhados, congestionamento em gates/p\'atios, incerteza operacional e necessidade de coordenar decis\~oes sob capacidade limitada. A diferen\c{c}a de dom\'inio permanece expl\'icita nas restri\c{c}\~oes do PequiFlux, como segrega\c{c}\~ao de carga, sensibilidade a chuva, bloqueio documental, compatibilidade carga--moega e rastreabilidade da interven\c{c}\~ao humana.
+
 \chapter{Metodologia}
 O arcabou\c{c}o metodol\'ogico adotado \'e o Design Science Research, por ser o mais coerente com a constru\c{c}\~ao e avalia\c{c}\~ao de um artefato computacional voltado a um problema log\'istico complexo (Hevner et al., 2004; Peffers et al., 2007). Para evitar ambiguidade, o artefato principal deste trabalho ser\'a o \textbf{motor de decis\~ao orientado a eventos}; o \textbf{simulador de eventos discretos} funcionar\'a como ambiente de demonstra\c{c}\~ao e avalia\c{c}\~ao do artefato, e n\~ao como contribui\c{c}\~ao central isolada. O processo de pesquisa ser\'a estruturado nas seguintes fases:
 \begin{enumerate}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
@@ -443,6 +473,8 @@ Evento & interven\c{c}\~ao humana & confirma ou altera a recomenda\c{c}\~ao, sem
 \caption{Taxonomia m\'inima de restri\c{c}\~oes e eventos considerada pelo artefato.}
 \end{table}
 
+A escada de baselines abaixo foi definida a partir da lacuna observada na literatura: FIFO e BATCH aparecem em recebimento de gr\~aos como regras simples de compara\c{c}\~ao (Berruto \& Maier, 2001); sistemas de appointment e agendamento colaborativo em cont\^eineres refor\c{c}am a necessidade de comparar contra pol\'iticas que n\~ao sejam apenas FIFO (Phan \& Kim, 2016; Azab et al., 2017); e trabalhos de disrup\c{c}\~ao/reagendamento mostram que a resposta a eventos deve ser avaliada separadamente de um plano est\'atico inicial (Li et al., 2018; Xu et al., 2022). Assim, os comparadores foram escolhidos para criar uma progress\~ao de dificuldade: regra est\'atica, regra fact\'ivel local, regra reativa, abla\c{c}\~ao do pr\'oprio artefato e rival din\^amico por escore.
+
 \begin{table}[H]
 \centering
 \small
@@ -506,6 +538,8 @@ Como limita\c{c}\~ao assumida, esta etapa n\~ao pretende validar o artefato em o
 \raggedright
 ABDELMAGID, Ahmed Mohssen; GHEITH, Mohamed Samir; ELTAWIL, Amr Bahgat. A comprehensive review of the truck appointment scheduling models and directions for future research. \textit{Transport Reviews}, v. 42, n. 1, p. 102--126, 2022. DOI: \url{https://doi.org/10.1080/01441647.2021.1955034}.
 
+AZAB, Ahmed; KARAM, Ahmed; ELTAWIL, Amr. A dynamic and collaborative truck appointment management system in container terminals. In: \textit{Proceedings of the 6th International Conference on Operations Research and Enterprise Systems}. [S.l.]: SCITEPRESS, 2017. p. 85--95. DOI: \url{https://doi.org/10.5220/0006188100850095}.
+
 BERRUTO, R.; MAIER, D. E. Analyzing the receiving operation of different grain types in a singlepit country elevator. \textit{Transactions of the ASAE}, v. 44, n. 3, 2001. DOI: \url{https://doi.org/10.13031/2013.6090}.
 
 BETT, Davies K.; ALI, Islam; GHEITH, Mohamed; ELTAWIL, Amr. Discrete event simulation of truck appointment systems in container terminals: a dual transactions approach. In: \textit{International Maritime Transport and Logistics Conference}. [S.l.]: Academy Publishing Center, Arab Academy for Science, Technology and Maritime Transport, 2024. v. 13, p. 327--341.
@@ -517,6 +551,8 @@ BOULAND, Heber D. Truck queues at country grain elevators. \textit{Operations Re
 BOUYAHIA, Fatima; BELAQZIZ, Sara; MELIANI, Youssef; ELHAQ, Sa\^ad Lissane; BOUKACHOUR, Jaouad. A novel truck appointment system for container terminals. \textit{Sustainability}, v. 17, n. 13, 2025. DOI: \url{https://doi.org/10.3390/su17135740}.
 
 BOYSEN, Nils; FLIEDNER, Malte. Cross dock scheduling: classification, literature review and research agenda. \textit{Omega}, v. 38, n. 6, p. 413--422, 2010. DOI: \url{https://doi.org/10.1016/j.omega.2009.10.008}.
+
+CARLO, H\'ector J.; VIS, Iris F. A.; ROODBERGEN, Kees Jan. Transport operations in container terminals: literature overview, trends, research directions and classification scheme. \textit{European Journal of Operational Research}, v. 236, n. 1, p. 1--13, 2014. DOI: \url{https://doi.org/10.1016/j.ejor.2013.11.023}.
 
 COTA, Priscila M.; NOGUEIRA, Thiago H.; JUAN, Angel A.; RAVETTI, Mart\'in G. Integrating vehicle scheduling and open routing decisions in a cross-docking center with multiple docks. \textit{Computers \& Industrial Engineering}, v. 164, 2022. DOI: \url{https://doi.org/10.1016/j.cie.2021.107869}.
 
@@ -534,6 +570,8 @@ HERRMAN, Timothy J.; BOLAND, Michael A.; AGRAWAL, Kirti; BAKER, Scott R. Use of 
 
 HEVNER, Alan R.; MARCH, Salvatore T.; PARK, Jinsoo; RAM, Sudha. Design science in information systems research. \textit{MIS Quarterly}, v. 28, n. 1, p. 75--106, 2004. DOI: \url{https://doi.org/10.2307/25148625}.
 
+HILL, Alessandro; B\"OSE, J\"urgen W. A decision support system for improved resource planning and truck routing at logistic nodes. \textit{Information Technology and Management}, v. 18, n. 3, p. 241--251, 2017. DOI: \url{https://doi.org/10.1007/s10799-016-0267-3}.
+
 INGLES, M. E. A.; CASADA, M. E.; MAGHIRANG, R. G.; HERRMAN, T. J.; HARNER III, J. P. Effects of grain-receiving system on commingling in a country elevator. \textit{Applied Engineering in Agriculture}, v. 22, n. 5, p. 713--721, 2006. DOI: \url{https://doi.org/10.13031/2013.21986}.
 
 LANGE, Ann-Kathrin; BRANDING, Fredrik; SCHWENZOW, Tilmann; ZLOTOS, Constantin; SCHWIENTEK, Anne Kathrina; JAHN, Carlos; FREITAG, M.; KOTZAB, H.; PANNEK, J. Dispatching strategies of drayage trucks at seaport container terminals with truck appointment system. In: JAHN, Carlos; KREUTZFELDT, Jakob; BEEHAM, Minka; HALKIAS, Georgios; WEIGELL, Julian (org.). \textit{Dynamics in Logistics}. Cham: Springer International Publishing, 2018. p. 162--166. DOI: \url{https://doi.org/10.1007/978-3-319-74225-0_21}.
@@ -541,6 +579,8 @@ LANGE, Ann-Kathrin; BRANDING, Fredrik; SCHWENZOW, Tilmann; ZLOTOS, Constantin; S
 LAW, Averill M. \textit{Simulation modeling and analysis}. New York: McGraw-Hill US Higher Ed USE Legacy, 2015.
 
 LEBLANC, Louis A.; STOVER, Vergil G. A queuing model for the simulation of a port grain elevator. 1978. Dispon\'ivel em: \url{https://ageconsearch.umn.edu/record/318737}. DOI: \url{https://doi.org/10.22004/AG.ECON.318737}.
+
+LI, Na; CHEN, Gang; GOVINDAN, Kannan; JIN, Zhihong. Disruption management for truck appointment system at a container terminal: a green initiative. \textit{Transportation Research Part D: Transport and Environment}, v. 61, parte B, p. 261--273, 2018. DOI: \url{https://doi.org/10.1016/j.trd.2015.12.014}.
 
 LI, Zukui; IERAPETRITOU, Marianthi. Process scheduling under uncertainty: review and challenges. \textit{Computers \& Chemical Engineering}, v. 32, n. 4, p. 715--727, 2008. DOI: \url{https://doi.org/10.1016/j.compchemeng.2007.03.001}.
 
@@ -551,6 +591,8 @@ NASIRI, Mohammad Mahdi; AHMADI, Naeime; KONUR, Din\c{c}er; RAHBARI, Ali. A predi
 NEAGOE, Mihai; HVOLBY, Hans-Henrik; TASKHIRI, Mohammad Sadegh; TURNER, Paul. Using discrete-event simulation to compare congestion management initiatives at a port terminal. \textit{Simulation Modelling Practice and Theory}, v. 112, 2021. DOI: \url{https://doi.org/10.1016/j.simpat.2021.102362}.
 
 PEFFERS, Ken; TUUNANEN, Tuure; ROTHENBERGER, Marcus A.; CHATTERJEE, Samir. A design science research methodology for information systems research. \textit{Journal of Management Information Systems}, v. 24, n. 3, p. 45--77, 2007. DOI: \url{https://doi.org/10.2753/MIS0742-1222240302}.
+
+PHAN, Mai-Ha; KIM, Kap Hwan. Collaborative truck scheduling and appointments for trucking companies and container terminals. \textit{Transportation Research Part B: Methodological}, v. 86, p. 37--50, 2016. DOI: \url{https://doi.org/10.1016/j.trb.2016.01.006}.
 
 SILVA, Lu\'is C.; QUEIROZ, Daniel M.; FLORES, Rolando A.; MELO, Evandro C. A simulation toolset for modeling grain storage facilities. \textit{Journal of Stored Products Research}, v. 48, p. 31--36, 2012. DOI: \url{https://doi.org/10.1016/j.jspr.2011.09.001}.
 
@@ -563,6 +605,8 @@ VAN DER HEYDEN, W. P. A.; OTTJES, J. A. A decision support system for the planni
 WANG, Wencheng; LIN, Shumin; ZHEN, Lu. Flexible storage yard management in container terminals under uncertainty. \textit{Computers \& Industrial Engineering}, v. 186, 2023. DOI: \url{https://doi.org/10.1016/j.cie.2023.109753}.
 
 XU, Bowei; LIU, Xiaoyan; YANG, Yongsheng; LI, Junjun; POSTOLACHE, Octavian. Optimization for a multi-constraint truck appointment system considering morning and evening peak congestion. \textit{Sustainability}, v. 13, n. 3, p. 1--19, 2021. DOI: \url{https://doi.org/10.3390/su13031181}.
+
+XU, Bowei; LIU, Xiaoyan; LI, Junjun; YANG, Yongsheng; WU, Junfeng; SHEN, Yi; ZHOU, Ye. Dynamic appointment rescheduling of trucks under uncertainty of arrival time. \textit{Journal of Marine Science and Engineering}, v. 10, n. 5, p. 695, 2022. DOI: \url{https://doi.org/10.3390/jmse10050695}.
 
 ZOUHAIER, Houda; BEN SAID, Lamjed. An application oriented multi-agent based approach to dynamic truck scheduling at cross-dock. In: \textit{2016 17th International Conference on Parallel and Distributed Computing, Applications and Technologies (PDCAT)}. [S.l.: s.n.], 2016. p. 233--239. DOI: \url{https://doi.org/10.1109/PDCAT.2016.058}.
 
