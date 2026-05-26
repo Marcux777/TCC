@@ -38,6 +38,8 @@
 \newcommand{\smallfontdoc}{\fontsize{10}{12}\selectfont}
 \newcolumntype{P}[1]{>{\RaggedRight\arraybackslash}p{#1}}
 \newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcommand{\timeline}{\(\bullet\)}
 \definecolor{tablehead}{HTML}{E8EEF6}
 \definecolor{tablerule}{HTML}{4B5563}
 \definecolor{tableaccent}{HTML}{0F766E}
@@ -144,45 +146,44 @@ O desafio se torna mais complexo quando a opera\c{c}\~ao precisa reagir a incert
 
 No contexto agroindustrial, esse problema assume contornos ainda mais cr\'iticos. P\'atios de cooperativas e armaz\'ens lidam com sazonalidade intensa, heterogeneidade de cargas e prioridades contratuais. Tamb\'em enfrentam bloqueios documentais, eventos clim\'aticos, indisponibilidade de equipamentos e exig\^encias de rastreabilidade das decis\~oes. A literatura do dom\'inio de gr\~aos mostra que mesmo opera\c{c}\~oes aparentemente simples de recebimento e eleva\c{c}\~ao envolvem gargalos relevantes de fila. Tamb\'em envolvem mistura indesejada de cargas, planejamento de carga de terminal e necessidade de simula\c{c}\~ao espec\'ifica do fluxo f\'isico (Bouland, 1967; LeBlanc \& Stover, 1978; Berruto \& Maier, 2001; Herrman et al., 2002; Ingles et al., 2006; Silva et al., 2012; Turner et al., 2019; Fioroni et al., 2015). Existem contribui\c{c}\~oes relevantes para portos, terminais conteinerizados e opera\c{c}\~oes de cross-docking. Ainda assim, a aplica\c{c}\~ao dessas ideias a p\'atios agroindustriais de recebimento de gr\~aos n\~ao aparece consolidada no mesmo n\'ivel. A lacuna \'e maior quando se exige resposta din\^amica a eventos disruptivos, auditabilidade e supervis\~ao humana. Abordagens multiagentes e modelos integrados de sequenciamento e roteamento ajudam a estruturar o problema, mas n\~ao resolvem integralmente o recorte operacional e institucional aqui considerado (Zouhaier \& Ben Said, 2016; Cota et al., 2022).
 
-Nesse cen\'ario, a pesquisa prop\~oe uma solu\c{c}\~ao de apoio \`a decis\~ao para a orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios agroindustriais com alto fluxo operacional. A premissa central \'e que decis\~oes de sequenciamento e aloca\c{c}\~ao de recursos n\~ao devem ser reduzidas a uma fila passiva, mas formuladas como um problema de \textbf{despacho online sob restri\c{c}\~oes}, com reavalia\c{c}\~ao cont\'inua do estado operacional. A investiga\c{c}\~ao concentra-se em modelar e avaliar um mecanismo de orquestra\c{c}\~ao din\^amica para p\'atios de recebimento de gr\~aos, comparando seu comportamento com regras est\'aticas, como FIFO, e com comparadores din\^amicos plaus\'iveis. A compara\c{c}\~ao considera cen\'arios com m\'ultiplas restri\c{c}\~oes operacionais, auditabilidade, explicabilidade e supervis\~ao humana. A hip\'otese central n\~ao presume superioridade universal; examina se uma pol\'itica de despacho baseada em restri\c{c}\~oes r\'igidas, prioridade operacional e reavalia\c{c}\~ao por eventos apresenta desempenho superior no protocolo comparativo proposto. Essa expectativa est\'a alinhada a resultados da literatura sobre appointment systems, estrat\'egias de dispatching e rescheduling din\^amico (Li \& Ierapetritou, 2008; Abdelmagid et al., 2022; Nasiri et al., 2022; Lange et al., 2018; da Silva et al., 2023; Bouyahia et al., 2025). Assim, a contribui\c{c}\~ao da pesquisa est\'a na delimita\c{c}\~ao, modelagem e avalia\c{c}\~ao inicial de um artefato computacional voltado ao contexto agroindustrial.
+Nesse cen\'ario, a pesquisa prop\~oe uma solu\c{c}\~ao de apoio \`a decis\~ao para a orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios agroindustriais com alto fluxo operacional. A premissa central \'e que decis\~oes de sequenciamento e aloca\c{c}\~ao de recursos n\~ao devem ser reduzidas a uma fila passiva, mas formuladas como um problema de \textbf{despacho online sob restri\c{c}\~oes}, com reavalia\c{c}\~ao cont\'inua do estado operacional. A investiga\c{c}\~ao concentra-se em modelar e avaliar um mecanismo de orquestra\c{c}\~ao din\^amica para p\'atios de recebimento de gr\~aos, comparando seu comportamento com regras est\'aticas, como FIFO, e com comparadores din\^amicos plaus\'iveis. A compara\c{c}\~ao considera cen\'arios com m\'ultiplas restri\c{c}\~oes operacionais, auditabilidade, explicabilidade e supervis\~ao humana. Essa expectativa est\'a alinhada a resultados da literatura sobre appointment systems, estrat\'egias de dispatching e rescheduling din\^amico (Li \& Ierapetritou, 2008; Abdelmagid et al., 2022; Nasiri et al., 2022; Lange et al., 2018; da Silva et al., 2023; Bouyahia et al., 2025).
 
-\chapter{Problema de pesquisa}
 O problema de pesquisa pode ser formulado nos seguintes termos: como modelar e avaliar um mecanismo de despacho online de caminh\~oes em p\'atios de recebimento de gr\~aos, compar\'avel a regras est\'aticas como FIFO e a comparadores din\^amicos plaus\'iveis, em cen\'arios com m\'ultiplas restri\c{c}\~oes operacionais, mantendo explicabilidade e possibilidade de interven\c{c}\~ao humana?
 
-\chapter{Objetivos}
-\section{Objetivo geral}
-\begin{itemize}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
-  \item Projetar e avaliar um artefato computacional, no contexto estudado, para apoio \`a decis\~ao na orquestra\c{c}\~ao din\^amica de filas de caminh\~oes em p\'atios agroindustriais, visando reduzir tempo de espera, melhorar o uso de recursos operacionais e preservar rastreabilidade das decis\~oes.
-\end{itemize}
+A relev\^ancia da pesquisa se manifesta em tr\^es planos complementares. No plano acad\^emico, o trabalho transforma uma decis\~ao operacional frequentemente t\'acita --- a escolha de qual caminh\~ao atender a seguir --- em objeto de pesquisa computacional expl\'icito, model\'avel e avali\'avel. A literatura de agendamento de caminh\~oes e de scheduling sob incerteza discute congestionamento, janelas de atendimento, capacidade, replanejamento e perturba\c{c}\~oes operacionais (Abdelmagid et al., 2022; Phan \& Kim, 2016; Xu et al., 2022). Entretanto, a aplica\c{c}\~ao direta ao recebimento agroindustrial de gr\~aos ainda exige adapta\c{c}\~ao, pois esse contexto inclui segrega\c{c}\~ao de carga, bloqueio documental, chuva, compatibilidade entre carga e recurso, rastreabilidade e interven\c{c}\~ao humana (LeBlanc \& Stover, 1978; Ingles et al., 2006; Dyck et al., 2023). No plano tecnol\'ogico, a pesquisa constr\'oi um artefato de apoio \`a decis\~ao que filtra alternativas invi\'aveis, escolhe candidatos fact\'iveis e gera registros audit\'aveis, seguindo os princ\'ipios do Design Science Research (Hevner et al., 2004; Peffers et al., 2007; Van Der Heyden \& Ottjes, 1985). No plano operacional, examina-se se uma regra online, restrita e audit\'avel consegue conciliar redu\c{c}\~ao de espera, melhor aproveitamento de recursos e governan\c{c}a sobre a decis\~ao, sem eliminar o controle humano.
 
-\section{Objetivos específicos}
+\section{Objetivos}
+
+\subsection{Objetivo geral}
+Projetar e avaliar um artefato computacional, no contexto estudado, para apoio \`a decis\~ao na orquestra\c{c}\~ao din\^amica de filas de caminh\~oes em p\'atios agroindustriais, visando reduzir tempo de espera, melhorar o uso de recursos operacionais e preservar rastreabilidade das decis\~oes.
+
+\subsection{Objetivos específicos}
 \begin{enumerate}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
   \item Modelar formalmente o problema de p\'atio como um problema de despacho online sob restri\c{c}\~oes.
   \item Definir vari\'aveis, restri\c{c}\~oes r\'igidas e crit\'erios de decis\~ao coerentes com a opera\c{c}\~ao real.
+  \item Especificar o motor de decis\~ao proposto, incluindo filtro de factibilidade, regra de ranking e registro audit\'avel.
   \item Construir um prot\'otipo inicial do motor de decis\~ao e seu ambiente de simula\c{c}\~ao.
-  \item Comparar o comportamento do motor com uma pol\'itica de refer\^encia (baseline), como FIFO.
-  \item Avaliar o artefato com m\'etricas como tempo de espera, throughput, makespan e auditabilidade da decis\~ao.
+  \item Comparar o comportamento do motor com pol\'iticas de refer\^encia est\'aticas e din\^amicas plaus\'iveis.
+  \item Avaliar o artefato com m\'etricas de espera, throughput, makespan, estabilidade e auditabilidade da decis\~ao.
   \item Discutir riscos operacionais, limites da modelagem e condi\c{c}\~oes de ado\c{c}\~ao pr\'atica.
 \end{enumerate}
 
-\chapter{Hipótese central}
+\section{Hipótese central}
+
 Uma abordagem de orquestra\c{c}\~ao din\^amica baseada em despacho online sob restri\c{c}\~oes tende a produzir decis\~oes mais robustas que regras est\'aticas de fila em cen\'arios com eventos disruptivos e heterogeneidade de recursos, sem eliminar a supervis\~ao humana. Para preservar clareza metodol\'ogica, a pesquisa distingue uma hip\'otese cient\'ifica comparativa e dois crit\'erios de aceita\c{c}\~ao de engenharia do artefato:
 \begin{itemize}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
   \item \textbf{H1 -- desempenho comparativo:} no protocolo comparativo proposto, o motor reduz o p95 da espera acumulada em fila e mant\'em o throughput dentro da margem protetiva predefinida frente \`as pol\'iticas de refer\^encia em cen\'arios de m\'edia e alta congest\~ao;
   \item \textbf{A1 -- crit\'erio de seguran\c{c}a operacional:} no artefato proposto, nenhuma recomenda\c{c}\~ao final confirmada pelo sistema viola as restri\c{c}\~oes r\'igidas definidas no protocolo;
   \item \textbf{A2 -- crit\'erio de governan\c{c}a:} no artefato proposto, toda recomenda\c{c}\~ao e toda interven\c{c}\~ao humana ficam reconstru\'iveis por registro audit\'avel.
 \end{itemize}
-Somente \textbf{H1} ser\'a tratada como hip\'otese comparativa entre pol\'iticas. Os itens \textbf{A1} e \textbf{A2} n\~ao ser\~ao usados para alegar superioridade cient\'ifica sobre as pol\'iticas de refer\^encia. No experimento, todos os comparadores compartilham a mesma infraestrutura de checagem de factibilidade e registro em log. Essa escolha preserva a justi\c{c}a experimental. Assim, A1 e A2 funcionam como crit\'erios bin\'arios de aceita\c{c}\~ao do artefato e do ambiente experimental, enquanto H1 permanece como a \'unica hip\'otese sujeita \`a compara\c{c}\~ao inferencial.
+Somente \textbf{H1} ser\'a tratada como hip\'otese comparativa entre pol\'iticas. Os crit\'erios \textbf{A1} e \textbf{A2} funcionam como balizadores bin\'arios de aceita\c{c}\~ao do artefato, auditados por registro em log e n\~ao usados para alegar superioridade cient\'ifica sobre as pol\'iticas de refer\^encia. Os limiares quantitativos de H1, A1 e A2 s\~ao detalhados no Cap\'itulo~\ref{ch:metodologia}.
 
-Como metas experimentais iniciais, H1 ser\'a tratada como corroborada se o artefato reduzir em pelo menos 15\% o p95 da espera acumulada em fila frente \`as pol\'iticas de refer\^encia definidas. Essa redu\c{c}\~ao deve ocorrer nas fam\'ilias de cen\'ario de m\'edia e alta congest\~ao. O artefato tamb\'em n\~ao deve perder mais que 2 caminh\~oes/dia de throughput mediano nessas fam\'ilias. A1 e A2 ser\~ao aceitos somente se a taxa de recomenda\c{c}\~oes invi\'aveis permanecer nula, a cobertura de registro leg\'ivel atingir 100\% e toda interven\c{c}\~ao manual permanecer expl\'icita e rastre\'avel. Esses limiares n\~ao s\~ao constantes universais da \'area; constituem metas iniciais de engenharia, a serem confirmadas ou ajustadas ap\'os o estudo piloto do simulador.
+\section{Organização do trabalho}
 
-\chapter{Contribuição acadêmica}
-A contribui\c{c}\~ao da pesquisa organiza-se em dois planos complementares, mas distintos. A \textbf{contribui\c{c}\~ao cient\'ifica} est\'a no protocolo e na modelagem comparativa do problema. A gest\~ao de fila de caminh\~oes em p\'atios agroindustriais \'e tratada como um objeto de pesquisa computacional reprodut\'ivel. Para isso, s\~ao definidas uma taxonomia expl\'icita de restri\c{c}\~oes e eventos, uma formula\c{c}\~ao de despacho online por recurso liberado e um conjunto hierarquizado de pol\'iticas de refer\^encia. Tamb\'em s\~ao definidos m\'etricas, crit\'erios de sucesso, protocolo de valida\c{c}\~ao de face, desenho experimental e plano de abertura dos artefatos de replica\c{c}\~ao. A contribui\c{c}\~ao central reside em tornar compar\'avel, test\'avel e critic\'avel um problema que frequentemente permanece como decis\~ao operacional t\'acita.
+Este trabalho est\'a organizado em dez cap\'itulos. O Cap\'itulo~2 apresenta o referencial te\'orico, estruturado em quatro eixos --- truck appointment systems, scheduling sob incerteza, dom\'inio de gr\~aos e Design Science Research --- e fechado com a s\'intese de trabalhos correlatos. O Cap\'itulo~3 descreve a metodologia adotada, incluindo o arcabou\c{c}o DSR, o desenho experimental e os protocolos de valida\c{c}\~ao. O Cap\'itulo~4 apresenta a modelagem formal do problema como despacho online por recurso liberado, com as restri\c{c}\~oes r\'igidas, a fun\c{c}\~ao de ranking e o pseudoc\'odigo reprodut\'ivel do motor. O Cap\'itulo~5 descreve o desenvolvimento do artefato proposto, sua arquitetura em cinco componentes e as pol\'iticas de refer\^encia utilizadas na compara\c{c}\~ao. O Cap\'itulo~6 define o plano de avalia\c{c}\~ao experimental, com m\'etricas, crit\'erios de sucesso e protocolo estat\'istico. O Cap\'itulo~7 re\'une os resultados parciais obtidos at\'e esta etapa do TCC. O Cap\'itulo~8 apresenta o cronograma de execu\c{c}\~ao previsto para o TCC~II. O Cap\'itulo~9 discute as amea\c{c}as \`a validade e o Cap\'itulo~10 apresenta a conclus\~ao. Por fim, s\~ao listadas as refer\^encias.
 
-A \textbf{contribui\c{c}\~ao de engenharia} est\'a no artefato proposto. Trata-se de um motor de decis\~ao orientado a eventos que aplica restri\c{c}\~oes r\'igidas antes do ranking. O motor opera com comportamento de falha segura quando n\~ao h\'a alternativa vi\'avel, gera recomenda\c{c}\~oes explic\'aveis, produz registros audit\'aveis e preserva interven\c{c}\~ao humana controlada. Nesse plano, o valor do trabalho est\'a na especifica\c{c}\~ao implement\'avel do motor e no pseudoc\'odigo reprodut\'ivel. Tamb\'em est\'a na separa\c{c}\~ao entre filtro de factibilidade e regra de despacho. Essa separa\c{c}\~ao sustenta a governan\c{c}a operacional e impede que uma sugest\~ao automatizada viole restri\c{c}\~oes cr\'iticas. A an\'alise separa, portanto, a entrega de engenharia representada pelo motor proposto e a contribui\c{c}\~ao cient\'ifica representada pelo protocolo e pela modelagem comparativa.
-
-\chapter{Fundamentação teórica}
-A fundamenta\c{c}\~ao te\'orica do trabalho combina tr\^es eixos. O primeiro eixo \'e a literatura de truck appointment systems e de coordena\c{c}\~ao de p\'atios. Revis\~oes recentes mostram que o problema envolve decis\~oes de sequenciamento, aloca\c{c}\~ao de janelas, compatibilidade entre carga e recurso e gest\~ao de congestionamento ao longo do dia, sendo inadequado trat\'a-lo apenas com uma fila cronol\'ogica simples (Abdelmagid et al., 2022; Gracia et al., 2025). Al\'em disso, modelos mais recentes refor\c{c}am que m\'ultiplas restri\c{c}\~oes operacionais precisam ser incorporadas simultaneamente, como disponibilidade de equipamento, limites de capacidade e varia\c{c}\~ao entre picos matinais e vespertinos (Xu et al., 2021; Bouyahia et al., 2025).
+\chapter{Referencial Teórico}\label{ch:referencial}
+O referencial te\'orico do trabalho articula quatro eixos complementares. O primeiro eixo \'e a literatura de truck appointment systems e de coordena\c{c}\~ao de p\'atios. Revis\~oes recentes mostram que o problema envolve decis\~oes de sequenciamento, aloca\c{c}\~ao de janelas, compatibilidade entre carga e recurso e gest\~ao de congestionamento ao longo do dia, sendo inadequado trat\'a-lo apenas com uma fila cronol\'ogica simples (Abdelmagid et al., 2022; Gracia et al., 2025). Al\'em disso, modelos mais recentes refor\c{c}am que m\'ultiplas restri\c{c}\~oes operacionais precisam ser incorporadas simultaneamente, como disponibilidade de equipamento, limites de capacidade e varia\c{c}\~ao entre picos matinais e vespertinos (Xu et al., 2021; Bouyahia et al., 2025).
 
 O segundo eixo \'e a literatura de scheduling din\^amico sob incerteza. Em opera\c{c}\~oes reais, atrasos, falhas, mudan\c{c}as de prioridade e varia\c{c}\~oes de tempo de processamento tornam rapidamente obsoleto qualquer plano fixo. Isso exige mecanismos de replanejamento e crit\'erios de estabilidade para que o sistema n\~ao se torne err\'atico (Li \& Ierapetritou, 2008). No campo log\'istico, esse debate aparece em estudos sobre cross-docking, armazenagem e agendamento em tempo real. Nesses trabalhos, abordagens preditivo-reativas, modelos multiagentes e heur\'isticas com controle de estabilidade tendem a melhorar o desempenho diante de perturba\c{c}\~oes (Boysen \& Fliedner, 2010; Nasiri et al., 2022; Wang et al., 2023; Torbali \& Alpan, 2023; Fonseca et al., 2025). Para o recorte operacional proposto, esse corpo te\'orico oferece elementos para tratar chuva, bloqueios documentais, indisponibilidade de moega e altera\c{c}\~ao de prioridade contratual.
 
@@ -319,7 +320,7 @@ A produ\c{c}\~ao de cen\'arios sint\'eticos tamb\'em encontra apoio em uma liter
 
 Esse padr\~ao \'e especialmente relevante para este TCC porque problemas de otimiza\c{c}\~ao s\~ao semanticamente fr\'ageis: pequenas altera\c{c}\~oes no enunciado podem mudar vari\'aveis, restri\c{c}\~oes ou objetivo. Trabalhos como OptiTrust, SIRL, AutoOR, OR-LLM-Bench e Step-Opt refor\c{c}am que a confiabilidade depende de valida\c{c}\~ao formal, como solu\c{c}\~oes \'otimas conhecidas, execu\c{c}\~ao de c\'odigo de solver, valida\c{c}\~ao estruturada e certifica\c{c}\~ao das inst\^ancias geradas (Lima et al., 2025; Chen et al., 2025; Motwani et al., 2026; Gao et al., 2026; Wu et al., 2025). EALG, LLM-EBG e EvoReal ampliam esse argumento ao tratar gera\c{c}\~ao de inst\^ancias ou benchmarks de otimiza\c{c}\~ao como parte do pr\'oprio processo de avalia\c{c}\~ao de solucionadores, e n\~ao apenas como aumento textual de bases de treinamento (Duan et al., 2025; Ono et al., 2026; Zhu et al., 2026). Portanto, para este trabalho, dados sint\'eticos assistidos por LLM s\'o s\~ao defens\'aveis como parte de um \textbf{pipeline de s\'intese controlada}: representa\c{c}\~ao formal ou semente operacional, gera\c{c}\~ao/augmenta\c{c}\~ao limitada, checagem estrutural, execu\c{c}\~ao no simulador e rejei\c{c}\~ao de inst\^ancias inconsistentes.
 
-\chapter{Metodologia}
+\chapter{Metodologia}\label{ch:metodologia}
 O arcabou\c{c}o metodol\'ogico adotado \'e o Design Science Research, por ser o mais coerente com a constru\c{c}\~ao e avalia\c{c}\~ao de um artefato computacional voltado a um problema log\'istico complexo (Hevner et al., 2004; Peffers et al., 2007). Para evitar ambiguidade, o artefato principal deste trabalho ser\'a o \textbf{motor de decis\~ao orientado a eventos}; o \textbf{simulador de eventos discretos} funcionar\'a como ambiente de demonstra\c{c}\~ao e avalia\c{c}\~ao do artefato, e n\~ao como contribui\c{c}\~ao central isolada. O processo de pesquisa ser\'a estruturado nas seguintes fases:
 \begin{enumerate}[leftmargin=1.27cm,itemsep=0pt,topsep=0pt,parsep=0pt,partopsep=0pt]
   \item Identifica\c{c}\~ao e delimita\c{c}\~ao do problema a partir do contexto operacional estudado;
@@ -410,11 +411,11 @@ Eventos disruptivos & chuva, falha, prioridade e bloqueio & recorte operacional 
 \midrule
 Chegadas por bloco do dia & $\lambda = 6$ caminh\~oes/h (06h--09h), $3$ (09h--11h), $7$ (11h--14h), $2$ (14h--18h) & fixa dois picos di\'arios no processo n\~ao homog\^eneo \\
 \addlinespace
-Entrada no p\'atio (gate-in) & $\operatorname{Tri}(2,4,7)$ min & tempo sint\'etico de entrada no p\'atio \\
+Entrada no p\'atio (gate-in) & $\operatorname{Tri}(2,4,7)$ min & hip\'otese sint\'etica de calibra\c{c}\~ao \\
 \addlinespace
-Pesagem inicial/final (weigh-in/weigh-out) & $\operatorname{Tri}(3,5,8)$ min & tempo sint\'etico de pesagem \\
+Pesagem inicial/final (weigh-in/weigh-out) & $\operatorname{Tri}(3,5,8)$ min & hip\'otese sint\'etica; compat\'ivel com DES cl\'assicos de elevadores (Berruto \& Maier, 2001; Bouland, 1967) \\
 \addlinespace
-Descarga (unload) & $\operatorname{Tri}(12,20,35)$ min & tempo sint\'etico de descarga em moega \\
+Descarga na moega (amostragem + despejo + ticket) & $\operatorname{Tri}(12,20,35)$ min & hip\'otese sint\'etica; representa ciclo completo na moega --- n\~ao apenas o despejo isolado; a ser verificado na valida\c{c}\~ao de face \\
 \addlinespace
 Prioridade mandat\'oria & 15\% dos caminh\~oes & ativa fila priorit\'aria antes de FIFO \\
 \addlinespace
@@ -430,6 +431,8 @@ Sementes & 101 a 130 & garante pareamento entre pol\'iticas \\
 \caption{Hip\'oteses sint\'eticas congeladas para o simulador.}
 \end{table}
 
+Uma observa\c{c}\~ao sobre o tempo de descarga \'e necess\'aria. Estudos cl\'assicos de elevadores americanos reportam o tempo de \textbf{despejo isolado} na cava da ordem de 4 a 10 minutos (Berruto \& Maier, 2001; Bouland, 1967). O valor mais alto --- $\operatorname{Tri}(12,20,35)$ min --- n\~ao contradiz esse dado, pois no modelo proposto a etapa de descarga representa o \textbf{ciclo completo na moega}: (i)~amostragem de qualidade do gr\~ao pelo colaborador do p\'atio; (ii)~posicionamento e despejo do caminh\~ao; e (iii)~gera\c{c}\~ao do ticket documental. No contexto de p\'atios agroindustriais brasileiros, essas tr\^es sub-etapas ocorrem sequencialmente no mesmo recurso f\'isico, tornando o tempo total substancialmente maior que o despejo isolado. Os par\^ametros ser\~ao explicitamente apresentados ao avaliador de dom\'inio durante a valida\c{c}\~ao de face, que ocorre antes do congelamento do protocolo principal.
+
 \begin{table}[H]
 \centering
 \small
@@ -442,7 +445,7 @@ Sementes & 101 a 130 & garante pareamento entre pol\'iticas \\
 \midrule
 Chegadas por bloco & 2 a 7 caminh\~oes/h & hip\'otese sint\'etica + literatura TAS & preservar dois picos di\'arios e evitar filas imposs\'iveis j\'a no nominal \\
 \addlinespace
-Processamento por etapa & triangulares por opera\c{c}\~ao & literatura de gr\~aos + recorte operacional & tempos m\'edios devem manter ordem entrada $<$ pesagem $<$ descarga \\
+Processamento por etapa & triangulares por opera\c{c}\~ao & gate-in e pesagem: compatíveis com DES de elevadores (Berruto \& Maier, 2001; Bouland, 1967); descarga: hip\'otese sint\'etica --- representa ciclo completo na moega (amostragem + despejo + ticket), n\~ao apenas o despejo isolado & tempos m\'edios devem manter ordem entrada $<$ pesagem $\ll$ descarga; par\^ametros de descarga ser\~ao verificados na valida\c{c}\~ao de face \\
 \addlinespace
 Falhas, chuva e bloqueios & 3\% a 10\% por fam\'ilia & premissas de recorte operacional proposto & eventos devem produzir estresse sem colapsar todos os cen\'arios \\
 \addlinespace
@@ -752,6 +755,106 @@ A dimens\~ao de governan\c{c}a n\~ao ser\'a reduzida apenas \`a presen\c{c}a de 
 Para elevar a reprodutibilidade da pesquisa, os artefatos computacionais e experimentais ser\~ao organizados em um reposit\'orio, respeitando eventuais restri\c{c}\~oes institucionais ou dados sens\'iveis. O reposit\'orio dever\'a conter, no m\'inimo: (i) c\'odigo-fonte do simulador e do motor de despacho proposto; (ii) arquivos de configura\c{c}\~ao dos cen\'arios sint\'eticos; (iii) lista congelada de sementes aleat\'orias usadas nas execu\c{c}\~oes; (iv) defini\c{c}\~ao das pol\'iticas comparadas e dos pesos usados ap\'os o piloto; (v) registros sint\'eticos em log de decis\~ao, bloqueio e interven\c{c}\~ao humana; (vi) sa\'idas agregadas por cen\'ario, semente e pol\'itica; e (vii) scripts estat\'isticos para reproduzir tabelas, gr\'aficos, testes de Wilcoxon, ajuste de Holm e tamanho de efeito de Cliff.
 
 A estrutura inicial planejada para o reposit\'orio ser\'a organizada por pastas funcionais: \texttt{src/} para o motor e simulador; \texttt{scenarios/} para arquivos de cen\'ario; \texttt{seeds/} para listas de sementes; \texttt{runs/} para sa\'idas brutas sint\'eticas; \texttt{logs/} para registros audit\'aveis exemplares; \texttt{analysis/} para scripts estat\'isticos; e \texttt{docs/} para o protocolo de execu\c{c}\~ao e dicion\'ario de dados. O reposit\'orio tamb\'em dever\'a incluir um \texttt{README} com comandos de reprodu\c{c}\~ao, vers\~ao das depend\^encias, descri\c{c}\~ao das m\'etricas e procedimento para reexecutar o experimento principal. Quando algum artefato n\~ao puder ser aberto integralmente, o trabalho dever\'a disponibilizar uma vers\~ao sint\'etica ou anonimizada com a mesma estrutura de campos, explicitando a diferen\c{c}a em rela\c{c}\~ao ao artefato completo.
+
+\chapter{Resultados Parciais}
+
+At\'e o momento, os resultados parciais do projeto concentram-se na consolida\c{c}\~ao do problema, na especifica\c{c}\~ao do artefato e na prepara\c{c}\~ao do protocolo experimental. Foram definidos o recorte operacional, as restri\c{c}\~oes r\'igidas do motor de despacho, as pol\'iticas de refer\^encia, os par\^ametros sint\'eticos iniciais do simulador, as m\'etricas de avalia\c{c}\~ao e o protocolo estat\'istico de compara\c{c}\~ao. Esses elementos correspondem aos Cap\'itulos~4, 5 e 6 deste documento. N\~ao se reivindica resultado conclusivo de desempenho em campo, pois a compara\c{c}\~ao principal ser\'a realizada no TCC~II. Os resultados parciais apresentados nesta etapa correspondem \`a maturidade da modelagem, da revis\~ao de literatura, do desenho experimental e dos artefatos de reprodutibilidade.
+
+\section{Dados, tratamento e preparação experimental}
+
+Os dados principais s\~ao sint\'eticos, parametrizados e controlados, pois o TCC n\~ao depende de base real de cooperativa nesta etapa. A escolha por dados sint\'eticos \'e intencional: permite controle total sobre o protocolo de compara\c{c}\~ao, isola o efeito da pol\'itica de despacho e garante reprodutibilidade. Dados reais poder\~ao entrar como extens\~ao futura ou valida\c{c}\~ao de face.
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.20}
+\begin{tabularx}{\textwidth}{@{}P{0.24\textwidth}P{0.30\textwidth}Y@{}}
+\toprule
+\rowcolor{tablehead}
+\textbf{Item} & \textbf{Decis\~ao no projeto} & \textbf{Tratamento previsto} \\
+\midrule
+Tipo de dados & Cen\'arios sint\'eticos controlados & Gera\c{c}\~ao por par\^ametros fixos e sementes controladas \\
+\addlinespace
+Unidade experimental & Dia simulado por cen\'ario, pol\'itica e semente & Agrega\c{c}\~ao por dia antes da an\'alise estat\'istica \\
+\addlinespace
+Volume operacional & 60, 120 e 180 caminh\~oes/dia & Separa\c{c}\~ao por carga baixa, m\'edia e alta \\
+\addlinespace
+Recursos & 1 a 2 balan\c{c}as e 1 a 3 moegas & Varia\c{c}\~ao de gargalo operacional \\
+\addlinespace
+Chegadas & Dois picos di\'arios; tempos triangulares para entrada, pesagem e descarga & Distribui\c{c}\~oes parametrizadas com base na literatura de p\'atios \\
+\addlinespace
+Eventos disruptivos & Chuva (10\%), falha de recurso (5\%/turno), bloqueio documental (3\%), prioridade mandat\'oria (15\%) & Reavalia\c{c}\~ao do despacho por evento; registros de bloqueio no log \\
+\addlinespace
+Sementes & Conjunto fixo 101--130 por cen\'ario & Compara\c{c}\~ao pareada e reprodu\c{c}\~ao independente \\
+\addlinespace
+Tratamento estat\'istico & Compara\c{c}\~oes pareadas entre pol\'iticas & Mediana, IQR, teste de Wilcoxon, tamanho de efeito Cliff~$\delta$ e corre\c{c}\~ao Holm \\
+\addlinespace
+Auditoria & Logs de decis\~ao por evento & Verifica\c{c}\~ao de campos obrigat\'orios e rastreabilidade de interven\c{c}\~oes \\
+\bottomrule
+\end{tabularx}
+\caption{Dados, tratamento e prepara\c{c}\~ao experimental do protocolo de avalia\c{c}\~ao.}
+\end{table}
+
+\section{Materiais prévios de validação do problema}
+
+O desenvolvimento anterior do PequiFlux produziu materiais que ser\~ao utilizados exclusivamente como evid\^encia preliminar de maturidade do problema e do artefato, sem substituir a avalia\c{c}\~ao experimental do TCC.
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.20}
+\begin{tabularx}{\textwidth}{@{}P{0.30\textwidth}Y@{}}
+\toprule
+\rowcolor{tablehead}
+\textbf{Material da startup} & \textbf{Uso no TCC} \\
+\midrule
+Pitch e descri\c{c}\~ao do MVP & Evid\^encia de formula\c{c}\~ao inicial do problema e maturidade da concep\c{c}\~ao \\
+\addlinespace
+Fluxo operacional desenhado & Apoio \`a modelagem do processo e valida\c{c}\~ao de face das premissas operacionais \\
+\addlinespace
+Prot\'otipo e prints da interface & Demonstra\c{c}\~ao preliminar da solu\c{c}\~ao; n\~ao \'e resultado experimental \\
+\addlinespace
+Feedback explorat\'orio recebido & Evid\^encia qualitativa de ader\^encia ao contexto real, com fonte explicitada \\
+\addlinespace
+Estimativas de gargalo e fila & Motiva\c{c}\~ao pr\'atica para os par\^ametros sint\'eticos, se a origem for declarada \\
+\bottomrule
+\end{tabularx}
+\caption{Materiais pr\'evios da startup e uso permitido no TCC.}
+\end{table}
+
+\noindent O material da startup ser\'a usado apenas como evid\^encia preliminar de concep\c{c}\~ao e maturidade do problema, sem substituir a avalia\c{c}\~ao experimental do TCC.
+
+\chapter{Cronograma}
+
+O cronograma organiza a execu\c{c}\~ao planejada da pesquisa. As datas podem ser ajustadas conforme orienta\c{c}\~ao, disponibilidade de valida\c{c}\~ao e resultados do estudo piloto, mas a ordem das atividades deve ser preservada.
+
+\begin{table}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}P{0.34\textwidth}*{8}{C{0.052\textwidth}}@{}}
+\toprule
+\rowcolor{tablehead}
+\textbf{Atividade} & \textbf{Jun.} & \textbf{Jul.} & \textbf{Ago.} & \textbf{Set.} & \textbf{Out.} & \textbf{Nov.} & \textbf{Dez.} & \textbf{Jan.} \\
+\midrule
+Consolida\c{c}\~ao do plano de pesquisa & \timeline &  &  &  &  &  &  &  \\
+Revis\~ao bibliogr\'afica e fichamentos & \timeline & \timeline & \timeline &  &  &  &  &  \\
+Modelagem do problema e restri\c{c}\~oes & \timeline & \timeline &  &  &  &  &  &  \\
+Defini\c{c}\~ao do protocolo experimental &  & \timeline & \timeline &  &  &  &  &  \\
+Implementa\c{c}\~ao do prot\'otipo e simulador &  &  & \timeline & \timeline & \timeline &  &  &  \\
+Execu\c{c}\~ao piloto e ajustes de cen\'arios &  &  &  & \timeline & \timeline &  &  &  \\
+Execu\c{c}\~ao principal dos experimentos &  &  &  &  & \timeline & \timeline &  &  \\
+An\'alise estat\'istica e auditoria dos logs &  &  &  &  &  & \timeline & \timeline &  \\
+Reda\c{c}\~ao e consolida\c{c}\~ao dos resultados &  &  & \timeline & \timeline & \timeline & \timeline & \timeline & \timeline \\
+Revis\~ao com orientadora e ajustes finais &  &  &  &  &  & \timeline & \timeline & \timeline \\
+Prepara\c{c}\~ao da apresenta\c{c}\~ao e defesa &  &  &  &  &  &  & \timeline & \timeline \\
+\bottomrule
+\end{tabular}
+\caption{Cronograma macro de execu\c{c}\~ao da pesquisa (TCC~I e TCC~II).}
+\end{table}
 
 \chapter{Ameaças à validade}
 As principais amea\c{c}as \`a validade deste projeto aparecem em quatro frentes. A validade de constru\c{c}\~ao pode ser afetada se `justificativa leg\'ivel` medir apenas cobertura de registro em log e n\~ao utilidade explicativa real; por isso, o trabalho prev\^e rubrica fechada e inspe\c{c}\~ao humana sobre uma amostra de decis\~oes. A validade interna pode ser afetada por calibra\c{c}\~ao excessivamente favor\'avel ao artefato; para mitigar isso, o texto separa fontes de requisito, pol\'iticas de refer\^encia e par\^ametros do simulador, al\'em de exigir compara\c{c}\~oes pareadas sob sementes controladas, margem de throughput e teste multivariado de estresse dos principais par\^ametros.
