@@ -131,6 +131,37 @@
 
 \end{titlingpage}
 
+\begin{resumo}
+  P\'atios de recebimento de gr\~aos enfrentam congestionamentos durante o pico de safra
+  decorrentes da disputa por recursos compartilhados --- balan\c{c}as, moegas e \'areas de
+  espera. Pol\'iticas est\'aticas de fila amplificam esses atrasos ao n\~ao reagir a eventos
+  disruptivos como chuva, falhas de equipamento, bloqueios documentais e mudan\c{c}as de
+  prioridade contratual. Este trabalho prop\~oe e especifica um motor de apoio \`a decis\~ao
+  para a orquestra\c{c}\~ao din\^amica de caminh\~oes em p\'atios agroindustriais, formulado
+  como problema de \textbf{despacho online sob restri\c{c}\~oes} com reavalia\c{c}\~ao
+  cont\'inua do estado operacional. O motor combina filtro de factibilidade por
+  restri\c{c}\~oes r\'igidas, ranqueamento lexicogr\'afico local com horizonte curto e
+  registro audit\'avel de cada decis\~ao, preservando a supervis\~ao humana. A metodologia
+  adotada \'e o Design Science Research, com desenvolvimento e avalia\c{c}\~ao de artefato
+  computacional em cen\'arios sint\'eticos controlados via simula\c{c}\~ao de eventos
+  discretos. A compara\c{c}\~ao ser\'a pareada contra quatro pol\'iticas de refer\^encia ---
+  FIFO estrito, FIFO \textit{flow-faithful}, prioridade com factibilidade local e despacho
+  por escore fixo --- sob configura\c{c}\~oes de carga baixa, m\'edia e alta congest\~ao,
+  com eventos disruptivos. A hip\'otese central (H1) prev\^e redu\c{c}\~ao de pelo menos
+  15\% no p95 da espera acumulada em fila nas fam\'ilias de m\'edia e alta congest\~ao, sem
+  perda de throughput mediano acima de 2 caminh\~oes/dia. Dois crit\'erios de aceita\c{c}\~ao
+  de engenharia complementam H1: taxa nula de viola\c{c}\~ao de restri\c{c}\~oes r\'igidas
+  (A1) e rastreabilidade integral das decis\~oes e interven\c{c}\~oes humanas (A2). Esta
+  etapa (TCC~I) entrega a modelagem formal, o protocolo experimental completo, os artefatos
+  de reprodutibilidade e os comparadores congelados; a execu\c{c}\~ao dos experimentos
+  comparativos \'e prevista para o TCC~II.
+
+  \vspace{\onelineskip}
+  \noindent
+  \textbf{Palavras-chave}: despacho online. p\'atios agroindustriais. simula\c{c}\~ao de
+  eventos discretos. sistemas de apoio \`a decis\~ao. \textit{scheduling} sob incerteza.
+\end{resumo}
+
 \pdfbookmark[0]{\contentsname}{toc}
 \tableofcontents*
 \cleardoublepage
@@ -550,7 +581,7 @@ Al\'em dos artefatos computacionais descritos, este projeto gerou uma produ\c{c}
 
 Os resultados apresentados no artigo s\~ao considerados complementares e n\~ao substituem a avalia\c{c}\~ao principal deste TCC. Quando utilizados, aparecem apenas como motiva\c{c}\~ao, infraestrutura experimental ou evid\^encia preliminar, preservando a distin\c{c}\~ao entre produ\c{c}\~ao cient\'ifica correlata e os resultados que ser\~ao efetivamente avaliados no escopo deste trabalho.
 
-\chapter{Modelagem do problema}
+\chapter{Modelagem do problema}\label{ch:modelagem}
 O problema n\~ao ser\'a tratado como um escalonamento global do dia inteiro. A sem\^antica escolhida \'e mais restrita e coerente com o artefato proposto: \textbf{despacho online por recurso liberado com horizonte curto}. Sejam $T$ o conjunto de caminh\~oes, $R$ o conjunto de recursos operacionais, $E$ o conjunto de eventos disruptivos, $K$ o conjunto de instantes de decis\~ao e $O = \{1,2,3,4\}$ o conjunto ordenado de opera\c{c}\~oes da abstra\c{c}\~ao experimental do p\'atio, em que: 1 = entrada no p\'atio, 2 = pesagem inicial, 3 = descarga e 4 = pesagem final. Cada recurso $r \in R$ pertence a exatamente uma etapa $o(r) \in O$, e cada caminh\~ao $i \in T$ ter\'a atributos como hor\'ario de chegada, tipo de carga, prioridade, situa\c{c}\~ao documental e conjunto de recursos eleg\'iveis.
 
 Essa abstra\c{c}\~ao em quatro etapas n\~ao pretende representar toda a riqueza do processo real, mas delimitar um n\'ucleo m\'inimo suficientemente expressivo: entrada no p\'atio, pesagem inicial, descarga e pesagem final. A \'area de espera ser\'a tratada como buffer operacional entre etapas, permitindo modelar filas intermedi\'arias e propaga\c{c}\~ao de bloqueios sem exigir uma simula\c{c}\~ao microsc\'opica de toda a instala\c{c}\~ao.
@@ -679,7 +710,7 @@ Saida:
 \label{alg:motor-despacho}
 \end{figure}
 
-\chapter{Desenvolvimento do artefato}
+\chapter{Desenvolvimento do artefato}\label{ch:artefato}
 O artefato proposto \'e um motor de apoio \`a decis\~ao composto por cinco blocos l\'ogicos: captura do estado operacional, aplica\c{c}\~ao de regras r\'igidas, gera\c{c}\~ao de alternativas fact\'iveis, ranqueamento/reotimiza\c{c}\~ao e emiss\~ao de recomenda\c{c}\~ao audit\'avel ao operador. Essa arquitetura busca garantir que o despacho n\~ao produza sugest\~oes incompat\'iveis com a realidade operacional, adotando comportamento de falha segura: quando n\~ao houver alternativa segura, o sistema deve explicitar a restri\c{c}\~ao bloqueadora em vez de for\c{c}ar uma recomenda\c{c}\~ao.
 
 \begin{figure}[H]
@@ -906,10 +937,58 @@ Quando houver uso de LLM para apoiar a produ\c{c}\~ao de dados sint\'eticos, sur
 
 Por fim, h\'a amea\c{c}a de simplifica\c{c}\~ao do processo real ao adotar uma abstra\c{c}\~ao em quatro etapas; essa escolha \'e deliberada para manter o problema execut\'avel no escopo da pesquisa, e sua amplia\c{c}\~ao fica reservada para evolu\c{c}\~oes futuras.
 
-\chapter{Conclusão}
-Esta pesquisa delimita um recorte tecnicamente defens\'avel: transformar a gest\~ao de fila de caminh\~oes em p\'atios agroindustriais em um problema de despacho online sob restri\c{c}\~oes, propor um artefato de apoio \`a decis\~ao e definir um protocolo de avalia\c{c}\~ao em ambiente controlado. A revis\~ao de literatura indica que o problema tem ader\^encia direta \`a agenda de truck appointment systems, scheduling sob incerteza e replanejamento em tempo real, mas tamb\'em evidencia a necessidade de adaptar esse conhecimento ao contexto agroindustrial, no qual auditabilidade, comportamento de falha segura e supervis\~ao humana s\~ao requisitos centrais.
+\chapter{Conclusão}\label{ch:conclusao}
+Esta pesquisa transforma uma decis\~ao operacional frequentemente t\'acita --- qual caminh\~ao
+atender a seguir no p\'atio de recebimento --- em objeto computacional expl\'icito, model\'avel
+e avali\'avel. A formula\c{c}\~ao como despacho online sob restri\c{c}\~oes, com reavalia\c{c}\~ao
+cont\'inua do estado operacional, distingue o recorte de abordagens puramente preditivas e situa
+o motor como artefato de apoio \`a decis\~ao, e n\~ao como substituto da supervis\~ao humana.
+A revis\~ao de literatura confirma a ader\^encia do problema \`a agenda de truck appointment
+systems, scheduling sob incerteza e replanejamento em tempo real, ao mesmo tempo que evidencia
+a necessidade de adaptar esse conhecimento ao contexto agroindustrial --- onde auditabilidade,
+comportamento de falha segura e controle humano s\~ao requisitos centrais, n\~ao apenas
+caracter\'isticas opcionais.
 
-O trabalho estabelece duas bases complementares: como contribui\c{c}\~ao cient\'ifica, uma modelagem comparativa com protocolo de avalia\c{c}\~ao; como contribui\c{c}\~ao de engenharia, uma especifica\c{c}\~ao inicial do motor proposto com registros em log, comportamento de falha segura e recomenda\c{c}\~oes audit\'aveis. A eventual produ\c{c}\~ao de dados sint\'eticos assistida por LLM fica subordinada a esse mesmo princ\'ipio: ampliar cobertura experimental sem substituir valida\c{c}\~ao formal, execu\c{c}\~ao computacional e rastreabilidade. As limita\c{c}\~oes de validade externa permanecem tratadas na se\c{c}\~ao pr\'opria, sem impedir que a pesquisa estabele\c{c}a uma base reprodut\'ivel para prot\'otipos laboratoriais mais completos.
+O TCC~I entregou tr\^es bases necess\'arias para a etapa experimental. A primeira \'e a
+modelagem formal do problema (Cap\'itulo~\ref{ch:modelagem}): defini\c{c}\~ao do espa\c{c}o
+de estados $S_k$, do conjunto candidato $C_{k,r}$, do ranqueamento lexicogr\'afico $h_{k,r}(i)$
+e do protocolo determin\'istico de execu\c{c}\~ao, com justificativa expl\'icita para cada
+escolha de projeto. A segunda \'e o desenho experimental completo (Cap\'itulos~\ref{ch:metodologia},
+\ref{ch:artefato} e \ref{ch:avaliacao}): quatro comparadores com regras congeladas, quatro
+fam\'ilias de cen\'arios, m\'etricas com seus pap\'eis confirmat\'orios ou explorat\'orios,
+limiares quantitativos de H1, A1 e A2, e protocolo estat\'istico de compara\c{c}\~ao pareada
+com corre\c{c}\~ao de Holm e tamanho de efeito de Cliff. A terceira \'e o conjunto de artefatos
+de reprodutibilidade (Se\c{c}\~ao~\ref{sec:artefatos-apoio}): base sint\'etica D-FJSP com 36
+inst\^ancias estruturadas, an\'alise de dificuldade computacional com Gurobi, validadores
+determin\'isticos e checksums congelados que permitem auditoria independente.
+
+A hip\'otese central H1 --- de que o motor reduz o p95 da espera acumulada em fila nas
+fam\'ilias de m\'edia e alta congest\~ao sem comprometer o throughput --- ser\'a verificada
+no TCC~II pelo protocolo aqui estabelecido. Os crit\'erios de engenharia A1 (taxa nula de
+viola\c{c}\~ao de restri\c{c}\~oes r\'igidas) e A2 (rastreabilidade integral das decis\~oes
+e interven\c{c}\~oes humanas) complementam H1 sem competir com ele: distinguem desempenho
+de pol\'itica e qualidade de artefato, e sua verifica\c{c}\~ao bin\'aria \'e independente
+da avalia\c{c}\~ao estat\'istica. O uso eventual de LLM para s\'intese de cen\'arios fica
+subordinado ao mesmo princ\'ipio: ampliar cobertura experimental sem substituir valida\c{c}\~ao
+formal, execu\c{c}\~ao computacional e registro audit\'avel.
+
+Tr\^es limita\c{c}\~oes permanecem expl\'icitamente reconhecidas. A validade externa \'e
+restrita: a avalia\c{c}\~ao ser\'a conduzida em cen\'arios sint\'eticos, e a generaliza\c{c}\~ao
+para opera\c{c}\~oes reais exige valida\c{c}\~ao de campo adicional, fora do escopo desta
+gradua\c{c}\~ao. A calibra\c{c}\~ao dos par\^ametros depende de premissas do recorte e
+hip\'oteses de engenharia documentadas, sem base emp\'irica de cooperativa. E a abstra\c{c}\~ao
+em quatro etapas simplifica o processo real de modo intencional, para manter o problema
+execut\'avel no escopo da gradua\c{c}\~ao; amplia\c{c}\~oes a fluxos mais ricos est\~ao
+reservadas a evolu\c{c}\~oes futuras. O protocolo de valida\c{c}\~ao de face e a checagem
+de plausibilidade param\'etrica atenuam parcialmente essas amea\c{c}as, sem elimin\'a-las.
+
+O trabalho se insere em uma agenda mais ampla: tornar sistemas de apoio \`a decis\~ao em
+log\'istica agroindustrial mais audit\'aveis, mais responsivos a eventos disruptivos e mais
+compat\'iveis com a supervis\~ao humana sobre cada recomenda\c{c}\~ao. A aceita\c{c}\~ao do
+artigo correlato no ICPR-A~2026 refor\c{c}a a ader\^encia do recorte \`a comunidade de
+pesquisa em produ\c{c}\~ao e log\'istica. O motor proposto n\~ao \'e uma solu\c{c}\~ao
+definitiva, mas uma base reprodut\'ivel sobre a qual variantes mais sofisticadas, valida\c{c}\~oes
+em campo e extens\~oes para outros dom\'inios agrolog\'isticos poder\~ao ser constru\'idas.
 
 \begin{apendicesenv}
 
