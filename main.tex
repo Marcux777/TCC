@@ -348,45 +348,11 @@ Com essa organiza\c{c}\~ao, a pesquisa n\~ao pressup\~oe equival\^encia plena en
 
 \section{S\'intese controlada de inst\^ancias por LLM}\label{sec:sintese-llm}
 
-\noindent\textbf{Nota sobre literatura complementar.} Esta se\c{c}\~ao cita um artigo
-publicado em peri\'odico de alto impacto --- \citeonline{Huang2025}, publicado em
-\textit{Operations Research} (v.\,73, n.\,6, pp.\,2986--3009, 2025, DOI
-10.1287/opre.2024.1233) --- e tr\^es preprints (arXiv) que documentam t\'ecnicas desta
-frente ainda sem equivalente publicado em peri\'odicos revisados por pares. Os preprints
-n\~ao integram o corpus sistem\'atico da Se\c{c}\~ao~\ref{sec:protocolo-revisao} nem foram
-submetidos \`a avalia\c{c}\~ao de qualidade daquele corpus. Citam-se exclusivamente para
-contextualizar os salvaguardas t\'ecnicos que tornam a s\'intese assistida por LLM
-defens\'avel; a inexist\^encia de equivalentes publicados \'e esperada em \'areas com
-ciclos de publica\c{c}\~ao inferiores aos de peri\'odicos tradicionais.
+\noindent\textbf{Nota sobre literatura complementar.} As refer\^encias citadas nesta se\c{c}\~ao s\~ao preprints (arXiv, OpenReview) que documentam uma frente metodol\'ogica recente ainda em consolida\c{c}\~ao. Elas n\~ao integram o corpus sistem\'atico da revis\~ao bibliogr\'afica (Se\c{c}\~ao~\ref{sec:protocolo-revisao}) e n\~ao foram submetidas aos crit\'erios de inclus\~ao e avalia\c{c}\~ao de qualidade daquele corpus. Seu papel aqui \'e exclusivamente contextualizar a pr\'atica de s\'intese controlada de inst\^ancias assistida por LLM.
 
-A produ\c{c}\~ao de cen\'arios sint\'eticos tamb\'em encontra apoio em uma literatura
-recente sobre modelos de linguagem aplicados \`a modelagem de otimiza\c{c}\~ao. O ponto
-metodol\'ogico central dessa literatura n\~ao \'e usar o LLM como gerador livre de
-enunciados, mas acopl\'a-lo a representa\c{c}\~oes estruturadas, formula\c{c}\~oes
-matem\'aticas, execu\c{c}\~ao por solver e filtros autom\'aticos de rejei\c{c}\~ao. ORLM
-prop\~oe uma estrutura de s\'intese semiautomatizada de dados para treinar modelos em
-tarefas de modelagem de otimiza\c{c}\~ao; ReSocratic gera demonstra\c{c}\~oes estruturadas
-com formula\c{c}\~oes matem\'aticas e depois as traduz para perguntas em linguagem natural;
-e OptMATH parte de dados-semente com formula\c{c}\~oes matem\'aticas, gera dados de
-problema com complexidade controlada, aplica retrotradu\c{c}\~ao e usa rejei\c{c}\~ao para
-preservar correspond\^encia entre enunciado e formula\c{c}\~ao \cite{Huang2025,Yang2025,Lu2025}.
+A produ\c{c}\~ao de cen\'arios sint\'eticos tamb\'em encontra apoio em uma literatura recente sobre modelos de linguagem aplicados \`a modelagem de otimiza\c{c}\~ao. O ponto metodol\'ogico central dessa literatura n\~ao \'e usar o LLM como gerador livre de enunciados, mas acopl\'a-lo a representa\c{c}\~oes estruturadas, formula\c{c}\~oes matem\'aticas, execu\c{c}\~ao por solver e filtros autom\'aticos de rejei\c{c}\~ao. ORLM prop\~oe uma estrutura de s\'intese semiautomatizada de dados para treinar modelos em tarefas de modelagem de otimiza\c{c}\~ao; ReSocratic gera demonstra\c{c}\~oes estruturadas com formula\c{c}\~oes matem\'aticas e depois as traduz para perguntas em linguagem natural; e OptMATH parte de dados-semente com formula\c{c}\~oes matem\'aticas, gera dados de problema com complexidade controlada, aplica retrotradu\c{c}\~ao e usa rejei\c{c}\~ao para preservar correspond\^encia entre enunciado e formula\c{c}\~ao \cite{Huang2025,Yang2025,Lu2025}.
 
-Esse padr\~ao \'e especialmente relevante para este TCC porque problemas de otimiza\c{c}\~ao
-s\~ao semanticamente fr\'ageis: pequenas altera\c{c}\~oes no enunciado podem mudar
-vari\'aveis, restri\c{c}\~oes ou objetivo. Estudos recentes corroboram que a confiabilidade
-depende de valida\c{c}\~ao formal --- solu\c{c}\~oes \'otimas conhecidas, execu\c{c}\~ao de
-c\'odigo de solver, valida\c{c}\~ao estruturada e certifica\c{c}\~ao das inst\^ancias
-geradas \cite{Lima2025,Wu2025}. Portanto, para este trabalho, dados sint\'eticos assistidos
-por LLM s\'o s\~ao defens\'aveis como parte de um \textbf{pipeline de s\'intese controlada}:
-representa\c{c}\~ao formal ou semente operacional, gera\c{c}\~ao/augmenta\c{c}\~ao limitada,
-checagem estrutural, execu\c{c}\~ao no simulador e rejei\c{c}\~ao de inst\^ancias
-inconsistentes. Neste trabalho, esse uso \'e \textbf{explorat\'orio e complementar}: a
-gera\c{c}\~ao param\'etrica principal (Tabelas~4--6) n\~ao depende de LLM, e os resultados
-da compara\c{c}\~ao entre pol\'iticas (H1) podem ser obtidos integralmente sem essa etapa.
-O LLM, se usado, servir\'a apenas para produzir varia\c{c}\~oes textuais de cen\'arios
-destinadas \`a valida\c{c}\~ao de face com especialistas e para gerar logs de justificativa
-exemplares auditados --- n\~ao para determinar par\^ametros num\'ericos nem para validar
-resultados.
+Esse padr\~ao \'e especialmente relevante para este TCC porque problemas de otimiza\c{c}\~ao s\~ao semanticamente fr\'ageis: pequenas altera\c{c}\~oes no enunciado podem mudar vari\'aveis, restri\c{c}\~oes ou objetivo. Trabalhos como OptiTrust, SIRL, AutoOR, OR-LLM-Bench e Step-Opt refor\c{c}am que a confiabilidade depende de valida\c{c}\~ao formal, como solu\c{c}\~oes \'otimas conhecidas, execu\c{c}\~ao de c\'odigo de solver, valida\c{c}\~ao estruturada e certifica\c{c}\~ao das inst\^ancias geradas \cite{Lima2025,Chen2025,Motwani2026,Gao2026,Wu2025}. EALG, LLM-EBG e EvoReal ampliam esse argumento ao tratar gera\c{c}\~ao de inst\^ancias ou benchmarks de otimiza\c{c}\~ao como parte do pr\'oprio processo de avalia\c{c}\~ao de solucionadores, e n\~ao apenas como aumento textual de bases de treinamento \cite{Duan2025,Ono2026,Zhu2026}. Portanto, para este trabalho, dados sint\'eticos assistidos por LLM s\'o s\~ao defens\'aveis como parte de um \textbf{pipeline de s\'intese controlada}: representa\c{c}\~ao formal ou semente operacional, gera\c{c}\~ao/augmenta\c{c}\~ao limitada, checagem estrutural, execu\c{c}\~ao no simulador e rejei\c{c}\~ao de inst\^ancias inconsistentes. Neste trabalho, esse uso \'e \textbf{explorat\'orio e complementar}: a gera\c{c}\~ao param\'etrica principal (Tabelas~4--6) n\~ao depende de LLM, e os resultados da compara\c{c}\~ao entre pol\'iticas (H1) podem ser obtidos integralmente sem essa etapa. O LLM, se usado, servir\'a apenas para produzir varia\c{c}\~oes textuais de cen\'arios destinadas \`a valida\c{c}\~ao de face com especialistas e para gerar logs de justificativa exemplares auditados --- n\~ao para determinar par\^ametros num\'ericos nem para validar resultados.
 
 \chapter{Metodologia}\label{ch:metodologia}
 O arcabou\c{c}o metodol\'ogico adotado \'e o Design Science Research, por ser o mais coerente com a constru\c{c}\~ao e avalia\c{c}\~ao de um artefato computacional voltado a um problema log\'istico complexo \cite{Hevner2004,Peffers2007}. Para evitar ambiguidade, o artefato principal deste trabalho ser\'a o \textbf{motor de decis\~ao orientado a eventos}; o \textbf{simulador de eventos discretos} funcionar\'a como ambiente de demonstra\c{c}\~ao e avalia\c{c}\~ao do artefato, e n\~ao como contribui\c{c}\~ao central isolada. O processo de pesquisa ser\'a estruturado nas seguintes fases:
