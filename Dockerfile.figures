@@ -1,0 +1,9 @@
+FROM rocker/tidyverse:4.4.3
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ghostscript \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+
+CMD ["Rscript", "scripts/figura_poder_protocolo.R"]

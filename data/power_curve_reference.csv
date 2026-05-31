@@ -1,0 +1,7 @@
+stratum,effect_pct,power,point_type
+Média congestão,6.020507812499999,0.8018,MDE80
+Média congestão,5.0,0.5406,5pct
+Média congestão,15.0,1.0,H1
+Alta congestão,4.1748046875,0.8048,MDE80
+Alta congestão,5.0,0.985,5pct
+Alta congestão,15.0,1.0,H1
