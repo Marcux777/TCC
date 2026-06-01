@@ -66,8 +66,8 @@
 \local{Goi\^ania}
 \data{2026}
 \instituicao{Pontif\'icia Universidade Cat\'olica de Goi\'as\par Escola Polit\'ecnica e de Artes\par Gradua\c{c}\~ao em Ci\^encia da Computa\c{c}\~ao}
-\tipotrabalho{Trabalho de Conclus\~ao de Curso}
-\preambulo{Trabalho de Conclus\~ao de Curso apresentado ao curso de Ci\^encia da Computa\c{c}\~ao da Pontif\'icia Universidade Cat\'olica de Goi\'as, como requisito acad\^emico para a conclus\~ao da gradua\c{c}\~ao.}
+\tipotrabalho{Trabalho de Conclus\~ao de Curso I}
+\preambulo{Trabalho de Conclus\~ao de Curso I apresentado ao curso de Ci\^encia da Computa\c{c}\~ao da Pontif\'icia Universidade Cat\'olica de Goi\'as, como requisito acad\^emico parcial para a conclus\~ao da gradua\c{c}\~ao.}
 \orientador{Profa. Dra. Maria Jos\'e Dantas}
 
 \makeatletter
@@ -133,7 +133,7 @@
     \justifying
     \SingleSpacing
     \smallfontdoc
-    Trabalho de Conclus\~ao de Curso apresentado ao curso de Ci\^encia da Computa\c{c}\~ao da Pontif\'icia Universidade Cat\'olica de Goi\'as, como requisito acad\^emico para a conclus\~ao da gradua\c{c}\~ao.
+    Trabalho de Conclus\~ao de Curso I apresentado ao curso de Ci\^encia da Computa\c{c}\~ao da Pontif\'icia Universidade Cat\'olica de Goi\'as, como requisito acad\^emico parcial para a conclus\~ao da gradua\c{c}\~ao.
 
     \vspace{0.8cm}
     Orientadora: Profa. Dra. Maria Jos\'e Dantas
@@ -159,7 +159,7 @@
     \justifying
     \SingleSpacing
     \smallfontdoc
-    Trabalho de Conclus\~ao de Curso apresentado ao curso de Ci\^encia da Computa\c{c}\~ao da Pontif\'icia Universidade Cat\'olica de Goi\'as, como requisito acad\^emico para a conclus\~ao da gradua\c{c}\~ao.
+    Trabalho de Conclus\~ao de Curso I apresentado ao curso de Ci\^encia da Computa\c{c}\~ao da Pontif\'icia Universidade Cat\'olica de Goi\'as, como requisito acad\^emico parcial para a conclus\~ao da gradua\c{c}\~ao.
   \end{minipage}
 
   \vspace*{1.8cm}
@@ -303,7 +303,7 @@ Este trabalho est\'a organizado em sete cap\'itulos. O Cap\'itulo~2 apresenta o 
 \chapter{Referencial Teórico}\label{ch:referencial}
 A base te\'orica parte de uma premissa simples: o recebimento de gr\~aos n\~ao \'e apenas uma fila, mas uma decis\~ao recorrente sob recursos limitados, restri\c{c}\~oes duras e perturba\c{c}\~oes. A primeira literatura mobilizada \'e a de truck appointment systems e coordena\c{c}\~ao de p\'atios. Revis\~oes recentes mostram que a opera\c{c}\~ao envolve sequenciamento, janelas, compatibilidade carga--recurso e controle de congestionamento; uma fila cronol\'ogica simples n\~ao representa esse conjunto de decis\~oes \parencite{abdelmagidComprehensiveReviewTruck2022a, graciaTruckAppointmentScheduling2025a}. Modelos mais recentes incorporam disponibilidade de equipamento, capacidade e varia\c{c}\~ao entre picos matinais e vespertinos \parencite{xuOptimizationMulticonstraintTruck2021a, bouyahiaNovelTruckAppointment2025b}.
 
-A segunda frente explica por que o plano precisa mudar durante a opera\c{c}\~ao. Em scheduling sob incerteza, atrasos, falhas, mudan\c{c}as de prioridade e varia\c{c}\~oes de processamento tornam planos fixos rapidamente obsoletos \parencite{liProcessSchedulingUncertainty2008a}. Em cross-docking, armazenagem e agendamento em tempo real, abordagens preditivo-reativas, modelos multiagentes e heur\'isticas com controle de estabilidade oferecem uma base para reavaliar a fila quando o estado operacional muda \parencite{boysenCrossDockScheduling2010a, nasiriPredictivereactiveCrossdockRescheduling2022, wangFlexibleStorageYard2023, torbaliMultiagentbasedRealtimeTruck2023, fonsecaStabilityApproachCDC2025}. Para este TCC, essa frente justifica comparar regras fixas com pol\'iticas capazes de responder a chuva, bloqueio documental, indisponibilidade de moega e altera\c{c}\~ao de prioridade.
+A segunda frente explica por que o plano precisa mudar durante a opera\c{c}\~ao. Em scheduling sob incerteza, atrasos, falhas, mudan\c{c}as de prioridade e varia\c{c}\~oes de processamento tornam planos fixos rapidamente obsoletos \parencite{liProcessSchedulingUncertainty2008a}. Em cross-docking, armazenagem e agendamento em tempo real, abordagens preditivo-reativas, modelos multiagentes e heur\'isticas com controle de estabilidade oferecem uma base para reavaliar a fila quando o estado operacional muda \parencite{boysenCrossDockScheduling2010a, nasiriPredictivereactiveCrossdockRescheduling2022, wangFlexibleStorageYard2023, torbaliMultiagentbasedRealtimeTruck2023, fonsecaStabilityApproachCDC2025}. Para este estudo, essa frente justifica comparar regras fixas com pol\'iticas capazes de responder a chuva, bloqueio documental, indisponibilidade de moega e altera\c{c}\~ao de prioridade.
 
 A terceira frente \'e metodol\'ogica. O Design Science Research (DSR) \'e adequado porque o trabalho n\~ao apenas descreve uma opera\c{c}\~ao: ele especifica um artefato computacional e define como avali\'a-lo. \textcite{hevnerDesignScienceInformation2004a} tratam DSR como constru\c{c}\~ao e avalia\c{c}\~ao de artefatos relevantes para problemas organizacionais; \textcite{peffersDesignScienceResearch2007aa} detalham etapas de identifica\c{c}\~ao do problema, objetivos, desenvolvimento, demonstra\c{c}\~ao e avalia\c{c}\~ao. Esse enquadramento sustenta a passagem de uma decis\~ao operacional pouco formalizada para um motor com requisitos, regras, logs e crit\'erios de sucesso verific\'aveis. A tradi\c{c}\~ao de sistemas de apoio \`a decis\~ao orienta a sa\'ida esperada: recomenda\c{c}\~ao justific\'avel, audit\'avel e pass\'ivel de interven\c{c}\~ao pelo operador \parencite{vanderheydenDecisionSupportSystem1985a, mardanehDecisionSupportSystem2021a}.
 
@@ -379,7 +379,7 @@ O recorte temporal variou por fonte: Scopus e Web of Science foram filtradas ent
 \begin{tabularx}{\textwidth}{@{}P{0.34\textwidth}C{0.16\textwidth}Y@{}}
 \toprule
 \rowcolor{tablehead}
-\textbf{Etapa preservada} & \textbf{Quantidade} & \textbf{Interpreta\c{c}\~ao adotada neste TCC} \\
+\textbf{Etapa preservada} & \textbf{Quantidade} & \textbf{Interpreta\c{c}\~ao adotada nesta pesquisa} \\
 \midrule
 Registros recuperados em bases & 60 & ramo principal de busca em IEEE Xplore, Web of Science e Scopus \\
 \addlinespace
@@ -398,7 +398,7 @@ Exclu\'idos por qualidade & 3 & estudos com pontua\c{c}\~ao $\leq 7{,}5$ \\
 \textbf{Corpus sistem\'atico retido} & \textbf{34} & base usada para sustentar lacuna, frequ\^encias e compara\c{c}\~ao entre frentes \\
 \bottomrule
 \end{tabularx}
-\caption{Reconcilia\c{c}\~ao do fluxo de revis\~ao usado no TCC.}
+\caption{Reconcilia\c{c}\~ao do fluxo de revis\~ao usado nesta pesquisa.}
 \label{tab:fluxo-revisao-reconciliado}
 \end{table}
 
@@ -422,11 +422,11 @@ Resposta din\^amica ou n\~ao est\'atica & \texttt{Real-time/dynamic feature} dif
 \addlinespace
 Despacho online/event-driven com foco interno & interse\c{c}\~ao entre foco interno e \texttt{real-time online} ou \texttt{reactive event-driven} & 8 (23{,}5\%) & O subconjunto mais pr\'oximo do motor proposto \'e minorit\'ario. \\
 \addlinespace
-Espera como m\'etrica nesse subconjunto & linha anterior com \texttt{waiting time} em \texttt{Performance metrics reported} & 5 (14{,}7\%) & A m\'etrica central do TCC aparece, mas com cobertura estreita. \\
+Espera como m\'etrica nesse subconjunto & linha anterior com \texttt{waiting time} em \texttt{Performance metrics reported} & 5 (14{,}7\%) & A m\'etrica central do estudo aparece, mas com cobertura estreita. \\
 \addlinespace
 Indisponibilidade de recurso testada & \texttt{Events/disruptions tested} cont\'em \texttt{resource unavailability} & 4 (11{,}8\%) & Restri\c{c}\~oes duras de capacidade/falha s\~ao pouco exploradas. \\
 \addlinespace
-Online interno com indisponibilidade de recurso & interse\c{c}\~ao entre despacho online/event-driven interno e indisponibilidade de recurso & 0 (0{,}0\%) & A combina\c{c}\~ao que mais se aproxima da falha segura do TCC n\~ao aparece no corpus. \\
+Online interno com indisponibilidade de recurso & interse\c{c}\~ao entre despacho online/event-driven interno e indisponibilidade de recurso & 0 (0{,}0\%) & A combina\c{c}\~ao que mais se aproxima da falha segura deste trabalho n\~ao aparece no corpus. \\
 \addlinespace
 Ambiente agroindustrial/gr\~aos & \texttt{Application environment} com gr\~aos, agroind\'ustria ou elevador & 0 (0{,}0\%) & As fontes de gr\~aos entram como enquadramento de dom\'inio, n\~ao como corpus sistem\'atico principal. \\
 \addlinespace
@@ -462,7 +462,7 @@ Rastreabilidade digital & G\^emeos digitais e rastreabilidade p\'os-colheita \pa
 \end{table}
 
 \section{Trabalhos correlatos e transfer\^encia anal\'ogica}
-A matriz de extra\c{c}\~ao mostra que a lacuna est\'a na combina\c{c}\~ao entre despacho online interno, restri\c{c}\~oes r\'igidas agroindustriais, replanejamento por evento, comparadores din\^amicos e registro audit\'avel. A literatura de gr\~aos cobre filas, recebimento, segrega\c{c}\~ao e simula\c{c}\~ao de elevadores, mas raramente integra esses elementos em um artefato. \textcite{boulandTruckQueuesCountry1967a} trataram filas em elevadores de gr\~aos como problema mensur\'avel; \textcite{leblancQueuingModelSimulation1978a} modelaram filas em terminal graneleiro portu\'ario; e \textcite{r.berrutoAnalyzingReceivingOperation2001a} compararam FIFO com BATCH em elevador de uma moega. Como BATCH reduziu esperas perto da capacidade m\'axima, mas podia perder para FIFO em cargas menores, este TCC compara contra FIFO e separa cen\'arios por n\'ivel de congest\~ao.
+A matriz de extra\c{c}\~ao mostra que a lacuna est\'a na combina\c{c}\~ao entre despacho online interno, restri\c{c}\~oes r\'igidas agroindustriais, replanejamento por evento, comparadores din\^amicos e registro audit\'avel. A literatura de gr\~aos cobre filas, recebimento, segrega\c{c}\~ao e simula\c{c}\~ao de elevadores, mas raramente integra esses elementos em um artefato. \textcite{boulandTruckQueuesCountry1967a} trataram filas em elevadores de gr\~aos como problema mensur\'avel; \textcite{leblancQueuingModelSimulation1978a} modelaram filas em terminal graneleiro portu\'ario; e \textcite{r.berrutoAnalyzingReceivingOperation2001a} compararam FIFO com BATCH em elevador de uma moega. Como BATCH reduziu esperas perto da capacidade m\'axima, mas podia perder para FIFO em cargas menores, esta pesquisa compara contra FIFO e separa cen\'arios por n\'ivel de congest\~ao.
 
 \textcite{vanderheydenDecisionSupportSystem1985a} descreveram um DSS para planejamento de carga de trabalho em terminal graneleiro; \textcite{mardanehDecisionSupportSystem2021a} propuseram apoio \`a decis\~ao para colheita, armazenagem e distribui\c{c}\~ao de gr\~aos; e \textcite{hillDecisionSupportSystem2017aa} trataram planejamento de recursos e roteamento de caminh\~oes com previs\~ao de chegadas e esperas. Esses estudos sustentam DSS e planejamento assistido por dados, mas n\~ao formulam um despachante local de p\'atio agroindustrial com justificativa por recomenda\c{c}\~ao e bloqueio autom\'atico de alternativas invi\'aveis.
 
@@ -500,7 +500,7 @@ Artefato proposto versus g\^emeos digitais & Rastreabilidade, representa\c{c}\~a
 A transfer\^encia \'e funcional: p\'atios agroindustriais e terminais de cont\^eineres compartilham chegadas de caminh\~oes, recursos limitados, congestionamento, incerteza operacional e coordena\c{c}\~ao sob capacidade restrita. A diferen\c{c}a de dom\'inio permanece nas restri\c{c}\~oes do artefato: segrega\c{c}\~ao de carga, chuva, bloqueio documental, compatibilidade carga--moega e rastreabilidade da interven\c{c}\~ao humana.
 
 \chapter{Metodologia e Desenho Experimental}\label{ch:metodologia}
-O desenho experimental traduz o recorte te\'orico em um protocolo execut\'avel. Primeiro, define a arquitetura do motor e os eventos que disparam decis\~ao; em seguida, formaliza a heur\'istica lexicogr\'afica que escolhe o pr\'oximo caminh\~ao fact\'ivel; por fim, fixa cen\'arios, m\'etricas, comparadores e regras estat\'isticas para o TCC~II. A separa\c{c}\~ao \'e deliberada: constru\c{c}\~ao do artefato, simula\c{c}\~ao e infer\^encia n\~ao devem se confundir.
+O desenho experimental traduz o recorte te\'orico em um protocolo execut\'avel. Primeiro, define a arquitetura do motor e os eventos que disparam decis\~ao; em seguida, formaliza a heur\'istica lexicogr\'afica que escolhe o pr\'oximo caminh\~ao fact\'ivel; por fim, fixa cen\'arios, m\'etricas, comparadores e regras estat\'isticas para a etapa experimental posterior. A separa\c{c}\~ao \'e deliberada: constru\c{c}\~ao do artefato, simula\c{c}\~ao e infer\^encia n\~ao devem se confundir.
 
 \section{Arquitetura do Motor}\label{ch:artefato}
 O artefato proposto \'e um motor de apoio \`a decis\~ao com cinco blocos l\'ogicos: captura do estado operacional, regras r\'igidas, gera\c{c}\~ao de alternativas fact\'iveis, ranqueamento lexicogr\'afico e recomenda\c{c}\~ao audit\'avel ao operador. A arquitetura opera em falha segura: sem alternativa segura, o sistema registra a restri\c{c}\~ao bloqueadora e n\~ao for\c{c}a despacho.
@@ -581,7 +581,7 @@ Evento & interven\c{c}\~ao humana & confirma ou altera a recomenda\c{c}\~ao, sem
 \section{Modelagem do despacho online}\label{ch:modelagem}
 A modelagem delimita o problema como \textbf{despacho online por recurso liberado com horizonte curto}: a cada libera\c{c}\~ao de recurso, o artefato escolhe o pr\'oximo caminh\~ao fact\'ivel sob restri\c{c}\~oes operacionais. Sejam $T$ o conjunto de caminh\~oes, $R$ o conjunto de recursos operacionais, $E$ o conjunto de eventos disruptivos, $K$ o conjunto de instantes de decis\~ao e $O = \{1,2,3,4\}$ o conjunto ordenado de opera\c{c}\~oes do p\'atio: 1 = entrada, 2 = pesagem inicial, 3 = descarga e 4 = pesagem final. Cada recurso $r \in R$ atende um subconjunto de opera\c{c}\~oes $O(r) \subseteq O$, e cada caminh\~ao $i \in T$ possui hor\'ario de chegada, tipo de carga, prioridade, situa\c{c}\~ao documental e recursos eleg\'iveis por opera\c{c}\~ao.
 
-A escolha f\'isica adotada no TCC \'e a de \textbf{balan\c{c}as compartilhadas}: o mesmo pool $B \subset R$ executa a tara na etapa~2 e a pesagem bruta na etapa~4, logo $O(r)=\{2,4\}$ para $r \in B$. Portaria e moegas permanecem recursos de etapa \'unica. Essa decis\~ao classifica o p\'atio como \textit{Dynamic Reentrant Hybrid Flow Shop} (RHFS): h\'a m\'ultiplas m\'aquinas paralelas por est\'agio, caracter\'istica do \textit{hybrid flow shop} \parencite{ruizHybridFlowShop2010, ribasReviewClassificationHybrid2010}, e h\'a reentr\^ancia porque caminh\~oes retornam ao mesmo tipo de instala\c{c}\~ao f\'isica, disputando as mesmas balan\c{c}as em dois pontos da rota \parencite{gravesSchedulingReentrantFlow1983}. Se as pesagens de entrada e sa\'ida fossem pools f\'isicos separados, o r\'otulo correto seria D-HFS; neste recorte, a conten\c{c}\~ao cruzada das balan\c{c}as torna a reentr\^ancia parte central do modelo.
+A escolha f\'isica adotada nesta pesquisa \'e a de \textbf{balan\c{c}as compartilhadas}: o mesmo pool $B \subset R$ executa a tara na etapa~2 e a pesagem bruta na etapa~4, logo $O(r)=\{2,4\}$ para $r \in B$. Portaria e moegas permanecem recursos de etapa \'unica. Essa decis\~ao classifica o p\'atio como \textit{Dynamic Reentrant Hybrid Flow Shop} (RHFS): h\'a m\'ultiplas m\'aquinas paralelas por est\'agio, caracter\'istica do \textit{hybrid flow shop} \parencite{ruizHybridFlowShop2010, ribasReviewClassificationHybrid2010}, e h\'a reentr\^ancia porque caminh\~oes retornam ao mesmo tipo de instala\c{c}\~ao f\'isica, disputando as mesmas balan\c{c}as em dois pontos da rota \parencite{gravesSchedulingReentrantFlow1983}. Se as pesagens de entrada e sa\'ida fossem pools f\'isicos separados, o r\'otulo correto seria D-HFS; neste recorte, a conten\c{c}\~ao cruzada das balan\c{c}as torna a reentr\^ancia parte central do modelo.
 
 O modelo computacional opera em quatro etapas sequenciais cr\'iticas: entrada no p\'atio, pesagem inicial, descarga e pesagem final. Essa fronteira isola gargalos, propaga\c{c}\~ao de atrasos, filas intermedi\'arias e bloqueio de recursos. O detalhamento segue Law: objetivos, medidas de desempenho, dados dispon\'iveis, valida\c{c}\~ao com especialistas/SMEs e sensibilidade governam o n\'ivel de detalhe; o modelo evita correspond\^encia um-para-um e excesso de granularidade \parencite[Sec.~5.2, p.~249--251]{lawSimulationModelingAnalysis2015}. A \'area de espera atua como buffer operacional entre etapas. As Figuras~\ref{fig:arquitetura-des}, \ref{fig:layout-patio} e \ref{fig:fluxo-operacional} mostram, respectivamente, a execu\c{c}\~ao DES, o leiaute esquem\'atico e o fluxo de um caminh\~ao.
 
@@ -1329,7 +1329,7 @@ A unidade de an\'alise fica congelada: decis\~oes individuais alimentam auditori
 Uma amostra de $\max(50,\;10\%)$ das decis\~oes do artefato por cen\'ario ser\'a auditada por rubrica fechada, al\'em da checagem autom\'atica de 100\% dos logs. A rubrica verifica campos obrigat\'orios, regra ativada, quebra de FIFO, a\c{c}\~ao humana admiss\'ivel e reconstru\c{c}\~ao do estado. Quando houver dois avaliadores, ser\'a reportado kappa de Cohen; concord\^ancia abaixo de 0,60 exigir\'a revis\~ao da rubrica antes do congelamento final.
 
 \subsection{Disponibilidade de Dados e Código}\label{sec:disponibilidade-dados-codigo}
-Os dados sint\'eticos, sementes, inst\^ancias, logs agregados, sa\'idas experimentais, scripts de an\'alise e c\'odigo-fonte customizado necess\'arios para reproduzir os resultados do TCC~II ser\~ao disponibilizados em reposit\'orio p\'ublico ou m\'idia institucional no momento da entrega final, sujeitos a restri\c{c}\~oes institucionais. A vers\~ao utilizada na an\'alise ser\'a identificada por URL, tag ou hash de commit, com instru\c{c}\~oes de execu\c{c}\~ao, vers\~oes de depend\^encias e ambiente computacional.
+Os dados sint\'eticos, sementes, inst\^ancias, logs agregados, sa\'idas experimentais, scripts de an\'alise e c\'odigo-fonte customizado necess\'arios para reproduzir os resultados da etapa experimental posterior ser\~ao disponibilizados em reposit\'orio p\'ublico ou m\'idia institucional no momento da entrega final, sujeitos a restri\c{c}\~oes institucionais. A vers\~ao utilizada na an\'alise ser\'a identificada por URL, tag ou hash de commit, com instru\c{c}\~oes de execu\c{c}\~ao, vers\~oes de depend\^encias e ambiente computacional.
 
 Dados reais, documentos sens\'iveis ou informa\c{c}\~oes operacionais identific\'aveis n\~ao ser\~ao inclu\'idos no pacote aberto. Quando algum artefato n\~ao puder ser disponibilizado integralmente, ser\'a fornecida vers\~ao sint\'etica ou anonimizada com a mesma estrutura de campos e diferen\c{c}as declaradas. At\'e a libera\c{c}\~ao final do reposit\'orio congelado, os materiais de reprodu\c{c}\~ao ficam dispon\'iveis mediante solicita\c{c}\~ao razo\'avel ao autor.
 
@@ -1353,15 +1353,15 @@ O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, s
 \begin{tabularx}{\textwidth}{@{}P{0.22\textwidth}P{0.28\textwidth}YY@{}}
 \toprule
 \rowcolor{tablehead}
-\textbf{Frente} & \textbf{Resultado parcial observado} & \textbf{Uso no TCC} & \textbf{Cuidado interpretativo} \\
+\textbf{Frente} & \textbf{Resultado parcial observado} & \textbf{Uso no trabalho} & \textbf{Cuidado interpretativo} \\
 \midrule
 Copiloto Pe-Q.I & relat\'orio sample com 20 cen\'arios, quatro variantes, taxa nula de viola\c{c}\~ao de restri\c{c}\~oes nas variantes seguras, auditoria completa na variante \textit{full} e cen\'arios de chuva, bloqueio documental, recurso indispon\'ivel e interven\c{c}\~ao humana & evidencia que os requisitos A1/A2 s\~ao implement\'aveis em prot\'otipo audit\'avel & suite sint\'etica pequena; foca factibilidade e auditoria, enquanto p95 operacional e H1 pertencem ao protocolo principal \\
 \addlinespace
-Benchmark RHFS GO & 36 inst\^ancias sint\'eticas, quatro opera\c{c}\~oes por job, tr\^es regimes, FIFO replay sem sobreposi\c{c}\~ao e valida\c{c}\~oes estruturais com PASS em 36/36 inst\^ancias & apoia a modelagem discreta, o uso de eventos e a necessidade de valida\c{c}\~ao determin\'istica & escala e classe RHFS delimitam evid\^encia auxiliar distinta do experimento principal do TCC \\
+Benchmark RHFS GO & 36 inst\^ancias sint\'eticas, quatro opera\c{c}\~oes por job, tr\^es regimes, FIFO replay sem sobreposi\c{c}\~ao e valida\c{c}\~oes estruturais com PASS em 36/36 inst\^ancias & apoia a modelagem discreta, o uso de eventos e a necessidade de valida\c{c}\~ao determin\'istica & escala e classe RHFS delimitam evid\^encia auxiliar distinta do experimento principal deste estudo \\
 \addlinespace
 Artefato RHFS congelado & tag \texttt{v1.2.0-rhfs}, Docker, checksums, matrizes de desempenho, replay FIFO e valida\c{c}\~ao de consist\^encia relacional, cardinalidade e elegibilidade & fornece padr\~ao de abertura, checksum e reprodu\c{c}\~ao a ser seguido no TCC~II & resultados complementares estabelecem evid\^encia de infraestrutura; confirma\c{c}\~ao estat\'istica pertence ao protocolo principal \\
 \addlinespace
-Revis\~ao sistematizada & corpus sistem\'atico reconciliado em 34 estudos, PRISMA preservado, matriz de extra\c{c}\~ao e frequ\^encias por ambiente/m\'etodo/valida\c{c}\~ao & sustenta lacuna e transfer\^encia anal\'ogica controlada & pacotes diferem quanto ao grau de preserva\c{c}\~ao da QA; a vers\~ao do TCC adota o fluxo audit\'avel de 34 estudos \\
+Revis\~ao sistematizada & corpus sistem\'atico reconciliado em 34 estudos, PRISMA preservado, matriz de extra\c{c}\~ao e frequ\^encias por ambiente/m\'etodo/valida\c{c}\~ao & sustenta lacuna e transfer\^encia anal\'ogica controlada & pacotes diferem quanto ao grau de preserva\c{c}\~ao da QA; a vers\~ao deste trabalho adota o fluxo audit\'avel de 34 estudos \\
 \bottomrule
 \end{tabularx}
 \caption{Resultados parciais aproveit\'aveis dos reposit\'orios adjacentes.}
@@ -1539,12 +1539,12 @@ A s\'intese de cen\'arios adiciona risco de contamina\c{c}\~ao sem\^antica entre
 
 A abstra\c{c}\~ao em quatro etapas delimita a fronteira do modelo e concentra a an\'alise nos gargalos que determinam filas, bloqueios e propaga\c{c}\~ao de atrasos.
 
-Como risco de modelagem estat\'istica de entrada, distribui\c{c}\~oes triangulares n\~ao reproduzem caudas longas \`a direita t\'ipicas de tempos de servi\c{c}o altamente assim\'etricos. Law demonstra que aproximar uma lognormal por uma triangular com m\'inimo e moda corretos pode subestimar severamente a espera m\'edia em fila em um sistema M/G/1 \parencite[Ex.~6.23, p.~376--377]{lawSimulationModelingAnalysis2015}. Neste TCC, esse risco \'e mitigado por eventos disruptivos separados, an\'alise estratificada por congest\~ao, m\'etrica p95 e valida\c{c}\~ao de face; ainda assim, resultados sob disrup\c{c}\~ao extrema devem ser lidos como evid\^encia controlada, n\~ao como previs\~ao de cauda operacional real.
+Como risco de modelagem estat\'istica de entrada, distribui\c{c}\~oes triangulares n\~ao reproduzem caudas longas \`a direita t\'ipicas de tempos de servi\c{c}o altamente assim\'etricos. Law demonstra que aproximar uma lognormal por uma triangular com m\'inimo e moda corretos pode subestimar severamente a espera m\'edia em fila em um sistema M/G/1 \parencite[Ex.~6.23, p.~376--377]{lawSimulationModelingAnalysis2015}. Nesta pesquisa, esse risco \'e mitigado por eventos disruptivos separados, an\'alise estratificada por congest\~ao, m\'etrica p95 e valida\c{c}\~ao de face; ainda assim, resultados sob disrup\c{c}\~ao extrema devem ser lidos como evid\^encia controlada, n\~ao como previs\~ao de cauda operacional real.
 
 Tamb\'em h\'a amea\c{c}a de validade estat\'istica: a compara\c{c}\~ao envolve m\'ultiplas pol\'iticas, cen\'arios e m\'etricas. O protocolo responde com pareamento por semente, separa\c{c}\~ao entre m\'etrica confirmat\'oria e m\'etricas secund\'arias, decis\~ao IUT para os comparadores prim\'arios e corre\c{c}\~ao de Holm restrita \`as duas hip\'oteses de estrato. Com isso, a interpreta\c{c}\~ao evita transformar cada indicador explorat\'orio em confirma\c{c}\~ao independente sem desperdi\c{c}ar poder com corre\c{c}\~ao sobre uma conjun\c{c}\~ao que j\'a controla o erro.
 
 \chapter{Conclusão}\label{ch:conclusao}
-Este TCC parte de uma decis\~ao simples de enunciar e dif\'icil de executar: quando um recurso fica livre, qual caminh\~ao deve ser atendido a seguir? Ao formular essa escolha como despacho online sob restri\c{c}\~oes, a pesquisa transforma uma pr\'atica operacional muitas vezes t\'acita em artefato computacional model\'avel, audit\'avel e avali\'avel. A revis\~ao de literatura aproxima o problema de truck appointment systems, scheduling sob incerteza e replanejamento em tempo real, mas o contexto agroindustrial imp\~oe condi\c{c}\~oes pr\'oprias: falha segura, bloqueios documentais, chuva, compatibilidade carga--recurso, rastreabilidade e controle humano.
+Este trabalho parte de uma decis\~ao simples de enunciar e dif\'icil de executar: quando um recurso fica livre, qual caminh\~ao deve ser atendido a seguir? Ao formular essa escolha como despacho online sob restri\c{c}\~oes, a pesquisa transforma uma pr\'atica operacional muitas vezes t\'acita em artefato computacional model\'avel, audit\'avel e avali\'avel. A revis\~ao de literatura aproxima o problema de truck appointment systems, scheduling sob incerteza e replanejamento em tempo real, mas o contexto agroindustrial imp\~oe condi\c{c}\~oes pr\'oprias: falha segura, bloqueios documentais, chuva, compatibilidade carga--recurso, rastreabilidade e controle humano.
 
 O TCC~I consolida tr\^es bases para a etapa experimental. A primeira \'e a modelagem formal do problema (Se\c{c}\~ao~\ref{ch:modelagem}), com $S_k$, $C_{k,r}$, $h_{k,r}(i)$ e execu\c{c}\~ao determin\'istica. A segunda \'e o desenho experimental (Cap\'itulo~\ref{ch:metodologia}), com pol\'iticas congeladas, regimes de perturba\c{c}\~ao, estratos de congest\~ao, m\'etricas, limiares de H1/A1/A2 e protocolo estat\'istico. A terceira \'e o plano de reprodutibilidade (Se\c{c}\~ao~\ref{sec:disponibilidade-dados-codigo}), com dados sint\'eticos, sementes, logs, scripts de an\'alise e identifica\c{c}\~ao da vers\~ao por URL, tag ou hash de commit.
 
@@ -1576,7 +1576,7 @@ Despacho miope por atraso previsto & escolhe o caminh\~ao eleg\'ivel com menor \
 \addlinespace
 Janela ordin\'aria sem estabilidade & usa o mesmo dom\'inio admiss\'ivel $C^{adm}_{k,r}$, a mesma janela $H_0=6$ e os mesmos desempates do artefato, mas ranqueia por espera normalizada, sem penalidade de reordena\c{c}\~ao nem \textit{slack} & funciona como abla\c{c}\~ao interna do artefato; \'util para isolar a contribui\c{c}\~ao da l\'exicografia completa, mas a inclus\~ao no conjunto principal tornaria o protocolo confirmat\'orio dependente de uma sub-varia\c{c}\~ao do pr\'oprio artefato \\
 \addlinespace
-BATCH por tipo de carga & agrupa caminh\~oes eleg\'iveis por classe de carga e preserva atendimento em lote enquanto houver continuidade operacional do grupo; respeita as mesmas restri\c{c}\~oes r\'igidas e interrompe o lote quando houver prioridade mandat\'oria ou inviabilidade & precedente hist\'orico pr\'oximo do dom\'inio de gr\~aos, mas deslocado para sensibilidade porque o estudo original pressup\~oe recebimento em elevador de uma moega e agrupamento por tipo de gr\~ao, enquanto o recorte deste TCC usa despacho online multi-etapa e multi-recurso \\
+BATCH por tipo de carga & agrupa caminh\~oes eleg\'iveis por classe de carga e preserva atendimento em lote enquanto houver continuidade operacional do grupo; respeita as mesmas restri\c{c}\~oes r\'igidas e interrompe o lote quando houver prioridade mandat\'oria ou inviabilidade & precedente hist\'orico pr\'oximo do dom\'inio de gr\~aos, mas deslocado para sensibilidade porque o estudo original pressup\~oe recebimento em elevador de uma moega e agrupamento por tipo de gr\~ao, enquanto o recorte deste estudo usa despacho online multi-etapa e multi-recurso \\
 \bottomrule
 \end{tabularx}
 \caption{Pol\'iticas deslocadas para an\'alise de sensibilidade explorat\'oria.}
@@ -1588,7 +1588,7 @@ Essa separa\c{c}\~ao impede que uma pol\'itica explorat\'oria bem-sucedida alter
 
 \chapter{Materiais contextuais e reposit\'orios adjacentes}\label{apx:materiais-contextuais}
 
-A origem pr\'atica do problema ajuda a entender o artefato, mas n\~ao desloca o foco do TCC. Os materiais de startup, interface, reposit\'orios e produ\c{c}\~ao cient\'ifica mostram maturidade do problema e infraestrutura de reprodutibilidade, sem substituir o protocolo do Cap\'itulo~\ref{ch:metodologia} nem compor o teste confirmat\'orio de H1. A leitura, portanto, \'e contextual: esses materiais explicam de onde vieram requisitos, evid\^encias preliminares e decis\~oes de modelagem.
+A origem pr\'atica do problema ajuda a entender o artefato, mas n\~ao desloca o foco deste trabalho. Os materiais de startup, interface, reposit\'orios e produ\c{c}\~ao cient\'ifica mostram maturidade do problema e infraestrutura de reprodutibilidade, sem substituir o protocolo do Cap\'itulo~\ref{ch:metodologia} nem compor o teste confirmat\'orio de H1. A leitura, portanto, \'e contextual: esses materiais explicam de onde vieram requisitos, evid\^encias preliminares e decis\~oes de modelagem.
 
 \section{Materiais prévios de startup e interface}
 
@@ -1630,7 +1630,7 @@ O ecossistema PequiFlux tamb\'em inclui reposit\'orios adjacentes sobre maturida
 \begin{tabularx}{\textwidth}{@{}P{0.2\textwidth}P{0.15\textwidth}P{0.25\textwidth}YY@{}}
 \toprule
 \rowcolor{tablehead}
-\textbf{Reposit\'orio adjacente} & \textbf{Commit/tag local} & \textbf{Artefato principal} & \textbf{Evid\^encia aproveit\'avel no TCC} & \textbf{Limite de uso} \\
+\textbf{Reposit\'orio adjacente} & \textbf{Commit/tag local} & \textbf{Artefato principal} & \textbf{Evid\^encia aproveit\'avel neste trabalho} & \textbf{Limite de uso} \\
 \midrule
 \url{Pe-Q.I} & \texttt{e671b9d} & prova de conceito execut\'avel do copiloto de p\'atio & hard constraints, UI, auditoria de decis\~ao, cen\'arios de exce\c{c}\~ao e relat\'orio sample com 20 cen\'arios & demonstra maturidade de engenharia; n\~ao valida H1 nem desempenho em campo \\
 \addlinespace
@@ -1640,12 +1640,12 @@ O ecossistema PequiFlux tamb\'em inclui reposit\'orios adjacentes sobre maturida
 \addlinespace
 \url{truck-orchestration-slr-supplementary} & \texttt{0c3a7d7} & material suplementar da revis\~ao & lista de 34 estudos, matriz de extra\c{c}\~ao, PRISMA, strings de busca e notas de qualidade & preserva parte da QA; algumas respostas item a item n\~ao est\~ao completas nesse pacote \\
 \addlinespace
-\url{truck-resource-orchestration-slr} & \texttt{f178dbc} & manuscrito da revis\~ao sistematizada & protocolo PRISMA, fronteira de validade, contagens por ambiente e limita\c{c}\~oes do corpus & artigo correlato; n\~ao substitui o referencial do TCC \\
+\url{truck-resource-orchestration-slr} & \texttt{f178dbc} & manuscrito da revis\~ao sistematizada & protocolo PRISMA, fronteira de validade, contagens por ambiente e limita\c{c}\~oes do corpus & artigo correlato; n\~ao substitui o referencial deste trabalho \\
 \addlinespace
-\url{Arxiv-Revisao-de-Literatura} & \texttt{1fc492b} & pacote editorial ampliado da revis\~ao & rubrica de fronteira, matriz QA recuperada, frequ\^encias do corpus e ap\^endices de auditoria & material de apoio; deve ser harmonizado com a vers\~ao do TCC antes de anexar \\
+\url{Arxiv-Revisao-de-Literatura} & \texttt{1fc492b} & pacote editorial ampliado da revis\~ao & rubrica de fronteira, matriz QA recuperada, frequ\^encias do corpus e ap\^endices de auditoria & material de apoio; deve ser harmonizado com a vers\~ao deste trabalho antes de anexar \\
 \bottomrule
 \end{tabularx}
-\caption{Reposit\'orios adjacentes do ecossistema PequiFlux e fun\c{c}\~ao de cada um neste TCC.}
+\caption{Reposit\'orios adjacentes do ecossistema PequiFlux e fun\c{c}\~ao de cada um neste trabalho.}
 \label{tab:repos-adjacentes}
 \end{table}
 
@@ -1655,7 +1655,7 @@ Uma trilha complementar analisa dificuldade computacional com Gurobi \parencite{
 
 Este projeto tamb\'em gerou produ\c{c}\~ao cient\'ifica relacionada ao tema. Um artigo sobre orquestra\c{c}\~ao, modelagem e avalia\c{c}\~ao computacional de filas em p\'atios agroindustriais foi aceito para apresenta\c{c}\~ao no \textit{International Conference on Production Research -- Americas 2026} (ICPR-A~2026), sob o t\'itulo \textit{Computational Methods for Truck and Resource Orchestration in Logistics Terminals: A Systematic Literature Review}. A aceita\c{c}\~ao evidencia maturidade acad\^emica e ader\^encia tem\'atica; a valida\c{c}\~ao do artefato permanece vinculada ao protocolo experimental do Cap\'itulo~\ref{ch:metodologia}.
 
-Os resultados do artigo entram como motiva\c{c}\~ao, infraestrutura experimental ou evid\^encia preliminar, sem substituir a avalia\c{c}\~ao principal deste TCC.
+Os resultados do artigo entram como motiva\c{c}\~ao, infraestrutura experimental ou evid\^encia preliminar, sem substituir a avalia\c{c}\~ao principal deste trabalho.
 
 \end{apendicesenv}
 
