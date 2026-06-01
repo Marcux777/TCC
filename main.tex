@@ -1343,7 +1343,7 @@ Os dados principais s\~ao sint\'eticos, parametrizados e controlados. Essa escol
 
 O tratamento experimental j\'a est\'a especificado no Cap\'itulo~\ref{ch:metodologia}: plano fatorial, par\^ametros sint\'eticos, hip\'oteses congeladas, plausibilidade dos par\^ametros, limiares da pol\'itica e pol\'iticas de compara\c{c}\~ao. Nesta etapa, o resultado parcial relevante \'e a consolida\c{c}\~ao desse protocolo em uma trilha reprodut\'ivel, na qual cada dia simulado possui cen\'ario, semente, pol\'itica e sa\'idas agregadas identific\'aveis.
 
-O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, ser\'a executado no TCC~II. No entanto, em alinhamento com as diretrizes do Design Science Research, a viabilidade t\'ecnica do motor proposto j\'a foi demonstrada por \textit{prova por constru\c{c}\~ao}: o artefato foi instanciado preliminarmente em reposit\'orios adjacentes do ecossistema PequiFlux. A Tabela~\ref{tab:resultados-repos-adjacentes} resume os resultados parciais t\'ecnicos j\'a extra\'idos dessa instancia\c{c}\~ao, incluindo valida\c{c}\~ao determin\'istica de factibilidade sem viola\c{c}\~ao de restri\c{c}\~oes r\'igidas. Os elementos visuais complementares e o detalhamento de infraestrutura permanecem no Ap\^endice~\ref{apx:materiais-contextuais}, para preservar o foco matem\'atico e experimental do corpo principal \parencite{hevnerDesignScienceInformation2004a}.
+O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, ser\'a executado no TCC~II. No entanto, em alinhamento com as diretrizes do Design Science Research, a viabilidade t\'ecnica do motor proposto j\'a foi demonstrada por \textit{prova por constru\c{c}\~ao}: o artefato foi instanciado preliminarmente em reposit\'orios adjacentes de desenvolvimento e valida\c{c}\~ao. A Tabela~\ref{tab:resultados-repos-adjacentes} resume os resultados parciais t\'ecnicos j\'a extra\'idos dessa instancia\c{c}\~ao, incluindo valida\c{c}\~ao determin\'istica de factibilidade sem viola\c{c}\~ao de restri\c{c}\~oes r\'igidas. Os elementos visuais complementares e o detalhamento de infraestrutura permanecem no Ap\^endice~\ref{apx:materiais-contextuais}, para preservar o foco matem\'atico e experimental do corpo principal \parencite{hevnerDesignScienceInformation2004a}.
 
 \begin{table}[H]
 \centering
@@ -1355,7 +1355,7 @@ O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, s
 \rowcolor{tablehead}
 \textbf{Frente} & \textbf{Resultado parcial observado} & \textbf{Uso no trabalho} & \textbf{Cuidado interpretativo} \\
 \midrule
-Copiloto Pe-Q.I & relat\'orio sample com 20 cen\'arios, quatro variantes, taxa nula de viola\c{c}\~ao de restri\c{c}\~oes nas variantes seguras, auditoria completa na variante \textit{full} e cen\'arios de chuva, bloqueio documental, recurso indispon\'ivel e interven\c{c}\~ao humana & evidencia que os requisitos A1/A2 s\~ao implement\'aveis em prot\'otipo audit\'avel & suite sint\'etica pequena; foca factibilidade e auditoria, enquanto p95 operacional e H1 pertencem ao protocolo principal \\
+Prot\'otipo de copiloto de p\'atio & relat\'orio sample com 20 cen\'arios, quatro variantes, taxa nula de viola\c{c}\~ao de restri\c{c}\~oes nas variantes seguras, auditoria completa na variante \textit{full} e cen\'arios de chuva, bloqueio documental, recurso indispon\'ivel e interven\c{c}\~ao humana & evidencia que os requisitos A1/A2 s\~ao implement\'aveis em prot\'otipo audit\'avel & suite sint\'etica pequena; foca factibilidade e auditoria, enquanto p95 operacional e H1 pertencem ao protocolo principal \\
 \addlinespace
 Benchmark RHFS GO & 36 inst\^ancias sint\'eticas, quatro opera\c{c}\~oes por job, tr\^es regimes, FIFO replay sem sobreposi\c{c}\~ao e valida\c{c}\~oes estruturais com PASS em 36/36 inst\^ancias & apoia a modelagem discreta, o uso de eventos e a necessidade de valida\c{c}\~ao determin\'istica & escala e classe RHFS delimitam evid\^encia auxiliar distinta do experimento principal deste estudo \\
 \addlinespace
@@ -1435,42 +1435,43 @@ A leitura da Tabela~\ref{tab:diag-h} separa admissibilidade de desempenho. As du
 
 \begin{figure}[H]
 \centering
-\resizebox{0.82\textwidth}{!}{%
+\resizebox{0.80\textwidth}{!}{%
 \begin{tikzpicture}[font=\small, >=Stealth]
-  \fill[gray!4, rounded corners=4pt] (0,0) rectangle (10.4,6.2);
-  \draw[pequiDark!25, rounded corners=4pt] (0,0) rectangle (10.4,6.2);
+  \fill[gray!4, rounded corners=4pt] (0,0) rectangle (10.8,6.2);
+  \draw[pequiDark!25, rounded corners=4pt] (0,0) rectangle (10.8,6.2);
 
-  \draw[->, very thick, pequiDark] (1.0,0.8) -- (9.6,0.8);
-  \node[below, text=pequiDark] at (5.3,0.35) {Throughput (caminh\~oes processados)};
-  \draw[->, very thick, pequiDark] (1.0,0.8) -- (1.0,5.65);
-  \node[rotate=90, text=pequiDark] at (0.28,3.2) {Espera acumulada p95};
-
-  \foreach \y in {1.55,2.30,3.05,3.80,4.55} {
-    \draw[pequiDark!14] (1.0,\y) -- (9.25,\y);
+  \draw[pequiDark!12] (1.35,1.05) rectangle (9.65,4.85);
+  \foreach \y in {1.70,2.35,3.00,3.65,4.30} {
+    \draw[pequiDark!12] (1.35,\y) -- (9.65,\y);
   }
-  \foreach \x in {2.35,3.70,5.05,6.40,7.75} {
-    \draw[pequiDark!8] (\x,0.8) -- (\x,5.35);
+  \foreach \x in {2.70,4.05,5.40,6.75,8.10} {
+    \draw[pequiDark!8] (\x,1.05) -- (\x,4.85);
   }
 
-  \draw[pequiGreen, very thick, dashed] (6.7,1.1) rectangle (8.75,2.35);
-  \node[font=\scriptsize, align=center, text=pequiDark] at (7.72,1.72) {regi\~ao de\\interpreta\c{c}\~ao};
-  \draw[pequiEarth, thick, dashed] (4.9,2.65) rectangle (7.05,4.00);
-  \node[font=\scriptsize, align=center, text=pequiDark] at (5.98,3.32) {pol\'iticas\\comparadoras};
+  \draw[->, very thick, pequiDark] (1.35,1.05) -- (9.85,1.05);
+  \draw[->, very thick, pequiDark] (1.35,1.05) -- (1.35,5.05);
+  \node[below, text=pequiDark] at (5.50,0.42) {Throughput (caminh\~oes processados)};
+  \node[rotate=90, text=pequiDark] at (0.45,3.00) {Espera acumulada p95};
+  \node[font=\scriptsize\bfseries, text=pequiDark, anchor=west] at (1.35,5.62) {Legenda};
+  \fill[black!70] (3.00,5.62) circle (2pt);
+  \node[font=\scriptsize, text=pequiDark, anchor=west] at (3.20,5.62) {FIFO};
+  \fill[pequiEarth] (4.48,5.62) circle (2pt);
+  \node[font=\scriptsize, text=pequiDark, anchor=west] at (4.68,5.62) {Escore fixo};
+  \fill[pequiGreen] (6.98,5.62) circle (2pt);
+  \node[font=\scriptsize, text=pequiDark, anchor=west] at (7.18,5.62) {Motor};
 
-  \node[align=center, text width=5.8cm, font=\scriptsize, text=pequiDark!75] at (5.3,4.82)
-    {\'area reservada para 50 sementes pareadas por pol\'itica\\preenchimento ap\'os a execu\c{c}\~ao do simulador};
+  \node[align=center, text width=4.0cm, font=\tiny, text=pequiDark!75,
+        fill=white, draw=pequiDark!18, rounded corners=2pt, inner sep=3pt] at (3.95,4.42)
+    {50 sementes pareadas por pol\'itica\\
+     preenchimento ap\'os a execu\c{c}\~ao do simulador};
 
-  \begin{scope}[shift={(7.15,5.18)}]
-    \fill[black!70] (0,0) circle (2pt);
-    \node[right, text=pequiDark] at (0.18,0) {FIFO};
-    \fill[pequiEarth] (1.55,0) circle (2pt);
-    \node[right, text=pequiDark] at (1.73,0) {Escore fixo};
-    \fill[pequiGreen] (3.55,0) circle (2pt);
-    \node[right, text=pequiDark] at (3.73,0) {Motor};
-  \end{scope}
+  \draw[pequiEarth, thick, dashed] (5.55,2.72) rectangle (7.20,3.55);
+  \node[font=\scriptsize, align=center, text=pequiDark,
+        fill=white, inner sep=2pt] at (6.38,3.14) {pol\'iticas\\comparadoras};
 
-  \node[font=\scriptsize, text=pequiDark!70] at (8.55,0.48) {maior throughput};
-  \node[font=\scriptsize, rotate=90, text=pequiDark!70] at (0.62,1.35) {menor espera};
+  \draw[pequiGreen, very thick, dashed] (7.30,1.38) rectangle (9.05,2.35);
+  \node[font=\scriptsize, align=center, text=pequiDark,
+        fill=white, inner sep=2pt] at (8.18,1.86) {regi\~ao de\\interpreta\c{c}\~ao};
 \end{tikzpicture}%
 }
 \caption[Dispers\~ao entre throughput e espera]{Esqueleto do gr\'afico de dispers\~ao throughput versus espera. Cada ponto representar\'a uma semente de uma pol\'itica; a regi\~ao indicada funciona apenas como guia de interpreta\c{c}\~ao para menor espera sem recuo material de throughput, n\~ao como resultado antecipado. O formato segue a compara\c{c}\~ao por cen\'arios simulados e tempos operacionais em \textcite{neagoeUsingDiscreteeventSimulation2021a}.}
@@ -1588,11 +1589,11 @@ Essa separa\c{c}\~ao impede que uma pol\'itica explorat\'oria bem-sucedida alter
 
 \chapter{Materiais contextuais e reposit\'orios adjacentes}\label{apx:materiais-contextuais}
 
-A origem pr\'atica do problema ajuda a entender o artefato, mas n\~ao desloca o foco deste trabalho. Os materiais de startup, interface, reposit\'orios e produ\c{c}\~ao cient\'ifica mostram maturidade do problema e infraestrutura de reprodutibilidade, sem substituir o protocolo do Cap\'itulo~\ref{ch:metodologia} nem compor o teste confirmat\'orio de H1. A leitura, portanto, \'e contextual: esses materiais explicam de onde vieram requisitos, evid\^encias preliminares e decis\~oes de modelagem.
+A origem pr\'atica do problema ajuda a entender o artefato, mas n\~ao desloca o foco deste trabalho. Os materiais de concep\c{c}\~ao, interface, reposit\'orios e produ\c{c}\~ao cient\'ifica mostram maturidade do problema e infraestrutura de reprodutibilidade, sem substituir o protocolo do Cap\'itulo~\ref{ch:metodologia} nem compor o teste confirmat\'orio de H1. A leitura, portanto, \'e contextual: esses materiais explicam de onde vieram requisitos, evid\^encias preliminares e decis\~oes de modelagem.
 
-\section{Materiais prévios de startup e interface}
+\section{Materiais prévios de concepção e interface}
 
-Os materiais anteriores do PequiFlux registram a evolu\c{c}\~ao pr\'atica da ideia antes da avalia\c{c}\~ao experimental. Eles podem apoiar formula\c{c}\~ao do problema, valida\c{c}\~ao de face e rastreio de requisitos, mas n\~ao devem ser lidos como prova de desempenho do motor.
+Os materiais anteriores de concep\c{c}\~ao e prototipagem registram a evolu\c{c}\~ao pr\'atica da ideia antes da avalia\c{c}\~ao experimental. Eles podem apoiar formula\c{c}\~ao do problema, valida\c{c}\~ao de face e rastreio de requisitos, mas n\~ao devem ser lidos como prova de desempenho do motor.
 
 \begin{table}[H]
 \centering
@@ -1602,7 +1603,7 @@ Os materiais anteriores do PequiFlux registram a evolu\c{c}\~ao pr\'atica da ide
 \begin{tabularx}{\textwidth}{@{}P{0.30\textwidth}Y@{}}
 \toprule
 \rowcolor{tablehead}
-\textbf{Material da startup} & \textbf{Uso nesta pesquisa} \\
+\textbf{Material contextual} & \textbf{Uso nesta pesquisa} \\
 \midrule
 Pitch e descri\c{c}\~ao do MVP & Evid\^encia de formula\c{c}\~ao inicial do problema e maturidade da concep\c{c}\~ao \\
 \addlinespace
@@ -1615,12 +1616,12 @@ Feedback explorat\'orio recebido & Evid\^encia qualitativa de ader\^encia ao con
 Estimativas de gargalo e fila & Motiva\c{c}\~ao pr\'atica para os par\^ametros sint\'eticos, se a origem for declarada \\
 \bottomrule
 \end{tabularx}
-\caption[Materiais pr\'evios da startup]{Materiais pr\'evios da startup e uso permitido nesta pesquisa.}
+\caption[Materiais pr\'evios de concep\c{c}\~ao]{Materiais pr\'evios de concep\c{c}\~ao e uso permitido nesta pesquisa.}
 \end{table}
 
 \section{Artefatos computacionais de apoio e reprodutibilidade}\label{sec:artefatos-apoio}
 
-O ecossistema PequiFlux tamb\'em inclui reposit\'orios adjacentes sobre maturidade do problema, revis\~ao de literatura, prova de conceito e reprodutibilidade. Esses reposit\'orios funcionam como \textbf{evid\^encia parcial e contextual}; a inst\^ancia confirmat\'oria continua sendo o experimento principal do TCC~II. A nomenclatura t\'ecnica foi atualizada: o benchmark antes referido como D-FJSP foi reclassificado como \textbf{Dynamic Reentrant Hybrid Flow Shop (RHFS)}, pois as inst\^ancias seguem rota operacional comum com m\'aquinas paralelas por est\'agio e reentr\^ancia de recurso: o mesmo pool de balan\c{c}as f\'isicas atende a pesagem inicial e a pesagem final \parencite{ruizHybridFlowShop2010, ribasReviewClassificationHybrid2010, gravesSchedulingReentrantFlow1983}. O termo D-FJSP permanece apenas em nomes hist\'oricos de reposit\'orio ou arquivo.
+Os reposit\'orios adjacentes re\'unem materiais sobre maturidade do problema, revis\~ao de literatura, prova de conceito e reprodutibilidade. Esses reposit\'orios funcionam como \textbf{evid\^encia parcial e contextual}; a inst\^ancia confirmat\'oria continua sendo o experimento principal do TCC~II. A nomenclatura t\'ecnica foi atualizada: o benchmark antes referido como D-FJSP foi reclassificado como \textbf{Dynamic Reentrant Hybrid Flow Shop (RHFS)}, pois as inst\^ancias seguem rota operacional comum com m\'aquinas paralelas por est\'agio e reentr\^ancia de recurso: o mesmo pool de balan\c{c}as f\'isicas atende a pesagem inicial e a pesagem final \parencite{ruizHybridFlowShop2010, ribasReviewClassificationHybrid2010, gravesSchedulingReentrantFlow1983}. O termo D-FJSP permanece apenas em nomes hist\'oricos de reposit\'orio ou arquivo.
 
 \begin{table}[H]
 \centering
@@ -1632,7 +1633,7 @@ O ecossistema PequiFlux tamb\'em inclui reposit\'orios adjacentes sobre maturida
 \rowcolor{tablehead}
 \textbf{Reposit\'orio adjacente} & \textbf{Commit/tag local} & \textbf{Artefato principal} & \textbf{Evid\^encia aproveit\'avel neste trabalho} & \textbf{Limite de uso} \\
 \midrule
-\url{Pe-Q.I} & \texttt{e671b9d} & prova de conceito execut\'avel do copiloto de p\'atio & hard constraints, UI, auditoria de decis\~ao, cen\'arios de exce\c{c}\~ao e relat\'orio sample com 20 cen\'arios & demonstra maturidade de engenharia; n\~ao valida H1 nem desempenho em campo \\
+Prot\'otipo de copiloto de p\'atio & \texttt{e671b9d} & prova de conceito execut\'avel do copiloto de p\'atio & hard constraints, UI, auditoria de decis\~ao, cen\'arios de exce\c{c}\~ao e relat\'orio sample com 20 cen\'arios & demonstra maturidade de engenharia; n\~ao valida H1 nem desempenho em campo \\
 \addlinespace
 \url{agro_yard_dfjsp_benchmark_go} & \texttt{27404db} & benchmark sint\'etico RHFS de p\'atio agroindustrial & 36 inst\^ancias, FIFO replay, eventos, indisponibilidades, valida\c{c}\~oes estruturais e diagn\'osticos de solver & base sint\'etica auxiliar; n\~ao substitui o protocolo principal de 60/120/180 caminh\~oes \\
 \addlinespace
@@ -1645,7 +1646,7 @@ O ecossistema PequiFlux tamb\'em inclui reposit\'orios adjacentes sobre maturida
 \url{Arxiv-Revisao-de-Literatura} & \texttt{1fc492b} & pacote editorial ampliado da revis\~ao & rubrica de fronteira, matriz QA recuperada, frequ\^encias do corpus e ap\^endices de auditoria & material de apoio; deve ser harmonizado com a vers\~ao deste trabalho antes de anexar \\
 \bottomrule
 \end{tabularx}
-\caption[Reposit\'orios adjacentes do PequiFlux]{Reposit\'orios adjacentes do ecossistema PequiFlux e fun\c{c}\~ao de cada um neste trabalho.}
+\caption[Reposit\'orios adjacentes da pesquisa]{Reposit\'orios adjacentes da pesquisa e fun\c{c}\~ao de cada um neste trabalho.}
 \label{tab:repos-adjacentes}
 \end{table}
 
