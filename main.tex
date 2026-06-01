@@ -1017,7 +1017,7 @@ O protocolo param\'etrico das Tabelas~\ref{tab:plano-fatorial}--\ref{tab:paramet
 
 O desenho experimental separa duas dimens\~oes da taxonomia. \textbf{Regime de perturba\c{c}\~ao} designa o tipo de evento ou condi\c{c}\~ao operacional imposta ao cen\'ario; \textbf{estrato de congest\~ao} designa o n\'ivel de carga do sistema. O protocolo cobre quatro regimes de perturba\c{c}\~ao: opera\c{c}\~ao nominal, pico de congestionamento, indisponibilidade de recurso cr\'itico e mudan\c{c}a abrupta de prioridade. Cada simula\c{c}\~ao representa um dia, com $N \in \{60,120,180\}$ caminh\~oes, 1 a 3 moegas e 1 a 2 balan\c{c}as f\'isicas no pool compartilhado. Um processo n\~ao homog\^eneo condicionado a $N$ define dois picos de chegada; $N$ controla a escala e o perfil por bloco controla a distribui\c{c}\~ao temporal. Os tempos de processamento seguem distribui\c{c}\~oes triangulares calibradas por literatura de gr\~aos e pelo recorte operacional.
 
-Cada configura\c{c}\~ao ter\'a \textbf{50 repeti\c{c}\~oes} com sementes controladas, permitindo compara\c{c}\~oes pareadas entre o artefato e as pol\'iticas de refer\^encia. A an\'alise reportar\'a medianas, intervalo interquartil, diferen\c{c}as pareadas, teste de Wilcoxon signed-rank, estimador de Hodges--Lehmann e tamanho de efeito pareado $r_{rb}$. O estudo piloto de sanidade usar\'a 20\% das combina\c{c}\~oes; os 80\% restantes formar\~ao o conjunto principal. Antes do piloto ficam congelados $H$, limiares $\tau$, pesos do escore fixo, sementes, regra de rejei\c{c}\~ao, m\'etrica prim\'aria, margem de throughput e plano estat\'istico. O piloto n\~ao recalibra esses itens; corre\c{c}\~oes posteriores ficam restritas a implementa\c{c}\~ao ou exclus\~oes pr\'e-especificadas.
+Cada configura\c{c}\~ao ter\'a \textbf{50 repeti\c{c}\~oes} com sementes controladas, permitindo compara\c{c}\~oes pareadas entre o artefato e as pol\'iticas de refer\^encia. A an\'alise reportar\'a medianas, intervalo interquartil, diferen\c{c}as pareadas, teste de Wilcoxon signed-rank, estimador de Hodges--Lehmann e tamanho de efeito pareado $r_{rb}$. O estudo piloto de sanidade executar\'a uma amostra de 20\% das configura\c{c}\~oes, selecionada antes do congelamento, para verificar m\'etricas, aus\^encia de comportamento degenerado e estabilidade do ganho pareado. O piloto n\~ao consome nem remove configura\c{c}\~oes: o experimento principal executa as 72 configura\c{c}\~oes completas (3.600 pares), e as configura\c{c}\~oes do piloto s\~ao reexecutadas no principal sob as mesmas sementes. O piloto n\~ao recalibra $H$, limiares $\tau$, pesos do escore fixo nem a regra de rejei\c{c}\~ao.
 
 \begin{table}[H]
 \centering
@@ -1050,7 +1050,11 @@ O protocolo define estratos de congest\~ao por um \textbf{\'indice nominal de ca
 \[
 \rho(N,m,b)=\frac{N}{\min(36m,\;72b)}.
 \]
-A capacidade $36m$ assume horizonte di\'ario de 12 horas e ciclo modal de descarga de 20 minutos por moega; a capacidade $72b$ assume duas pesagens modais de 5 minutos por caminh\~ao no mesmo pool de balan\c{c}as f\'isicas. Os regimes de perturba\c{c}\~ao n\~ao alteram o estrato: cada combina\c{c}\~ao de volume e recursos aparece nos quatro regimes. Combina\c{c}\~oes com $\rho < 0{,}70$ representam \textbf{carga baixa}; combina\c{c}\~oes com $\rho \in [0{,}70,0{,}85)$ representam \textbf{m\'edia congest\~ao}; e combina\c{c}\~oes com $\rho \geq 0{,}85$ representam \textbf{alta congest\~ao}, independentemente da pol\'itica. Essa estratifica\c{c}\~ao \'e obrigat\'oria na an\'alise porque ganhos de reavalia\c{c}\~ao por evento tendem a emergir quando o sistema se aproxima da satura\c{c}\~ao; em carga baixa, FIFO fact\'ivel e regras mais complexas podem produzir desempenho equivalente. A simula\c{c}\~ao de eventos discretos com compara\c{c}\~ao pareada segue estudos de terminais e appointment systems \parencite{bettDiscreteEventSimulation2024a, bettSimulationbasedOptimizationTruck2024a, neagoeUsingDiscreteeventSimulation2021a} e a formula\c{c}\~ao cl\'assica de simula\c{c}\~ao como experimento reprodut\'ivel \parencite{lawSimulationModelingAnalysis2015}.
+A capacidade $36m$ assume horizonte di\'ario de 12 horas e ciclo modal de descarga de 20 minutos por moega; a capacidade $72b$ assume duas pesagens modais de 5 minutos por caminh\~ao no mesmo pool de balan\c{c}as f\'isicas. Os regimes de perturba\c{c}\~ao n\~ao alteram o estrato: cada combina\c{c}\~ao de volume e recursos aparece nos quatro regimes. Combina\c{c}\~oes com $\rho < 0{,}70$ representam \textbf{carga baixa}; combina\c{c}\~oes com $\rho \in [0{,}70,0{,}85)$ representam \textbf{m\'edia congest\~ao}; e combina\c{c}\~oes com $\rho \geq 0{,}85$ representam \textbf{alta congest\~ao}, independentemente da pol\'itica.
+
+\noindent\textit{Nota sobre a granularidade de $\rho$.} Sob os n\'iveis congelados, o \'indice nominal assume valores discretos: o estrato de m\'edia congest\~ao concentra-se em $\rho=0{,}833$ e o de carga baixa em $\rho=0{,}556$, enquanto a alta congest\~ao cobre $\rho \in \{1{,}11;\allowbreak 1{,}67;\allowbreak 2{,}5;\allowbreak 3{,}33;\allowbreak 5{,}0\}$. A m\'edia congest\~ao, portanto, n\~ao varre uma faixa cont\'inua de $\rho$, mas tr\^es configura\c{c}\~oes ($N=60$ com $(m,b)\in\{(2,1),(2,2),(3,1)\}$) que diferem no recurso ligante: $(2,2)$ \'e limitada pela moega, $(3,1)$ pela balan\c{c}a e $(2,1)$ \'e co-limitante. A infer\^encia de H1 nesse estrato deve ser lida como ganho sob carga moderada com gargalo vari\'avel de descarga/pesagem, n\~ao como ganho ao longo de um cont\'inuo de congestionamento. N\~ao h\'a configura\c{c}\~ao com $\rho \in [0{,}85;\,1{,}11)$, de modo que o limiar de $0{,}85$ separa clusters disjuntos, sem inst\^ancias de fronteira amb\'igua.
+
+Essa estratifica\c{c}\~ao \'e obrigat\'oria na an\'alise porque ganhos de reavalia\c{c}\~ao por evento tendem a emergir quando o sistema se aproxima da satura\c{c}\~ao; em carga baixa, FIFO fact\'ivel e regras mais complexas podem produzir desempenho equivalente. A simula\c{c}\~ao de eventos discretos com compara\c{c}\~ao pareada segue estudos de terminais e appointment systems \parencite{bettDiscreteEventSimulation2024a, bettSimulationbasedOptimizationTruck2024a, neagoeUsingDiscreteeventSimulation2021a} e a formula\c{c}\~ao cl\'assica de simula\c{c}\~ao como experimento reprodut\'ivel \parencite{lawSimulationModelingAnalysis2015}.
 
 \begin{table}[H]
 \centering
@@ -1062,11 +1066,11 @@ A capacidade $36m$ assume horizonte di\'ario de 12 horas e ciclo modal de descar
 \rowcolor{tablehead}
 \textbf{Estrato} & \textbf{Crit\'erio} & \textbf{Combina\c{c}\~oes de volume e recursos} & \textbf{Configura\c{c}\~oes} & \textbf{$n_{\text{estrato}}$} \\
 \midrule
-Carga baixa & $\rho < 0{,}70$ & $N=60$, 3 moegas e 2 balan\c{c}as, nos quatro regimes & 4 & 200 pares \\
+Carga baixa & $\rho=0{,}556$ & $N=60$, 3 moegas e 2 balan\c{c}as, nos quatro regimes & 4 & 200 pares \\
 \addlinespace
-M\'edia congest\~ao & $0{,}70 \leq \rho < 0{,}85$ & $N=60$ com 2 moegas e 1--2 balan\c{c}as; ou $N=60$, 3 moegas e 1 balan\c{c}a, nos quatro regimes & 12 & 600 pares \\
+M\'edia congest\~ao & $\rho=0{,}833$ & $N=60$ com $(m,b)\in\{(2,2),(2,1),(3,1)\}$, nos quatro regimes & 12 & 600 pares \\
 \addlinespace
-Alta congest\~ao & $\rho \geq 0{,}85$ & demais combina\c{c}\~oes do plano fatorial & 56 & 2.800 pares \\
+Alta congest\~ao & $\rho \geq 1{,}111$ & demais combina\c{c}\~oes do plano fatorial & 56 & 2.800 pares \\
 \bottomrule
 \end{tabularx}
 \caption{Contagem dos estratos de congest\~ao antes de rejei\c{c}\~oes pr\'e-especificadas. O $n_{\text{estrato}}$ corresponde a configura\c{c}\~oes no estrato $\times$ 50 sementes, pois o Wilcoxon usa pares \texttt{cen\'ario + semente}.}
@@ -1174,7 +1178,7 @@ Com esse desenho, a redu\c{c}\~ao-alvo de 15\% fica acima do efeito m\'inimo det
 
 Os limiares de 15\% (redu\c{c}\~ao m\'inima do p95, crit\'erio de H1) e 100\% (cobertura de justificativa leg\'ivel, crit\'erio de A2) ser\~ao tratados como metas iniciais acima do ru\'ido operacional esperado. Os valores de $H_0=6$ e dos limiares $\tau_2=10$, $\tau_1=30$, $\tau_0=60$ s\~ao \textbf{pr\'e-especificados} e permanecem fixos no experimento principal; taxas de evento e o multiplicador dos limiares de prioridade ser\~ao verificados na grade de sensibilidade multivariada, sem recalibrar o artefato.
 
-O protocolo inferencial ser\'a hierarquizado. A m\'etrica prim\'aria confirmat\'oria \'e o p95 de espera nos estratos de m\'edia e alta congest\~ao, analisados separadamente. Para cada par formado por estrato $s$ e comparador operacional prim\'ario $c$, a decis\~ao \'e um teste interse\c{c}\~ao--uni\~ao (IUT): o teste unilateral do ganho em p95 deve sustentar a redu\c{c}\~ao m\'inima de 15\%, e a guarda de throughput deve sustentar n\~ao inferioridade contra a margem $\max(2,\;0{,}02N)$ caminh\~oes/dia. Essa combina\c{c}\~ao de superioridade em uma medida e n\~ao inferioridade em outra segue o uso de IUT para decis\~oes conjuntivas em problemas de equival\^encia e n\~ao inferioridade \parencite{bergerBioequivalenceTrialsIntersectionUnion1996}.
+O protocolo inferencial ser\'a hierarquizado. A m\'etrica prim\'aria confirmat\'oria \'e o p95 de espera nos estratos de m\'edia e alta congest\~ao, analisados separadamente. Para cada par formado por estrato $s$ e comparador operacional prim\'ario $c$, a decis\~ao \'e um teste interse\c{c}\~ao--uni\~ao (IUT): o teste unilateral do ganho em p95 deve sustentar a redu\c{c}\~ao m\'inima de 15\%, e a guarda de throughput deve sustentar n\~ao inferioridade contra a margem $\max(2,\;0{,}02N)$ caminh\~oes/dia. A margem de n\~ao inferioridade \'e espec\'ifica de cada configura\c{c}\~ao, calculada como $\delta(N)=\max(2;\,0{,}02N)$ a partir do volume $N$ daquela configura\c{c}\~ao. Para evitar que o agrupamento de configura\c{c}\~oes com $N$ distintos dentro de um estrato misture margens heterog\^eneas, a guarda de throughput \'e testada sobre a diferen\c{c}a pareada deslocada $d'_i=(TH_{\mathrm{Motor},i}-TH_{\mathrm{comp},i})+\delta(N_i)$, aplicando-se o Wilcoxon unilateral a $H_0:\operatorname{mediana}(d')\leq 0$ contra $H_1:\operatorname{mediana}(d')>0$. Assim, cada par contribui com sua pr\'opria margem e o teste do estrato opera sobre uma escala homog\^enea de n\~ao inferioridade. Essa combina\c{c}\~ao de superioridade em uma medida e n\~ao inferioridade em outra segue o uso de IUT para decis\~oes conjuntivas em problemas de equival\^encia e n\~ao inferioridade \parencite{bergerBioequivalenceTrialsIntersectionUnion1996}.
 
 No n\'ivel do estrato, o artefato s\'o ``vence'' se a decis\~ao IUT passar contra os tr\^es comparadores prim\'arios: FIFO \textit{flow-faithful}, prioridade + factibilidade local e despacho din\^amico por escore fixo. Como um IUT decide pela alternativa global apenas quando todos os testes componentes rejeitam, o tamanho do teste global fica no m\'aximo em $\alpha$; a l\'ogica remonta \`a formula\c{c}\~ao de \textcite{bergerMultiparameterHypothesisTesting1982} para testes multiparam\'etricos e amostragem de aceita\c{c}\~ao. Portanto, n\~ao haver\'a corre\c{c}\~ao de multiplicidade entre os tr\^es comparadores prim\'arios dentro de um estrato.
 
@@ -1316,7 +1320,7 @@ O Bloco A compara cen\'arios equivalentes, executando cada cen\'ario com todas a
 
 H1 exige redu\c{c}\~ao de pelo menos 15\% na mediana pareada do p95 da espera acumulada em fila, nos estratos de m\'edia e alta congest\~ao analisados separadamente, contra FIFO \textit{flow-faithful}, prioridade + factibilidade local e despacho din\^amico por escore fixo. O artefato tamb\'em deve respeitar a margem protetiva de throughput $\max(2,\;0{,}02N)$ caminh\~oes/dia. Assim, a decis\~ao confirmat\'oria passa por duas conjun\c{c}\~oes: dentro de cada par comparador--estrato, p95 e throughput precisam passar; dentro de cada estrato, os tr\^es comparadores prim\'arios precisam passar. No Bloco B, A1 ser\'a verificado por validador determin\'istico independente, inclusive em casos adversariais; A2 ser\'a verificado por completude e reconstruibilidade dos logs, com cobertura estrutural de 100\% e amostra auditada.
 
-O protocolo separa fatos operacionais, hip\'oteses de calibra\c{c}\~ao e resultados observados. Al\'em do Wilcoxon signed-rank, o estudo reportar\'a mediana e IQR das diferen\c{c}as pareadas, Hodges--Lehmann, bootstrap pareado de 95\% e $r_{rb}$. Empates e diferen\c{c}as zero ser\~ao explicitados; se dominarem, o teste de sinais pareado entrar\'a como robustez. Cen\'arios de desenvolvimento, piloto e experimento principal permanecem separados antes da abertura dos resultados, impedindo que ajustes de conveni\^encia entrem depois de observada a compara\c{c}\~ao principal.
+O protocolo separa fatos operacionais, hip\'oteses de calibra\c{c}\~ao e resultados observados. Al\'em do Wilcoxon signed-rank, o estudo reportar\'a mediana e IQR das diferen\c{c}as pareadas, Hodges--Lehmann, bootstrap pareado de 95\% e $r_{rb}$. Empates e diferen\c{c}as zero ser\~ao explicitados; se dominarem, o teste de sinais pareado entrar\'a como robustez. Cen\'arios de desenvolvimento, piloto e experimento principal permanecem separados quanto ao prop\'osito (sanidade vs. confirma\c{c}\~ao), sem que ajustes do piloto retroajam sobre os par\^ametros congelados.
 
 O piloto verificar\'a sanidade das m\'etricas e do simulador, estabilidade do ganho pareado no p95 e aus\^encia de comportamento degenerado. A estabilidade ser\'a observada pela largura do intervalo bootstrap de 95\% para a melhoria mediana e pelo IQR do ganho pareado. O n\'umero de sementes permanece fixo em 50. O piloto mant\'em $H$, limiares $\tau$ e pesos $(0{,}45;\,0{,}35;\,0{,}20)$ pr\'e-especificados, de modo que a compara\c{c}\~ao principal avalie par\^ametros congelados, sem ajuste conjunto.
 
@@ -1371,33 +1375,32 @@ As Tabelas~\ref{tab:gap-espera-p95-previsto}, \ref{tab:diag-h} e~\ref{tab:estabi
 \begin{table}[H]
 \centering
 \scriptsize
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{3pt}
 \renewcommand{\arraystretch}{1.16}
-\begin{tabularx}{\textwidth}{@{}C{0.13\textwidth}C{0.18\textwidth}C{0.15\textwidth}C{0.17\textwidth}C{0.15\textwidth}Y@{}}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}l c c c c c c c c c@{}}
 \toprule
 \rowcolor{tablehead}
-\textbf{Inst\^ancia} & \textbf{Congest\~ao ($\rho$)} & \textbf{FIFO (LB) p95} & \textbf{Escore fixo p95} & \textbf{Motor p95} & \textbf{Gap motor vs. FIFO} \\
+\textbf{Inst\^ancia} &
+\textbf{Congest\~ao ($\rho$)} &
+\begin{tabular}[c]{@{}c@{}}\textbf{FIFO estrito p95}\\\textbf{(LB, descr.)}\end{tabular} &
+\begin{tabular}[c]{@{}c@{}}\textbf{FIFO}\\\textbf{\textit{flow-faithful} p95}\end{tabular} &
+\begin{tabular}[c]{@{}c@{}}\textbf{Prioridade}\\\textbf{+ factib. p95}\end{tabular} &
+\textbf{Escore fixo p95} &
+\textbf{Motor p95} &
+\begin{tabular}[c]{@{}c@{}}\textbf{Gap vs.}\\\textbf{\textit{flow-faithful}}\end{tabular} &
+\begin{tabular}[c]{@{}c@{}}\textbf{Gap vs.}\\\textbf{prioridade}\end{tabular} &
+\begin{tabular}[c]{@{}c@{}}\textbf{Gap vs.}\\\textbf{escore fixo}\end{tabular} \\
 \midrule
-$N=60$ & carga baixa & -- & -- & -- & -- \\
+Carga baixa: $N=60$, $(m,b)=(3,2)$ & $0{,}556$ & -- & -- & -- & -- & -- & -- & -- & -- \\
 \addlinespace
-$N=60$ & m\'edia congest\~ao & -- & -- & -- & -- \\
+M\'edia: $N=60$, $(m,b)\in\{(2,2),(2,1),(3,1)\}$ & $0{,}833$ & -- & -- & -- & -- & -- & -- & -- & -- \\
 \addlinespace
-$N=60$ & alta congest\~ao & -- & -- & -- & -- \\
-\addlinespace
-$N=120$ & carga baixa & -- & -- & -- & -- \\
-\addlinespace
-$N=120$ & m\'edia congest\~ao & -- & -- & -- & -- \\
-\addlinespace
-$N=120$ & alta congest\~ao & -- & -- & -- & -- \\
-\addlinespace
-$N=180$ & carga baixa & -- & -- & -- & -- \\
-\addlinespace
-$N=180$ & m\'edia congest\~ao & -- & -- & -- & -- \\
-\addlinespace
-$N=180$ & alta congest\~ao & -- & -- & -- & -- \\
+Alta: demais combina\c{c}\~oes de $N$, $m$ e $b$ & $1{,}111$--$5{,}000$ & -- & -- & -- & -- & -- & -- & -- & -- \\
 \bottomrule
-\end{tabularx}
-\caption{Esqueleto da tabela de gap de espera p95. O gap ser\'a calculado como $100\cdot(\mathrm{p95}_{FIFO}-\mathrm{p95}_{Motor})/\mathrm{p95}_{FIFO}$, seguindo a l\'ogica de compara\c{c}\~ao percentual contra pol\'itica de refer\^encia usada por \textcite{fonsecaStabilityApproachCDC2025}. Carga baixa ser\'a lida como controle operacional; m\'edia e alta congest\~ao ser\~ao os estratos substantivos de H1.}
+\end{tabular}%
+}
+\caption{Esqueleto da tabela de gap de espera p95. O gap confirmat\'orio \'e calculado como $100\cdot(\mathrm{p95}_{\mathrm{comp}}-\mathrm{p95}_{\mathrm{Motor}})/\mathrm{p95}_{\mathrm{comp}}$ contra cada um dos tr\^es comparadores prim\'arios (FIFO \textit{flow-faithful}, prioridade + factibilidade local e escore fixo), coerente com a decis\~ao IUT de H1. O FIFO estrito aparece apenas como limite inferior descritivo do painel e n\~ao comp\~oe o teste de H1. Carga baixa \'e controle operacional; m\'edia e alta congest\~ao s\~ao os estratos substantivos. O recorte m\'edio corresponde ao cluster \'unico $\rho=0{,}833$.}
 \label{tab:gap-espera-p95-previsto}
 \end{table}
 
@@ -1479,28 +1482,16 @@ A leitura da Tabela~\ref{tab:diag-h} separa admissibilidade de desempenho. As du
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.16}
-\begin{tabularx}{\textwidth}{@{}C{0.13\textwidth}C{0.18\textwidth}C{0.17\textwidth}C{0.19\textwidth}Y@{}}
+\begin{tabularx}{\textwidth}{@{}P{0.24\textwidth}P{0.18\textwidth}C{0.16\textwidth}C{0.18\textwidth}Y@{}}
 \toprule
 \rowcolor{tablehead}
-\textbf{Inst\^ancia} & \textbf{Congest\~ao ($\rho$)} & \textbf{FIFO: viola\c{c}\~oes} & \textbf{Escore fixo: viola\c{c}\~oes} & \textbf{Motor: viola\c{c}\~oes} \\
+\textbf{Recorte} & \textbf{Congest\~ao ($\rho$)} & \textbf{FIFO: viola\c{c}\~oes} & \textbf{Escore fixo: viola\c{c}\~oes} & \textbf{Motor: viola\c{c}\~oes} \\
 \midrule
-$N=60$ & carga baixa & -- & -- & -- \\
+Carga baixa: $N=60$, $(m,b)=(3,2)$ & $0{,}556$ & -- & -- & -- \\
 \addlinespace
-$N=60$ & m\'edia congest\~ao & -- & -- & -- \\
+M\'edia: $N=60$, $(m,b)\in\{(2,2),(2,1),(3,1)\}$ & $0{,}833$ & -- & -- & -- \\
 \addlinespace
-$N=60$ & alta congest\~ao & -- & -- & -- \\
-\addlinespace
-$N=120$ & carga baixa & -- & -- & -- \\
-\addlinespace
-$N=120$ & m\'edia congest\~ao & -- & -- & -- \\
-\addlinespace
-$N=120$ & alta congest\~ao & -- & -- & -- \\
-\addlinespace
-$N=180$ & carga baixa & -- & -- & -- \\
-\addlinespace
-$N=180$ & m\'edia congest\~ao & -- & -- & -- \\
-\addlinespace
-$N=180$ & alta congest\~ao & -- & -- & -- \\
+Alta: demais combina\c{c}\~oes de $N$, $m$ e $b$ & $1{,}111$--$5{,}000$ & -- & -- & -- \\
 \bottomrule
 \end{tabularx}
 \caption{Esqueleto da tabela de estabilidade e viola\c{c}\~oes de prioridade mandat\'oria. A contagem bruta registra caminh\~oes que romperam o limiar operacional da classe mandat\'oria; os estratos de alta congest\~ao ser\~ao lidos como condi\c{c}\~oes de maior press\~ao operacional para pol\'iticas sem reavalia\c{c}\~ao por evento. A leitura dialoga com o KPI de percentual de caminh\~oes atendidos fora da janela em \textcite{dasilvaIntegrationMachineLearning2023}.}
@@ -1541,6 +1532,8 @@ Prepara\c{c}\~ao da apresenta\c{c}\~ao e defesa &  &  &  &  &  &  & \timeline & 
 Mesmo com protocolo fechado, o desenho experimental ainda pode falhar em pontos espec\'ificos. O primeiro risco \'e de constru\c{c}\~ao: uma ``justificativa leg\'ivel'' pode registrar a regra acionada sem realmente ajudar o avaliador a entender a decis\~ao. A mitiga\c{c}\~ao combina rubrica fechada, inspe\c{c}\~ao humana e checagem de campos obrigat\'orios. O segundo risco \'e interno: par\^ametros calibrados a favor do artefato poderiam inflar o ganho observado. Para reduzir esse vi\'es, requisitos, pol\'iticas de refer\^encia e par\^ametros do simulador ficam separados, e as compara\c{c}\~oes usam sementes pareadas, margem de throughput e teste multivariado de estresse. Tamb\'em h\'a risco de implementa\c{c}\~ao; erros no simulador poderiam favorecer uma pol\'itica. Por isso, o protocolo exige validadores determin\'isticos, logs por evento e replay audit\'avel das restri\c{c}\~oes r\'igidas.
 
 A validade externa delimita o alcance dos resultados: cen\'arios sint\'eticos calibrados sustentam coer\^encia, factibilidade e desempenho comparativo em ambiente controlado; uma cooperativa espec\'ifica exige dados locais. Valida\c{c}\~ao de face, plausibilidade param\'etrica e registro de diverg\^encias conectam o modelo sint\'etico ao dom\'inio operacional.
+
+A discretiza\c{c}\~ao de $\rho$ implica que o estrato de m\'edia congest\~ao repousa sobre um \'unico n\'ivel nominal de carga ($\rho=0{,}833$); a evid\^encia de H1 nesse estrato apoia-se na varia\c{c}\~ao do recurso ligante entre as tr\^es configura\c{c}\~oes, e n\~ao em uma faixa cont\'inua de carga. A extrapola\c{c}\~ao para cargas intermedi\'arias n\~ao amostradas ($0{,}85 \leq \rho < 1{,}11$) permanece fora do escopo confirmat\'orio.
 
 A s\'intese de cen\'arios adiciona risco de contamina\c{c}\~ao sem\^antica entre descri\c{c}\~ao operacional, estrutura formal e comportamento simulado. Um cen\'ario pode soar plaus\'ivel e ainda assim representar outro problema quando convertido em vari\'aveis, restri\c{c}\~oes e eventos. A mitiga\c{c}\~ao exige estruturas formais, valida\c{c}\~ao determin\'istica, execu\c{c}\~ao no simulador, rejei\c{c}\~ao de inst\^ancias inconsistentes e logs de origem. Se logs reais forem incorporados no futuro, o protocolo dever\'a acrescentar matriz de depend\^encias, cobertura de segmentos raros e avalia\c{c}\~ao de risco de privacidade.
 
