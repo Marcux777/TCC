@@ -398,7 +398,7 @@ Exclu\'idos por qualidade & 3 & estudos com pontua\c{c}\~ao $\leq 7{,}5$ \\
 \textbf{Corpus sistem\'atico retido} & \textbf{34} & base usada para sustentar lacuna, frequ\^encias e compara\c{c}\~ao entre frentes \\
 \bottomrule
 \end{tabularx}
-\caption{Reconcilia\c{c}\~ao do fluxo de revis\~ao usado nesta pesquisa.}
+\caption[Fluxo de revis\~ao sistematizada]{Reconcilia\c{c}\~ao do fluxo de revis\~ao usado nesta pesquisa.}
 \label{tab:fluxo-revisao-reconciliado}
 \end{table}
 
@@ -433,7 +433,7 @@ Ambiente agroindustrial/gr\~aos & \texttt{Application environment} com gr\~aos, 
 DSS como artefato declarado & \texttt{Technical artifact delivered} cont\'em \texttt{decision support system} & 2 (5{,}9\%) & Governan\c{c}a e apoio \`a decis\~ao aparecem pouco e n\~ao equivalem a log audit\'avel por caminh\~ao/etapa. \\
 \bottomrule
 \end{tabularx}
-\caption{Contagens da matriz de extra\c{c}\~ao usadas para sustentar a lacuna te\'orica no corpus sistem\'atico de 34 estudos.}
+\caption[Contagens da matriz de extra\c{c}\~ao]{Contagens da matriz de extra\c{c}\~ao usadas para sustentar a lacuna te\'orica no corpus sistem\'atico de 34 estudos.}
 \label{tab:contagens-lacuna-corpus}
 \end{table}
 
@@ -458,7 +458,7 @@ Dom\'inio de gr\~aos & Estudos sobre recebimento, mistura, elevadores e simula\c
 Rastreabilidade digital & G\^emeos digitais e rastreabilidade p\'os-colheita \parencite{dyckDigitalTwinsNovel2023}. & Ainda n\~ao h\'a um encadeamento claro entre traceabilidade, despacho online e supervis\~ao humana para o caso estudado. \\
 \bottomrule
 \end{tabularx}
-\caption{S\'intese da lacuna te\'orica que fundamenta o recorte da pesquisa.}
+\caption[S\'intese da lacuna te\'orica]{S\'intese da lacuna te\'orica que fundamenta o recorte da pesquisa.}
 \end{table}
 
 \section{Trabalhos correlatos e transfer\^encia anal\'ogica}
@@ -473,7 +473,7 @@ A literatura de terminais de cont\^eineres e cross-docking entra como transfer\^
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.18}
 \begin{longtable}{@{}P{0.18\textwidth}P{0.23\textwidth}P{0.24\textwidth}P{0.25\textwidth}@{}}
-\caption{Compara\c{c}\~ao direta entre motor proposto e as frentes da revis\~ao de literatura usadas na pesquisa.}\\
+\caption[Compara\c{c}\~ao com a literatura]{Compara\c{c}\~ao direta entre motor proposto e as frentes da revis\~ao de literatura usadas na pesquisa.}\\
 \toprule
 \rowcolor{tablehead}
 \textbf{Frente comparada} & \textbf{O que a literatura cobre} & \textbf{Similaridade com o artefato proposto} & \textbf{Diferen\c{c}a e uso na pesquisa} \\
@@ -543,7 +543,7 @@ O artefato proposto \'e um motor de apoio \`a decis\~ao com cinco blocos l\'ogic
   {justificativa, log\\e interven\c{c}\~ao};
 \end{tikzpicture}%
 }
-\caption{Fluxo conceitual do artefato principal proposto.}
+\caption[Fluxo conceitual do artefato]{Fluxo conceitual do artefato principal proposto.}
 \end{figure}
 
 \begin{table}[H]
@@ -575,7 +575,7 @@ Evento & mudan\c{c}a de prioridade & reordena a fila ativa \\
 Evento & interven\c{c}\~ao humana & confirma ou altera a recomenda\c{c}\~ao, sempre com registro \\
 \bottomrule
 \end{tabularx}
-\caption{Taxonomia m\'inima de restri\c{c}\~oes e eventos considerada pelo artefato.}
+\caption[Taxonomia de restri\c{c}\~oes e eventos]{Taxonomia m\'inima de restri\c{c}\~oes e eventos considerada pelo artefato.}
 \end{table}
 
 \section{Modelagem do despacho online}\label{ch:modelagem}
@@ -634,7 +634,7 @@ O simulador usa lista futura de eventos. O tempo simulado avan\c{c}a quando o pr
 
 \end{tikzpicture}%
 }
-\caption{Arquitetura l\'ogica do simulador de eventos discretos usado para avaliar as pol\'iticas de despacho.}
+\caption[Arquitetura l\'ogica do simulador]{Arquitetura l\'ogica do simulador de eventos discretos usado para avaliar as pol\'iticas de despacho.}
 \label{fig:arquitetura-des}
 \end{figure}
 
@@ -665,7 +665,7 @@ Falha ou retorno de recurso & altera capacidade do recurso e, se necess\'ario, i
 Interven\c{c}\~ao humana & tenta substituir ou confirmar a recomenda\c{c}\~ao do sistema & aceita se respeitar restri\c{c}\~oes r\'igidas; caso contr\'ario, registra bloqueio da interven\c{c}\~ao \\
 \bottomrule
 \end{tabularx}
-\caption{Tipos de evento processados pelo simulador DES e suas consequ\^encias operacionais.}
+\caption[Eventos do simulador DES]{Tipos de evento processados pelo simulador DES e suas consequ\^encias operacionais.}
 \label{tab:eventos-des}
 \end{table}
 
@@ -769,7 +769,7 @@ A arquitetura separa responsabilidades: o \textbf{simulador} controla tempo, eve
 
 \end{tikzpicture}%
 }
-\caption{Leiaute esquem\'atico do p\'atio de recebimento de gr\~aos (vista superior), com quatro etapas operacionais e balan\c{c}as f\'isicas compartilhadas. \textbf{Etapa~1}: gate-in (portaria). \textbf{Etapa~2}: tara no pool $B$ de balan\c{c}as. \textbf{Etapa~3}: descarga (moegas). \textbf{Etapa~4}: peso bruto no mesmo pool $B$. As setas tracejadas indicam a conten\c{c}\~ao reentrante entre as etapas~2 e~4; caminh\~oes com prioridade mandat\'oria est\~ao destacados em amarelo-pequi.}
+\caption[Leiaute esquem\'atico do p\'atio]{Leiaute esquem\'atico do p\'atio de recebimento de gr\~aos (vista superior), com quatro etapas operacionais e balan\c{c}as f\'isicas compartilhadas. \textbf{Etapa~1}: gate-in (portaria). \textbf{Etapa~2}: tara no pool $B$ de balan\c{c}as. \textbf{Etapa~3}: descarga (moegas). \textbf{Etapa~4}: peso bruto no mesmo pool $B$. As setas tracejadas indicam a conten\c{c}\~ao reentrante entre as etapas~2 e~4; caminh\~oes com prioridade mandat\'oria est\~ao destacados em amarelo-pequi.}
 \label{fig:layout-patio}
 \end{figure}
 
@@ -820,7 +820,7 @@ A arquitetura separa responsabilidades: o \textbf{simulador} controla tempo, eve
 
 \end{tikzpicture}%
 }% end resizebox
-\caption{Fluxo operacional de um caminh\~ao pelas quatro etapas do modelo de p\'atio. Buffers intermedi\'arios ($b_k$) acomodam filas entre etapas. A pesagem inicial e a pesagem final usam o mesmo pool f\'isico de balan\c{c}as; por isso, a libera\c{c}\~ao de uma balan\c{c}a pode escolher caminh\~ao de tara ou de peso bruto. As setas tracejadas indicam classes de eventos disruptivos e a conten\c{c}\~ao reentrante entre as etapas~2 e~4.}
+\caption[Fluxo operacional do caminh\~ao]{Fluxo operacional de um caminh\~ao pelas quatro etapas do modelo de p\'atio. Buffers intermedi\'arios ($b_k$) acomodam filas entre etapas. A pesagem inicial e a pesagem final usam o mesmo pool f\'isico de balan\c{c}as; por isso, a libera\c{c}\~ao de uma balan\c{c}a pode escolher caminh\~ao de tara ou de peso bruto. As setas tracejadas indicam classes de eventos disruptivos e a conten\c{c}\~ao reentrante entre as etapas~2 e~4.}
 \label{fig:fluxo-operacional}
 \end{figure}
 
@@ -973,7 +973,7 @@ Saida:
 \end{minipage}
 \par\vspace{2pt}{\color{pequiDark}\rule{0.94\textwidth}{0.8pt}}
 }
-\caption{Pseudoc\'odigo reprodut\'ivel do motor de despacho online proposto.}
+\caption[Pseudoc\'odigo do motor de despacho]{Pseudoc\'odigo reprodut\'ivel do motor de despacho online proposto.}
 \label{fig:motor-despacho}
 \end{figure}
 \section{Configuração do Simulador e Cenários}
@@ -1010,7 +1010,7 @@ Par\^ametros do simulador & n\'umero de caminh\~oes, recursos, distribui\c{c}\~o
 Resultados observados & tempos de espera, throughput, utiliza\c{c}\~ao, estabilidade, registro das justificativas e interven\c{c}\~oes & comp\~oem as evid\^encias de desempenho e governan\c{c}a \\
 \bottomrule
 \end{tabularx}
-\caption{Camadas de evid\^encia adotadas para manter o experimento autossuficiente.}
+\caption[Camadas de evid\^encia experimental]{Camadas de evid\^encia adotadas para manter o experimento autossuficiente.}
 \end{table}
 
 O protocolo param\'etrico das Tabelas~\ref{tab:plano-fatorial}--\ref{tab:parametros-politica} concentra a gera\c{c}\~ao principal de cen\'arios. Cen\'arios descritivos foram gerados utilizando LLM como ferramenta de verbaliza\c{c}\~ao, condicionados a valida\c{c}\~ao determin\'istica de factibilidade matem\'atica \parencite{huangORLMCustomizableFramework2025a}.
@@ -1042,7 +1042,7 @@ Sementes por configura\c{c}\~ao & 101--150 & 50 & garante pareamento por \textit
 Pol\'iticas executadas & artefato, FIFO estrito, FIFO \textit{flow-faithful}, prioridade + factibilidade local e escore fixo & 5 & gera 18.000 execu\c{c}\~oes pol\'itica-dia no desenho completo, com sementes comuns entre pol\'iticas \\
 \bottomrule
 \end{tabularx}
-\caption{Plano fatorial completo do experimento principal antes de rejei\c{c}\~oes pr\'e-especificadas. O desenho bruto combina $3 \times 3 \times 2 \times 4 = 72$ configura\c{c}\~oes de cen\'ario, cada uma com 50 sementes e cinco pol\'iticas.}
+\caption[Plano fatorial do experimento principal]{Plano fatorial completo do experimento principal antes de rejei\c{c}\~oes pr\'e-especificadas. O desenho bruto combina $3 \times 3 \times 2 \times 4 = 72$ configura\c{c}\~oes de cen\'ario, cada uma com 50 sementes e cinco pol\'iticas.}
 \label{tab:plano-fatorial}
 \end{table}
 
@@ -1073,7 +1073,7 @@ M\'edia congest\~ao & $\rho=0{,}833$ & $N=60$ com $(m,b)\in\{(2,2),(2,1),(3,1)\}
 Alta congest\~ao & $\rho \geq 1{,}111$ & demais combina\c{c}\~oes do plano fatorial & 56 & 2.800 pares \\
 \bottomrule
 \end{tabularx}
-\caption{Contagem dos estratos de congest\~ao antes de rejei\c{c}\~oes pr\'e-especificadas. O $n_{\text{estrato}}$ corresponde a configura\c{c}\~oes no estrato $\times$ 50 sementes, pois o Wilcoxon usa pares \texttt{cen\'ario + semente}.}
+\caption[Estratos de congest\~ao]{Contagem dos estratos de congest\~ao antes de rejei\c{c}\~oes pr\'e-especificadas. O $n_{\text{estrato}}$ corresponde a configura\c{c}\~oes no estrato $\times$ 50 sementes, pois o Wilcoxon usa pares \texttt{cen\'ario + semente}.}
 \label{tab:estratos-congestao-n}
 \end{table}
 
@@ -1107,7 +1107,7 @@ Descarga na moega & ciclo completo composto por amostragem, posicionamento/despe
 Falhas, chuva, bloqueios e prioridade & taxas pr\'e-especificadas para gerar estresse operacional sem colapso determin\'istico & cen\'arios medem robustez sob perturba\c{c}\~oes controladas e compar\'aveis \\
 \bottomrule
 \end{tabularx}
-\caption{Modelagem de entrada adotada no simulador antes do experimento principal.}
+\caption[Modelagem de entrada do simulador]{Modelagem de entrada adotada no simulador antes do experimento principal.}
 \label{tab:modelagem-entrada}
 \end{table}
 
@@ -1153,7 +1153,7 @@ Buffer intermedi\'ario & 12 caminh\~oes por etapa & imp\~oe capacidade finita pa
 Sementes & 101 a 150 & garante 50 repeti\c{c}\~oes e pareamento por \textit{common random numbers} entre pol\'iticas & protocolo de reprodutibilidade \\
 \bottomrule
 \end{tabularx}
-\caption{Matriz Param\'etrica e de Plausibilidade.}
+\caption[Matriz param\'etrica e de plausibilidade]{Matriz Param\'etrica e de Plausibilidade.}
 \label{tab:parametros-experimentais}
 \label{tab:hipoteses-sinteticas}
 \label{tab:plausibilidade-parametros}
@@ -1172,7 +1172,7 @@ Com esse desenho, a redu\c{c}\~ao-alvo de 15\% fica acima do efeito m\'inimo det
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{images/figura-poder-protocolo.pdf}
-\caption{Desenho estat\'istico e an\'alise de poder do protocolo confirmat\'orio. O painel A mostra o $n$ efetivo por estrato, calculado como configura\c{c}\~oes $\times$ 50 sementes pareadas. O painel B mostra pontos de refer\^encia do bootstrap sobre a matriz auxiliar RHFS, com Wilcoxon unilateral em $\alpha=0{,}05$.}
+\caption[Desenho estat\'istico e an\'alise de poder]{Desenho estat\'istico e an\'alise de poder do protocolo confirmat\'orio. O painel A mostra o $n$ efetivo por estrato, calculado como configura\c{c}\~oes $\times$ 50 sementes pareadas. O painel B mostra pontos de refer\^encia do bootstrap sobre a matriz auxiliar RHFS, com Wilcoxon unilateral em $\alpha=0{,}05$.}
 \label{fig:desenho-poder-pt}
 \end{figure}
 
@@ -1211,7 +1211,7 @@ Afinidade imediata do recurso & 1 para recurso fact\'ivel e j\'a pronto para a c
 Desempate final & prioridade, chegada \`a etapa, identificador do caminh\~ao & garante determinismo do replay \\
 \bottomrule
 \end{tabularx}
-\caption{Par\^ametros da pol\'itica definidos para reduzir ambiguidade de implementa\c{c}\~ao.}
+\caption[Par\^ametros da pol\'itica de despacho]{Par\^ametros da pol\'itica definidos para reduzir ambiguidade de implementa\c{c}\~ao.}
 \label{tab:parametros-politica}
 \end{table}
 
@@ -1246,7 +1246,7 @@ Chuva fecha destinos abertos sens\'iveis & decis\~ao de recorte operacional prop
 Operador pode intervir, mas com registro & DSS e decis\~ao colaborativa & requisito de governan\c{c}a do artefato \\
 \bottomrule
 \end{tabularx}
-\caption{Rastreabilidade m\'inima dos fatos operacionais usados na pesquisa.}
+\caption[Rastreabilidade dos fatos operacionais]{Rastreabilidade m\'inima dos fatos operacionais usados na pesquisa.}
 \end{table}
 
 \section{Métricas e Políticas de Comparação}\label{ch:avaliacao}
@@ -1277,7 +1277,7 @@ Factibilidade e justificativa leg\'ivel & atendimento das restri\c{c}\~oes r\'ig
 $\mathrm{CO_2}$ estimado & emiss\~ao derivada do tempo em fila com motor ligado, usando consumo em marcha lenta e fator de emiss\~ao declarados & indicador explorat\'orio, sem papel confirmat\'orio \\
 \bottomrule
 \end{tabularx}
-\caption{M\'etricas consolidadas do simulador e papel experimental.}
+\caption[M\'etricas do simulador]{M\'etricas consolidadas do simulador e papel experimental.}
 \label{tab:metricas-consolidadas}
 \end{table}
 
@@ -1306,7 +1306,7 @@ Despacho din\^amico por escore fixo & usa o mesmo dom\'inio admiss\'ivel comum $
 Artefato proposto & sobre o dom\'inio admiss\'ivel comum $C^{adm}_{k,r}$, aplica ranking local lexicogr\'afico $h_{k,r}(i)$, desempates fixos e registro audit\'avel & pol\'itica principal proposta pela pesquisa \\
 \bottomrule
 \end{tabularx}
-\caption{Pol\'iticas do experimento principal. H1 ser\'a julgada contra FIFO \textit{flow-faithful}, prioridade + factibilidade local e despacho din\^amico por escore fixo; FIFO estrito fica como limite inferior te\'orico.}
+\caption[Pol\'iticas do experimento principal]{Pol\'iticas do experimento principal. H1 ser\'a julgada contra FIFO \textit{flow-faithful}, prioridade + factibilidade local e despacho din\^amico por escore fixo; FIFO estrito fica como limite inferior te\'orico.}
 \label{tab:politicas-experimento}
 \end{table}
 
@@ -1364,7 +1364,7 @@ Artefato RHFS congelado & tag \texttt{v1.2.0-rhfs}, Docker, checksums, matrizes 
 Revis\~ao sistematizada & corpus sistem\'atico reconciliado em 34 estudos, PRISMA preservado, matriz de extra\c{c}\~ao e frequ\^encias por ambiente/m\'etodo/valida\c{c}\~ao & sustenta lacuna e transfer\^encia anal\'ogica controlada & pacotes diferem quanto ao grau de preserva\c{c}\~ao da QA; a vers\~ao deste trabalho adota o fluxo audit\'avel de 34 estudos \\
 \bottomrule
 \end{tabularx}
-\caption{Resultados parciais aproveit\'aveis dos reposit\'orios adjacentes.}
+\caption[Resultados parciais dos reposit\'orios adjacentes]{Resultados parciais aproveit\'aveis dos reposit\'orios adjacentes.}
 \label{tab:resultados-repos-adjacentes}
 \end{table}
 
@@ -1400,7 +1400,7 @@ Alta: demais combina\c{c}\~oes de $N$, $m$ e $b$ & $1{,}111$--$5{,}000$ & -- & -
 \bottomrule
 \end{tabular}%
 }
-\caption{Esqueleto da tabela de gap de espera p95. O gap confirmat\'orio \'e calculado como $100\cdot(\mathrm{p95}_{\mathrm{comp}}-\mathrm{p95}_{\mathrm{Motor}})/\mathrm{p95}_{\mathrm{comp}}$ contra cada um dos tr\^es comparadores prim\'arios (FIFO \textit{flow-faithful}, prioridade + factibilidade local e escore fixo), coerente com a decis\~ao IUT de H1. O FIFO estrito aparece apenas como limite inferior descritivo do painel e n\~ao comp\~oe o teste de H1. Carga baixa \'e controle operacional; m\'edia e alta congest\~ao s\~ao os estratos substantivos. O recorte m\'edio corresponde ao cluster \'unico $\rho=0{,}833$.}
+\caption[Gap de espera p95]{Esqueleto da tabela de gap de espera p95. O gap confirmat\'orio \'e calculado como $100\cdot(\mathrm{p95}_{\mathrm{comp}}-\mathrm{p95}_{\mathrm{Motor}})/\mathrm{p95}_{\mathrm{comp}}$ contra cada um dos tr\^es comparadores prim\'arios (FIFO \textit{flow-faithful}, prioridade + factibilidade local e escore fixo), coerente com a decis\~ao IUT de H1. O FIFO estrito aparece apenas como limite inferior descritivo do painel e n\~ao comp\~oe o teste de H1. Carga baixa \'e controle operacional; m\'edia e alta congest\~ao s\~ao os estratos substantivos. O recorte m\'edio corresponde ao cluster \'unico $\rho=0{,}833$.}
 \label{tab:gap-espera-p95-previsto}
 \end{table}
 
@@ -1427,7 +1427,7 @@ Tamanho m\'edio de $C^{adm}_{k,r}$ & -- & -- & -- \\
 \% decis\~oes em que a expans\~ao cr\'itica alterou o escolhido & -- & -- & -- \\
 \bottomrule
 \end{tabular}
-\caption{Diagn\'ostico de ativa\c{c}\~ao da janela curta, por estrato de congest\~ao. Verificado em cen\'arios de desenvolvimento antes do congelamento, sem compara\c{c}\~ao de desempenho entre pol\'iticas.}
+\caption[Ativa\c{c}\~ao da janela curta]{Diagn\'ostico de ativa\c{c}\~ao da janela curta, por estrato de congest\~ao. Verificado em cen\'arios de desenvolvimento antes do congelamento, sem compara\c{c}\~ao de desempenho entre pol\'iticas.}
 \label{tab:diag-h}
 \end{table}
 
@@ -1473,7 +1473,7 @@ A leitura da Tabela~\ref{tab:diag-h} separa admissibilidade de desempenho. As du
   \node[font=\scriptsize, rotate=90, text=pequiDark!70] at (0.62,1.35) {menor espera};
 \end{tikzpicture}%
 }
-\caption{Esqueleto do gr\'afico de dispers\~ao throughput versus espera. Cada ponto representar\'a uma semente de uma pol\'itica; a regi\~ao indicada funciona apenas como guia de interpreta\c{c}\~ao para menor espera sem recuo material de throughput, n\~ao como resultado antecipado. O formato segue a compara\c{c}\~ao por cen\'arios simulados e tempos operacionais em \textcite{neagoeUsingDiscreteeventSimulation2021a}.}
+\caption[Dispers\~ao entre throughput e espera]{Esqueleto do gr\'afico de dispers\~ao throughput versus espera. Cada ponto representar\'a uma semente de uma pol\'itica; a regi\~ao indicada funciona apenas como guia de interpreta\c{c}\~ao para menor espera sem recuo material de throughput, n\~ao como resultado antecipado. O formato segue a compara\c{c}\~ao por cen\'arios simulados e tempos operacionais em \textcite{neagoeUsingDiscreteeventSimulation2021a}.}
 \label{fig:throughput-espera-prevista}
 \end{figure}
 
@@ -1494,7 +1494,7 @@ M\'edia: $N=60$, $(m,b)\in\{(2,2),(2,1),(3,1)\}$ & $0{,}833$ & -- & -- & -- \\
 Alta: demais combina\c{c}\~oes de $N$, $m$ e $b$ & $1{,}111$--$5{,}000$ & -- & -- & -- \\
 \bottomrule
 \end{tabularx}
-\caption{Esqueleto da tabela de estabilidade e viola\c{c}\~oes de prioridade mandat\'oria. A contagem bruta registra caminh\~oes que romperam o limiar operacional da classe mandat\'oria; os estratos de alta congest\~ao ser\~ao lidos como condi\c{c}\~oes de maior press\~ao operacional para pol\'iticas sem reavalia\c{c}\~ao por evento. A leitura dialoga com o KPI de percentual de caminh\~oes atendidos fora da janela em \textcite{dasilvaIntegrationMachineLearning2023}.}
+\caption[Estabilidade e prioridade mandat\'oria]{Esqueleto da tabela de estabilidade e viola\c{c}\~oes de prioridade mandat\'oria. A contagem bruta registra caminh\~oes que romperam o limiar operacional da classe mandat\'oria; os estratos de alta congest\~ao ser\~ao lidos como condi\c{c}\~oes de maior press\~ao operacional para pol\'iticas sem reavalia\c{c}\~ao por evento. A leitura dialoga com o KPI de percentual de caminh\~oes atendidos fora da janela em \textcite{dasilvaIntegrationMachineLearning2023}.}
 \label{tab:estabilidade-prioridade-prevista}
 \end{table}
 
@@ -1507,25 +1507,25 @@ O cronograma traduz o protocolo em uma sequ\^encia de trabalho para o TCC~II. A 
 \setlength{\tabcolsep}{3pt}
 \scriptsize
 \renewcommand{\arraystretch}{1.15}
-\begin{tabular}{@{}P{0.34\textwidth}*{8}{C{0.052\textwidth}}@{}}
+\begin{tabular}{@{}P{0.34\textwidth}*{7}{C{0.06\textwidth}}@{}}
 \toprule
 \rowcolor{tablehead}
-\textbf{Atividade} & \shortstack{\textbf{Jun.}\\\textbf{26}} & \shortstack{\textbf{Jul.}\\\textbf{26}} & \shortstack{\textbf{Ago.}\\\textbf{26}} & \shortstack{\textbf{Set.}\\\textbf{26}} & \shortstack{\textbf{Out.}\\\textbf{26}} & \shortstack{\textbf{Nov.}\\\textbf{26}} & \shortstack{\textbf{Dez.}\\\textbf{26}} & \shortstack{\textbf{Jan.}\\\textbf{27}} \\
+\textbf{Atividade} & \shortstack{\textbf{Jun.}\\\textbf{26}} & \shortstack{\textbf{Jul.}\\\textbf{26}} & \shortstack{\textbf{Ago.}\\\textbf{26}} & \shortstack{\textbf{Set.}\\\textbf{26}} & \shortstack{\textbf{Out.}\\\textbf{26}} & \shortstack{\textbf{Nov.}\\\textbf{26}} & \shortstack{\textbf{Dez.}\\\textbf{26}} \\
 \midrule
-Consolida\c{c}\~ao do plano de pesquisa & \timeline &  &  &  &  &  &  &  \\
-Revis\~ao bibliogr\'afica e fichamentos & \timeline & \timeline & \timeline &  &  &  &  &  \\
-Modelagem do problema e restri\c{c}\~oes & \timeline & \timeline &  &  &  &  &  &  \\
-Defini\c{c}\~ao do protocolo experimental &  & \timeline & \timeline &  &  &  &  &  \\
-Implementa\c{c}\~ao do prot\'otipo e simulador &  &  & \timeline & \timeline & \timeline &  &  &  \\
-Execu\c{c}\~ao piloto e ajustes de cen\'arios &  &  &  & \timeline & \timeline &  &  &  \\
-Execu\c{c}\~ao principal dos experimentos &  &  &  &  & \timeline & \timeline &  &  \\
-An\'alise estat\'istica e auditoria dos logs &  &  &  &  &  & \timeline & \timeline &  \\
-Reda\c{c}\~ao e consolida\c{c}\~ao dos resultados &  &  & \timeline & \timeline & \timeline & \timeline & \timeline & \timeline \\
-Revis\~ao com orientadora e ajustes finais &  &  &  &  &  & \timeline & \timeline & \timeline \\
-Prepara\c{c}\~ao da apresenta\c{c}\~ao e defesa &  &  &  &  &  &  & \timeline & \timeline \\
+Consolida\c{c}\~ao do plano de pesquisa & \timeline &  &  &  &  &  &  \\
+Revis\~ao bibliogr\'afica e fichamentos & \timeline & \timeline & \timeline &  &  &  &  \\
+Modelagem do problema e restri\c{c}\~oes & \timeline & \timeline &  &  &  &  &  \\
+Defini\c{c}\~ao do protocolo experimental &  & \timeline & \timeline &  &  &  &  \\
+Implementa\c{c}\~ao do prot\'otipo e simulador &  &  & \timeline & \timeline & \timeline &  &  \\
+Execu\c{c}\~ao piloto e ajustes de cen\'arios &  &  &  & \timeline & \timeline &  &  \\
+Execu\c{c}\~ao principal dos experimentos &  &  &  &  & \timeline & \timeline &  \\
+An\'alise estat\'istica e auditoria dos logs &  &  &  &  &  & \timeline & \timeline \\
+Reda\c{c}\~ao e consolida\c{c}\~ao dos resultados &  &  & \timeline & \timeline & \timeline & \timeline & \timeline \\
+Revis\~ao com orientadora e ajustes finais &  &  &  &  &  & \timeline & \timeline \\
+Prepara\c{c}\~ao da apresenta\c{c}\~ao e defesa &  &  &  &  &  &  & \timeline \\
 \bottomrule
 \end{tabular}
-\caption{Cronograma macro de execu\c{c}\~ao da pesquisa entre junho de 2026 e janeiro de 2027 (TCC~I e TCC~II).}
+\caption[Cronograma da pesquisa]{Cronograma macro de execu\c{c}\~ao da pesquisa entre junho e dezembro de 2026 (TCC~I e TCC~II).}
 \end{table}
 
 \chapter{Ameaças à validade}
@@ -1579,7 +1579,7 @@ Janela ordin\'aria sem estabilidade & usa o mesmo dom\'inio admiss\'ivel $C^{adm
 BATCH por tipo de carga & agrupa caminh\~oes eleg\'iveis por classe de carga e preserva atendimento em lote enquanto houver continuidade operacional do grupo; respeita as mesmas restri\c{c}\~oes r\'igidas e interrompe o lote quando houver prioridade mandat\'oria ou inviabilidade & precedente hist\'orico pr\'oximo do dom\'inio de gr\~aos, mas deslocado para sensibilidade porque o estudo original pressup\~oe recebimento em elevador de uma moega e agrupamento por tipo de gr\~ao, enquanto o recorte deste estudo usa despacho online multi-etapa e multi-recurso \\
 \bottomrule
 \end{tabularx}
-\caption{Pol\'iticas deslocadas para an\'alise de sensibilidade explorat\'oria.}
+\caption[Pol\'iticas em an\'alise de sensibilidade]{Pol\'iticas deslocadas para an\'alise de sensibilidade explorat\'oria.}
 \end{table}
 
 Os resultados ser\~ao apresentados em gr\'aficos descritivos com intervalos bootstrap de 95\%. A interpreta\c{c}\~ao ser\'a qualitativa: despacho miope testa o peso do atraso; janela ordin\'aria sem estabilidade isola a penalidade de reordena\c{c}\~ao; BATCH verifica a competitividade do agrupamento por carga. H1 permanece ancorada nos comparadores do experimento principal.
@@ -1615,7 +1615,7 @@ Feedback explorat\'orio recebido & Evid\^encia qualitativa de ader\^encia ao con
 Estimativas de gargalo e fila & Motiva\c{c}\~ao pr\'atica para os par\^ametros sint\'eticos, se a origem for declarada \\
 \bottomrule
 \end{tabularx}
-\caption{Materiais pr\'evios da startup e uso permitido nesta pesquisa.}
+\caption[Materiais pr\'evios da startup]{Materiais pr\'evios da startup e uso permitido nesta pesquisa.}
 \end{table}
 
 \section{Artefatos computacionais de apoio e reprodutibilidade}\label{sec:artefatos-apoio}
@@ -1645,7 +1645,7 @@ O ecossistema PequiFlux tamb\'em inclui reposit\'orios adjacentes sobre maturida
 \url{Arxiv-Revisao-de-Literatura} & \texttt{1fc492b} & pacote editorial ampliado da revis\~ao & rubrica de fronteira, matriz QA recuperada, frequ\^encias do corpus e ap\^endices de auditoria & material de apoio; deve ser harmonizado com a vers\~ao deste trabalho antes de anexar \\
 \bottomrule
 \end{tabularx}
-\caption{Reposit\'orios adjacentes do ecossistema PequiFlux e fun\c{c}\~ao de cada um neste trabalho.}
+\caption[Reposit\'orios adjacentes do PequiFlux]{Reposit\'orios adjacentes do ecossistema PequiFlux e fun\c{c}\~ao de cada um neste trabalho.}
 \label{tab:repos-adjacentes}
 \end{table}
 
