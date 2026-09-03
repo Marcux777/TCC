@@ -3,7 +3,7 @@
 The dataset boundary is deliberately separate from policy execution.  A
 ``FrozenInstance`` contains every draw needed by a day, while
 ``plan_synthetic_dataset`` only enumerates the factorial and never samples or
-writes.  Generation writes the five scientific payloads first, then derives a
+writes.  Generation writes the six scientific payloads first, then derives a
 cycle-free manifest/checksum/FREEZE chain from their exact bytes.
 """
 
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 import hashlib
 import json
 import math
@@ -19,6 +20,7 @@ from pathlib import Path
 import platform
 import subprocess
 import tempfile
+from types import SimpleNamespace
 from typing import Any, Iterable, Mapping
 
 from .config import (
@@ -37,6 +39,12 @@ from .config import (
 from .domain import (
     AbortedStaging,
     CandidateValidation,
+    ControlledProjection,
+    EventLatentLedger,
+    ExecutionControls,
+    EVENT_LATENT_ENVELOPE,
+    EVENT_LATENT_KINDS,
+    EVENT_LATENT_PAYLOAD_FIELDS,
     FrozenDataset,
     FrozenInstance,
     FrozenResource,
@@ -48,6 +56,10 @@ from .domain import (
     RejectionLogRow,
     ResamplePlan,
     canonical_allowed_cargo_types,
+    _expected_scenario_factors as _canonical_scenario_factors,
+    _controlled_projection_overlay_hash,
+    _controlled_projection_view_hash,
+    _validate_event_latent_payload_core,
 )
 from .face_validation import FaceValidationReport, validate_face_validation_receipt
 from .manifest import (
@@ -189,6 +201,7 @@ _PAYLOAD_NAMES: tuple[str, ...] = (
     "trucks.parquet",
     "service_times.parquet",
     "disruptions.jsonl",
+    "event_latents.jsonl",
     "rejection_log.jsonl",
 )
 _REQUIRED_MANIFEST_FIELDS: frozenset[str] = frozenset(
@@ -204,6 +217,7 @@ _REQUIRED_MANIFEST_FIELDS: frozenset[str] = frozenset(
         "policy_day_count",
         "cardinalities",
         "crn_version",
+        "event_latents_sha256",
         "generator_version",
         "parameters",
         "frozen_parameters",
@@ -241,8 +255,9 @@ _JSONL_SCHEMA_NAMES: dict[str, tuple[str, ...]] = {
     "disruptions.jsonl": (
         "instance_id", "scenario_index", "scenario_id", "seed", "time", "event_rank",
         "resource_id", "truck_id", "sequence", "event_type", "cause", "operation",
-        "duration_min", "return_time", "payload_hash",
+        "duration_min", "return_time", "latent_id", "event_origin", "payload_hash",
     ),
+    "event_latents.jsonl": EVENT_LATENT_ENVELOPE,
     "rejection_log.jsonl": (
         "dataset_id", "candidate_ordinal", "scenario_index", "instance_id", "seed",
         "generation_attempt", "reason_code", "validator", "observed", "expected",
@@ -261,6 +276,12 @@ _EVENT_RANK_NAMES: frozenset[str] = frozenset(
     }
 )
 _CANONICAL_EVENT_RANKS: Mapping[str, int] = dict(_EVENT_RANKS)
+# These protocol probabilities are frozen by the confirmatory design.  Keep
+# them named at this layer so pure high-intensity projection can reuse the
+# exact values without loading or mutating an ExperimentConfig.
+_DOCUMENT_BLOCK_PROBABILITY = 0.03
+_BASE_FAILURE_PROBABILITY = 0.05
+_RAIN_PROBABILITY = 0.10
 _INITIAL_NAMESPACE_FILES: frozenset[str] = frozenset(
     (*_PAYLOAD_NAMES, "manifest.json", "checksums.sha256", "FREEZE.json")
 )
@@ -327,6 +348,43 @@ def _digest_value(value: Any) -> str:
     return _digest_bytes(canonical_bytes(value))
 
 
+def _rain_covered_latent_ids(row: Mapping[str, Any]) -> list[str]:
+    """Return the ordered immutable rain-block IDs covered by one interval."""
+
+    latent_id = row.get("latent_id")
+    if not isinstance(latent_id, str) or ":rain_coalesce:" not in latent_id:
+        raise DatasetContractError("rain disruption latent_id is not canonical")
+    prefix, interval = latent_id.rsplit(":rain_coalesce:", 1)
+    instance_id = row.get("instance_id")
+    if not isinstance(instance_id, str) or prefix != instance_id:
+        raise DatasetContractError("rain disruption latent_id prefix is not canonical")
+    try:
+        first_text, last_text = interval.split("-", 1)
+        if (
+            len(first_text) != 2
+            or len(last_text) != 2
+            or not first_text.isdigit()
+            or not last_text.isdigit()
+        ):
+            raise ValueError("interval must use two-digit block indexes")
+        first, last = int(first_text), int(last_text)
+    except (ValueError, TypeError) as exc:
+        raise DatasetContractError("rain disruption latent_id interval is invalid") from exc
+    if not 0 <= first <= last < 24:
+        raise DatasetContractError("rain disruption latent_id interval is outside 24 blocks")
+    return [f"{prefix}:rain_block:rain-{index:02d}" for index in range(first, last + 1)]
+
+
+def _disruption_payload_hash(row: Mapping[str, Any]) -> str:
+    """Hash a disruption row, binding coalesced rain to its block IDs."""
+
+    payload = dict(row)
+    payload.pop("payload_hash", None)
+    if payload.get("event_type") in {"rain_start", "rain_end"}:
+        payload["covered_latent_ids"] = _rain_covered_latent_ids(payload)
+    return _digest_value(payload)
+
+
 def _jsonl_bytes(rows: Iterable[Mapping[str, Any]], kind: str | None = None) -> bytes:
     lines: list[str] = []
     expected = _JSONL_SCHEMA_NAMES.get(f"{kind}.jsonl") if kind is not None else None
@@ -373,6 +431,19 @@ def canonical_payload_schemas() -> dict[str, tuple[str, ...]]:
     """Return the exact public Parquet column contract."""
 
     return dict(_PARQUET_SCHEMA_NAMES)
+
+
+def canonical_event_latent_schema() -> dict[str, Any]:
+    """Return the exact envelope and closed payload variants for latents."""
+
+    return {
+        "envelope": tuple(EVENT_LATENT_ENVELOPE),
+        "payload_variants": {
+            kind: tuple(fields)
+            for kind, fields in EVENT_LATENT_PAYLOAD_FIELDS.items()
+        },
+        "latent_kind_order": tuple(EVENT_LATENT_KINDS),
+    }
 
 
 def plan_synthetic_dataset(config: ExperimentConfig) -> DatasetPlan:
@@ -455,6 +526,230 @@ def _resource_records(scenario: ScenarioConfig) -> tuple[FrozenResource, ...]:
     return tuple(values)
 
 
+def _build_event_latents(
+    config: ExperimentConfig,
+    scenario: ScenarioConfig,
+    seed: int,
+    generation_attempt: int,
+    trucks: Iterable[FrozenTruck],
+) -> EventLatentLedger:
+    """Materialize every event candidate before its disruption realization."""
+
+    instance_id = _instance_id(scenario.scenario_index, seed)
+    rows: list[dict[str, Any]] = []
+
+    def append(kind: str, entity_id: str, payload: Mapping[str, Any], *, origin: str = "sampled") -> None:
+        latent_id = f"{instance_id}:{kind}:{entity_id}"
+        rows.append(
+            {
+                "instance_id": instance_id,
+                "scenario_index": scenario.scenario_index,
+                "scenario_id": scenario.scenario_id,
+                "seed": seed,
+                "generation_attempt": generation_attempt,
+                "latent_id": latent_id,
+                "latent_kind": kind,
+                "event_origin": origin,
+                "entity_id": entity_id,
+                "payload": dict(payload),
+            }
+        )
+
+    trucks = tuple(trucks)
+    for truck in trucks:
+        u_key = crn_digest(
+            config.crn_version, scenario.scenario_index, seed, generation_attempt,
+            truck.truck_id, "document",
+        )
+        release_duration, release_key = _triangular(
+            config,
+            scenario.scenario_index,
+            seed,
+            generation_attempt,
+            truck.truck_id,
+            "document_release",
+            tuple(config.document_release_distribution),
+        )
+        append(
+            "document",
+            truck.truck_id,
+            {
+                "u": _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, truck.truck_id, "document"),
+                "u_draw_key": u_key,
+                "release_duration_min": release_duration,
+                "release_duration_draw_key": release_key,
+            },
+        )
+
+    if scenario.regime != "critical_failure":
+        resources = tuple(resource.resource_id for resource in _resource_records(scenario))
+        resource_key = crn_digest(
+            config.crn_version, scenario.scenario_index, seed, generation_attempt,
+            "yard", "base_failure_resource",
+        )
+        start_key = crn_digest(
+            config.crn_version, scenario.scenario_index, seed, generation_attempt,
+            "yard", "failure_start",
+        )
+        duration_key = crn_digest(
+            config.crn_version, scenario.scenario_index, seed, generation_attempt,
+            "yard", "failure_duration",
+        )
+        resource_index = int(
+            _rng(
+                config,
+                scenario.scenario_index,
+                seed,
+                generation_attempt,
+                "yard",
+                "base_failure_resource",
+            ).integers(0, len(resources))
+        )
+        start = config.failure_start_window[0] + _draw_uniform(
+            config,
+            scenario.scenario_index,
+            seed,
+            generation_attempt,
+            "yard",
+            "failure_start",
+        ) * (config.failure_start_window[1] - config.failure_start_window[0])
+        duration, _ = _triangular(
+            config,
+            scenario.scenario_index,
+            seed,
+            generation_attempt,
+            "yard",
+            "failure_duration",
+            tuple(config.failure_duration_distribution),
+        )
+        append(
+            "base_failure",
+            scenario.regime,
+            {
+                "u": _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, "yard", "base_failure"),
+                "u_draw_key": crn_digest(
+                    config.crn_version, scenario.scenario_index, seed, generation_attempt,
+                    "yard", "base_failure",
+                ),
+                "resource_id": resources[resource_index],
+                "resource_draw_key": resource_key,
+                "start_minute": float(start),
+                "start_draw_key": start_key,
+                "duration_min": float(duration),
+                "duration_draw_key": duration_key,
+            },
+        )
+
+    if scenario.regime == "priority_shift":
+        shift_u = _draw_uniform(
+            config, scenario.scenario_index, seed, generation_attempt, "yard", "priority_shift_time"
+        )
+        shift_key = crn_digest(
+            config.crn_version, scenario.scenario_index, seed, generation_attempt,
+            "yard", "priority_shift_time",
+        )
+        shift_time = config.priority_shift_window[0] + shift_u * (
+            config.priority_shift_window[1] - config.priority_shift_window[0]
+        )
+        candidates = sorted(
+            (truck for truck in trucks if truck.arrival_minute >= shift_time),
+            key=lambda truck: (truck.arrival_minute, truck.truck_id),
+        )
+        selected = candidates[: math.ceil(config.priority_shift_fraction * scenario.N)]
+        append(
+            "priority_shift",
+            scenario.regime,
+            {
+                "u": shift_u,
+                "u_draw_key": shift_key,
+                "shift_time_minute": float(shift_time),
+                "candidate_truck_ids": [truck.truck_id for truck in candidates],
+                "selected_truck_ids": [truck.truck_id for truck in selected],
+            },
+        )
+
+    if scenario.m >= 2:
+        for block_index in range(24):
+            entity_id = f"rain-{block_index:02d}"
+            operation = f"rain_block_{block_index}"
+            u = _draw_uniform(
+                config,
+                scenario.scenario_index,
+                seed,
+                generation_attempt,
+                "hopper-1",
+                operation,
+            )
+            start = float(block_index * config.rain_block_minutes)
+            duration = float(config.rain_block_minutes)
+            append(
+                "rain_block",
+                entity_id,
+                {
+                    "u": u,
+                    "u_draw_key": crn_digest(
+                        config.crn_version, scenario.scenario_index, seed, generation_attempt,
+                        "hopper-1", operation,
+                    ),
+                    "block_index": block_index,
+                    "resource_id": "hopper-1",
+                    "start_minute": start,
+                    "duration_min": duration,
+                    "end_minute": start + duration,
+                },
+            )
+
+    if scenario.regime == "critical_failure":
+        resource_id = "hopper-1" if 36 * scenario.m <= 72 * scenario.b else "scale-1"
+        start_u = _draw_uniform(
+            config,
+            scenario.scenario_index,
+            seed,
+            generation_attempt,
+            "yard",
+            "critical_failure_start",
+        )
+        start = config.failure_start_window[0] + start_u * (
+            config.failure_start_window[1] - config.failure_start_window[0]
+        )
+        duration, duration_key = _triangular(
+            config,
+            scenario.scenario_index,
+            seed,
+            generation_attempt,
+            "yard",
+            "critical_failure_duration",
+            tuple(config.failure_duration_distribution),
+        )
+        append(
+            "forced_failure",
+            resource_id,
+            {
+                "forced_event_type": "resource_failure",
+                "resource_id": resource_id,
+                "start_minute": float(start),
+                "start_draw_key": crn_digest(
+                    config.crn_version, scenario.scenario_index, seed, generation_attempt,
+                    "yard", "critical_failure_start",
+                ),
+                "duration_min": float(duration),
+                "duration_draw_key": duration_key,
+                "end_minute": float(start + duration),
+            },
+            origin="forced",
+        )
+
+    rows.sort(
+        key=lambda row: (
+            row["instance_id"],
+            EVENT_LATENT_KINDS.index(row["latent_kind"]),
+            row["entity_id"],
+            row["latent_id"],
+        )
+    )
+    return EventLatentLedger(tuple(rows))
+
+
 def _build_instance(
     config: ExperimentConfig,
     scenario: ScenarioConfig,
@@ -509,6 +804,17 @@ def _build_instance(
         FrozenTruck.from_dict({**item, "truck_record_hash": item.get("truck_record_hash")})
         for item in trucks_data
     )
+    event_latents = _build_event_latents(
+        config,
+        scenario,
+        seed,
+        generation_attempt,
+        trucks,
+    )
+    latent_by_kind_entity = {
+        (str(row["latent_kind"]), str(row["entity_id"])): row
+        for row in event_latents
+    }
 
     service_values: list[FrozenServiceTime] = []
     for truck in trucks:
@@ -559,21 +865,16 @@ def _build_instance(
         payload.setdefault("resource_id", "")
         payload.setdefault("truck_id", "")
         payload.setdefault("operation", "")
+        payload.setdefault("latent_id", "")
+        payload.setdefault("event_origin", "sampled")
         payload["sequence"] = sequence
-        payload["payload_hash"] = _digest_value(payload)
+        payload["payload_hash"] = _disruption_payload_hash(payload)
         disruptions.append(payload)
 
     for truck in trucks:
         if truck.document_status == "BLOCKED":
-            delay, _draw_key = _triangular(
-                config,
-                scenario.scenario_index,
-                seed,
-                generation_attempt,
-                truck.truck_id,
-                "document_release",
-                tuple(config.document_release_distribution),
-            )
+            latent = latent_by_kind_entity[("document", truck.truck_id)]
+            delay = float(latent["payload"]["release_duration_min"])
             add_disruption(
                 {
                     "instance_id": instance_id,
@@ -585,21 +886,17 @@ def _build_instance(
                     "cause": "document",
                     "operation": "gate",
                     "duration_min": delay,
+                    "latent_id": latent["latent_id"],
+                    "event_origin": latent["event_origin"],
                 }
             )
 
     if scenario.regime == "critical_failure":
         resource_id = "hopper-1" if 36 * scenario.m <= 72 * scenario.b else "scale-1"
-        start = config.failure_start_window[0] + _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, "yard", "critical_failure_start") * (config.failure_start_window[1] - config.failure_start_window[0])
-        duration, _draw_key = _triangular(
-            config,
-            scenario.scenario_index,
-            seed,
-            generation_attempt,
-            "yard",
-            "critical_failure_duration",
-            tuple(config.failure_duration_distribution),
-        )
+        latent = latent_by_kind_entity[("forced_failure", resource_id)]
+        payload = latent["payload"]
+        start = float(payload["start_minute"])
+        duration = float(payload["duration_min"])
         add_disruption(
             {
                 "instance_id": instance_id,
@@ -612,43 +909,39 @@ def _build_instance(
                 "operation": "",
                 "duration_min": duration,
                 "recovery_at": float(start + duration),
+                "latent_id": latent["latent_id"],
+                "event_origin": latent["event_origin"],
             }
         )
-    elif _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, "yard", "base_failure") < config.base_failure_probability:
-        resources = [resource.resource_id for resource in _resource_records(scenario)]
-        resource_index = int(_rng(config, scenario.scenario_index, seed, generation_attempt, "yard", "base_failure_resource").integers(0, len(resources)))
-        resource_id = resources[resource_index]
-        start = config.failure_start_window[0] + _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, "yard", "failure_start") * (config.failure_start_window[1] - config.failure_start_window[0])
-        duration, _draw_key = _triangular(
-            config,
-            scenario.scenario_index,
-            seed,
-            generation_attempt,
-            "yard",
-            "failure_duration",
-            tuple(config.failure_duration_distribution),
-        )
-        add_disruption(
-            {
-                "instance_id": instance_id,
-                "time": float(start),
-                "event_type": "resource_failure",
-                "event_rank": config.event_ranks["resource_failure"],
-                "resource_id": resource_id,
-                "truck_id": "",
-                "cause": "base_failure",
-                "operation": "",
-                "duration_min": duration,
-                "recovery_at": float(start + duration),
-            }
-        )
+    else:
+        latent = latent_by_kind_entity[("base_failure", scenario.regime)]
+        payload = latent["payload"]
+        if float(payload["u"]) < config.base_failure_probability:
+            resource_id = str(payload["resource_id"])
+            start = float(payload["start_minute"])
+            duration = float(payload["duration_min"])
+            add_disruption(
+                {
+                    "instance_id": instance_id,
+                    "time": float(start),
+                    "event_type": "resource_failure",
+                    "event_rank": config.event_ranks["resource_failure"],
+                    "resource_id": resource_id,
+                    "truck_id": "",
+                    "cause": "base_failure",
+                    "operation": "",
+                    "duration_min": duration,
+                    "recovery_at": float(start + duration),
+                    "latent_id": latent["latent_id"],
+                    "event_origin": latent["event_origin"],
+                }
+            )
 
     if scenario.regime == "priority_shift":
-        shift_time = config.priority_shift_window[0] + _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, "yard", "priority_shift_time") * (config.priority_shift_window[1] - config.priority_shift_window[0])
-        candidates = [truck for truck in trucks if truck.arrival_minute >= shift_time]
-        candidates.sort(key=lambda truck: (truck.arrival_minute, truck.truck_id))
-        selected = candidates[: math.ceil(config.priority_shift_fraction * scenario.N)]
-        for truck in selected:
+        latent = latent_by_kind_entity[("priority_shift", scenario.regime)]
+        payload = latent["payload"]
+        shift_time = float(payload["shift_time_minute"])
+        for truck_id in payload["selected_truck_ids"]:
             add_disruption(
                 {
                     "instance_id": instance_id,
@@ -656,9 +949,11 @@ def _build_instance(
                     "event_type": "priority_change",
                     "event_rank": config.event_ranks["priority_change"],
                     "resource_id": "",
-                    "truck_id": truck.truck_id,
+                    "truck_id": str(truck_id),
                     "cause": "priority_shift",
                     "operation": "",
+                    "latent_id": latent["latent_id"],
+                    "event_origin": latent["event_origin"],
                 }
             )
 
@@ -666,7 +961,7 @@ def _build_instance(
         rain_blocks = [
             index
             for index in range(24)
-            if _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, "hopper-1", f"rain_block_{index}") < config.rain_probability
+            if float(latent_by_kind_entity[("rain_block", f"rain-{index:02d}")]["payload"]["u"]) < config.rain_probability
         ]
         if rain_blocks:
             start_index = rain_blocks[0]
@@ -677,6 +972,9 @@ def _build_instance(
                     continue
                 start = start_index * config.rain_block_minutes
                 end = (previous + 1) * config.rain_block_minutes
+                rain_latent_id = (
+                    f"{instance_id}:rain_coalesce:{start_index:02d}-{previous:02d}"
+                )
                 add_disruption(
                     {
                         "instance_id": instance_id,
@@ -689,6 +987,8 @@ def _build_instance(
                         "operation": "",
                         "duration_min": float(end - start),
                         "recovery_at": float(end),
+                        "latent_id": rain_latent_id,
+                        "event_origin": "sampled",
                     }
                 )
                 add_disruption(
@@ -701,6 +1001,8 @@ def _build_instance(
                         "truck_id": "",
                         "cause": "rain",
                         "operation": "",
+                        "latent_id": rain_latent_id,
+                        "event_origin": "sampled",
                         "duration_min": 0.0,
                     }
                 )
@@ -739,8 +1041,10 @@ class _PayloadWriter:
         self.truck_rows: list[dict[str, Any]] = []
         self.service_rows: list[dict[str, Any]] = []
         self.disruption_rows: list[dict[str, Any]] = []
+        self.event_latent_rows: list[dict[str, Any]] = []
         self.rejection_rows: list[dict[str, Any]] = []
         self.current_instance: FrozenInstance | None = None
+        self.current_event_latents: EventLatentLedger | None = None
 
     def write_instance(self, instance: FrozenInstance) -> None:
         self.instance_rows.append(
@@ -769,6 +1073,10 @@ class _PayloadWriter:
         self.truck_rows.extend(truck.to_dict() for truck in instance.trucks)
         self.service_rows.extend(service.to_dict() for service in instance.service_times)
         self.disruption_rows.extend(dict(item) for item in instance.disruptions)
+        if not _TINY_FIXTURE_ACTIVE:
+            if self.current_event_latents is None:
+                raise DatasetContractError("event latent ledger is required before materializing an instance")
+            self.event_latent_rows.extend(self.current_event_latents.to_rows())
 
 
 def _materialize_production_header(header: FrozenInstance, writer: _PayloadWriter) -> None:
@@ -1111,10 +1419,11 @@ def _build_manifest(
         "trucks": 0,
         "service_times": 0,
         "disruptions": 0,
+        "event_latents": 0,
         "rejection_log": rejection_count,
     }
     if cardinalities is not None:
-        for name in ("scenario_index", "instances", "trucks", "service_times", "disruptions", "rejection_log"):
+        for name in ("scenario_index", "instances", "trucks", "service_times", "disruptions", "event_latents", "rejection_log"):
             value = cardinalities.get(name, counts[name])
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise DatasetContractError(f"manifest cardinality {name} must be a non-negative integer")
@@ -1141,6 +1450,7 @@ def _build_manifest(
         "policy_day_count": plan.policy_day_count,
         "cardinalities": counts,
         "crn_version": config.crn_version,
+        "event_latents_sha256": dict(payload_hashes).get("event_latents.jsonl", ""),
         "generator_version": generator_version,
         "parameters": config_as_dict(config),
         # Persist the complete validated protocol, not a self-described subset.
@@ -1164,6 +1474,29 @@ def _build_manifest(
 
 
 def _finalize_freeze(destination: Path, manifest: Mapping[str, Any]) -> FrozenDataset:
+    try:
+        observed_payloads = {entry.name for entry in destination.iterdir()}
+    except OSError as exc:
+        raise DatasetContractError(f"could not inventory freeze payload namespace: {destination}") from exc
+    provenance = manifest.get("resample_provenance")
+    if provenance is None:
+        expected_payloads = set(_PAYLOAD_NAMES)
+    elif isinstance(provenance, Mapping):
+        expected_payloads = set(_PAYLOAD_NAMES) | {"resample_provenance.json"}
+    else:
+        raise DatasetContractError("manifest resample_provenance must be null or an object")
+    if observed_payloads != expected_payloads:
+        missing = sorted(expected_payloads - observed_payloads)
+        extra = sorted(observed_payloads - expected_payloads)
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if extra:
+            details.append("unexpected=" + ",".join(extra))
+        raise DatasetContractError(
+            "freeze publication payload inventory diverges from manifest provenance"
+            + (f" ({'; '.join(details)})" if details else "")
+        )
     metadata = (destination / "manifest.json", destination / "checksums.sha256", destination / "FREEZE.json")
     existing = [path for path in metadata if path.exists()]
     if existing:
@@ -1204,12 +1537,13 @@ def _finalize_freeze(destination: Path, manifest: Mapping[str, Any]) -> FrozenDa
 
 
 def _write_payloads(root: Path, writer: _PayloadWriter) -> tuple[tuple[str, str], ...]:
-    """Write the five canonical payloads and return their exact hashes."""
+    """Write the six canonical payloads and return their exact hashes."""
 
     _write_parquet(root / "scenario_index.parquet", writer.scenario_rows, "scenario_index")
     _write_parquet(root / "trucks.parquet", writer.truck_rows, "trucks")
     _write_parquet(root / "service_times.parquet", writer.service_rows, "service_times")
     (root / "disruptions.jsonl").write_bytes(_jsonl_bytes(writer.disruption_rows, "disruptions"))
+    (root / "event_latents.jsonl").write_bytes(_jsonl_bytes(writer.event_latent_rows, "event_latents"))
     (root / "rejection_log.jsonl").write_bytes(_jsonl_bytes(writer.rejection_rows, "rejection_log"))
     return tuple((name, canonical_file_hash(root / name)) for name in _PAYLOAD_NAMES)
 
@@ -1318,6 +1652,7 @@ def _persist_staging_abort(
             "trucks": len(writer.truck_rows),
             "service_times": len(writer.service_rows),
             "disruptions": len(writer.disruption_rows),
+            "event_latents": len(writer.event_latent_rows),
             "rejection_log": len(writer.rejection_rows),
         },
         freeze_status="ABORTED",
@@ -1359,6 +1694,13 @@ def _generate_until_rejection(
             if not _validate_candidate(candidate):
                 return candidate, ordinal
             writer.current_instance = candidate
+            writer.current_event_latents = _build_event_latents(
+                config,
+                scenario,
+                int(header["seed"]),
+                attempt,
+                candidate.trucks,
+            )
             _materialize_production_header(candidate, writer)
     finally:
         _ACTIVE_VALIDATOR_CONFIG = previous_config
@@ -1429,6 +1771,7 @@ def generate_synthetic_dataset(
                 "trucks": len(writer.truck_rows),
                 "service_times": len(writer.service_rows),
                 "disruptions": len(writer.disruption_rows),
+                "event_latents": len(writer.event_latent_rows),
                 "rejection_log": len(writer.rejection_rows),
             },
         )
@@ -1452,12 +1795,13 @@ def generate_synthetic_dataset(
 def _writer_from_aborted_staging(source: AbortedStaging) -> _PayloadWriter:
     """Copy accepted source rows into a fresh writer without loading instances."""
 
-    scenario_rows, truck_rows, service_rows, disruption_rows, _rejection_rows = _read_payloads(source.path)
+    scenario_rows, truck_rows, service_rows, disruption_rows, event_latent_rows, _rejection_rows = _read_payloads(source.path)
     writer = _PayloadWriter()
     writer.scenario_rows = [dict(row) for row in scenario_rows]
     writer.truck_rows = [dict(row) for row in truck_rows]
     writer.service_rows = [dict(row) for row in service_rows]
     writer.disruption_rows = [dict(row) for row in disruption_rows]
+    writer.event_latent_rows = [dict(row) for row in event_latent_rows]
     writer.instance_headers = [dict(row) for row in source.manifest.get("instance_headers", [])]
     writer.instance_hashes = [dict(row) for row in source.manifest.get("instance_hashes", [])]
     writer.instance_rows = [
@@ -1545,6 +1889,17 @@ def _generate_one_candidate(
     candidate = _build_instance(config, scenario, int(header["seed"]), generation_attempt)
     if not _validate_candidate(candidate):
         return candidate
+    # ``_generate_until_rejection`` sets this context itself, but explicit
+    # resampling reaches the single-candidate path directly.  Build the same
+    # immutable ledger before materializing that accepted candidate so no
+    # implicit/empty event-latent fallback can leak into a resample payload.
+    writer.current_event_latents = _build_event_latents(
+        config,
+        scenario,
+        int(header["seed"]),
+        generation_attempt,
+        candidate.trucks,
+    )
     writer.current_instance = candidate
     _materialize_production_header(candidate, writer)
     return None
@@ -1668,6 +2023,7 @@ def resample_synthetic_dataset(
                 "trucks": len(writer.truck_rows),
                 "service_times": len(writer.service_rows),
                 "disruptions": len(writer.disruption_rows),
+                "event_latents": len(writer.event_latent_rows),
                 "rejection_log": 0,
             },
             resample_provenance=provenance_ref,
@@ -1857,7 +2213,7 @@ def _validate_checksum_chain(path: Path) -> tuple[dict[str, Any], dict[str, str]
     except UnicodeDecodeError as exc:
         raise DatasetContractError("checksums.sha256 is not valid UTF-8") from exc
     if len(rows) != len(_PAYLOAD_NAMES):
-        raise DatasetContractError("checksums.sha256 must contain exactly five payloads")
+        raise DatasetContractError("checksums.sha256 must contain exactly six payloads")
     entries: list[tuple[str, str]] = []
     for row in rows:
         fields = row.split("\t")
@@ -1885,6 +2241,10 @@ def _validate_checksum_chain(path: Path) -> tuple[dict[str, Any], dict[str, str]
     if manifest.get("scenario_index_hash") != dict(entries)["scenario_index.parquet"]:
         raise DatasetContractError(
             "manifest scenario_index_hash does not match scenario_index.parquet checksum"
+        )
+    if manifest.get("event_latents_sha256") != dict(entries)["event_latents.jsonl"]:
+        raise DatasetContractError(
+            "manifest event_latents_sha256 does not match event_latents.jsonl checksum"
         )
     if manifest.get("materialization_mode") != "full":
         raise DatasetContractError(
@@ -1934,6 +2294,10 @@ def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str],
     except OSError as exc:
         raise DatasetContractError(f"could not inventory staging namespace: {root}") from exc
     if observed_inventory != expected_inventory:
+        if "event_latents.jsonl" not in observed_inventory:
+            raise DatasetContractError(
+                "MISSING_EVENT_LATENTS: event_latents.jsonl is required for staging"
+            )
         missing = sorted(expected_inventory - observed_inventory)
         extra = sorted(observed_inventory - expected_inventory)
         raise DatasetContractError(
@@ -1946,7 +2310,7 @@ def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str],
     except (FileNotFoundError, UnicodeDecodeError, OSError) as exc:
         raise DatasetContractError("staging checksums.sha256 is missing or invalid") from exc
     if len(rows) != len(_PAYLOAD_NAMES):
-        raise DatasetContractError("staging checksums.sha256 must contain exactly five payloads")
+        raise DatasetContractError("staging checksums.sha256 must contain exactly six payloads")
     entries: list[tuple[str, str]] = []
     for row in rows:
         fields = row.split("\t")
@@ -1970,6 +2334,10 @@ def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str],
     payload_rows = [{"path": name, "sha256": digest} for name, digest in entries]
     if manifest.get("payload_hashes") != payload_rows:
         raise DatasetContractError("staging manifest payload hashes do not match checksums")
+    if manifest.get("event_latents_sha256") != dict(entries).get("event_latents.jsonl"):
+        raise DatasetContractError(
+            "staging manifest event_latents_sha256 does not match event_latents.jsonl"
+        )
     for name, digest in entries:
         if canonical_file_hash(root / name) != digest:
             raise DatasetContractError(f"staging payload hash mismatch for {name}")
@@ -2511,13 +2879,7 @@ def plan_explicit_resample(
 def _expected_scenario_factors() -> tuple[tuple[int, int, int, str], ...]:
     """Return the fixed confirmatory factorial in its protocol order."""
 
-    return tuple(
-        (truck_count, hopper_count, scale_count, regime)
-        for truck_count in (60, 120, 180)
-        for hopper_count in (1, 2, 3)
-        for scale_count in (1, 2)
-        for regime in ("nominal", "peak", "critical_failure", "priority_shift")
-    )
+    return _canonical_scenario_factors()
 
 
 def _manifest_seeds(manifest: Mapping[str, Any]) -> tuple[int, ...]:
@@ -2611,23 +2973,33 @@ def _expected_instance_ids(
     return expected_ids
 
 
-def _read_payloads(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def _read_payloads(root: Path) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     scenario_rows = _read_parquet(root / "scenario_index.parquet", "scenario_index.parquet", "scenario_index")
     truck_rows = _read_parquet(root / "trucks.parquet", "trucks.parquet", "trucks")
     service_rows = _read_parquet(root / "service_times.parquet", "service_times.parquet", "service_times")
     disruption_rows = _read_jsonl(root / "disruptions.jsonl", "disruptions.jsonl", "disruptions")
+    event_latent_rows = _read_jsonl(root / "event_latents.jsonl", "event_latents.jsonl", "event_latents")
     rejection_rows = _read_jsonl(root / "rejection_log.jsonl", "rejection_log.jsonl", "rejection_log")
     for value, label in (
         (scenario_rows, "scenario_index.parquet"),
         (truck_rows, "trucks.parquet"),
         (service_rows, "service_times.parquet"),
         (disruption_rows, "disruptions.jsonl"),
+        (event_latent_rows, "event_latents.jsonl"),
         (rejection_rows, "rejection_log.jsonl"),
     ):
         _assert_finite_json(value, label)
     _validate_jsonl_types(disruption_rows, "disruptions")
+    _validate_jsonl_types(event_latent_rows, "event_latents")
     _validate_jsonl_types(rejection_rows, "rejection_log")
-    return scenario_rows, truck_rows, service_rows, disruption_rows, rejection_rows
+    return scenario_rows, truck_rows, service_rows, disruption_rows, event_latent_rows, rejection_rows
 
 
 def _validate_jsonl_types(
@@ -2641,9 +3013,16 @@ def _validate_jsonl_types(
         number_fields = {"time", "duration_min", "return_time"}
         string_fields = {
             "instance_id", "scenario_id", "resource_id", "truck_id", "event_type",
-            "cause", "operation", "payload_hash",
+            "cause", "operation", "latent_id", "event_origin", "payload_hash",
         }
         optional_text_fields = {"resource_id", "truck_id", "operation"}
+    elif kind == "event_latents":
+        integer_fields = {"scenario_index", "seed", "generation_attempt"}
+        number_fields = set()
+        string_fields = {
+            "instance_id", "scenario_id", "latent_id", "latent_kind", "event_origin", "entity_id",
+        }
+        optional_text_fields = set()
     elif kind == "rejection_log":
         integer_fields = {"candidate_ordinal", "scenario_index", "seed", "generation_attempt"}
         number_fields = set()
@@ -2675,6 +3054,463 @@ def _validate_jsonl_types(
             raise DatasetContractError(f"{kind} row {ordinal} payload_hash must be a SHA-256 digest")
         if "candidate_hash" in row and (len(row["candidate_hash"]) != 64 or any(c not in "0123456789abcdefABCDEF" for c in row["candidate_hash"])):
             raise DatasetContractError(f"{kind} row {ordinal} candidate_hash must be a SHA-256 digest")
+        if kind == "event_latents":
+            payload = row.get("payload")
+            latent_kind = row.get("latent_kind")
+            expected_payload = EVENT_LATENT_PAYLOAD_FIELDS.get(latent_kind)
+            if not isinstance(payload, Mapping) or expected_payload is None or set(payload) != set(expected_payload):
+                raise DatasetContractError(f"event_latents row {ordinal} payload variant is not canonical")
+            _assert_finite_json(payload, f"event_latents row {ordinal}.payload")
+
+
+def _require_digest(value: object, label: str) -> str:
+    if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise DatasetContractError(f"{label} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _validate_event_latent_rows(rows: list[dict[str, Any]]) -> EventLatentLedger:
+    """Validate closed latent variants and construct the immutable ledger."""
+
+    previous_order: tuple[Any, ...] | None = None
+    for ordinal, row in enumerate(rows):
+        kind = row.get("latent_kind")
+        instance_id = row.get("instance_id")
+        entity_id = row.get("entity_id")
+        latent_id = row.get("latent_id")
+        if kind not in EVENT_LATENT_PAYLOAD_FIELDS:
+            raise DatasetContractError(f"event_latents row {ordinal} latent_kind is unsupported")
+        if latent_id != f"{instance_id}:{kind}:{entity_id}":
+            raise DatasetContractError(f"event_latents row {ordinal} latent_id is not canonical")
+        expected_origin = "forced" if kind == "forced_failure" else "sampled"
+        if row.get("event_origin") != expected_origin:
+            raise DatasetContractError(f"event_latents row {ordinal} event_origin is not canonical")
+        order = (str(instance_id), EVENT_LATENT_KINDS.index(kind), str(entity_id), str(latent_id))
+        if previous_order is not None and order < previous_order:
+            raise DatasetContractError("event_latents rows are not in canonical order")
+        previous_order = order
+        payload = row["payload"]
+        try:
+            _validate_event_latent_payload_core(row, ordinal=ordinal)
+        except (TypeError, ValueError) as exc:
+            raise DatasetContractError(
+                f"event_latents row {ordinal} semantic validation failed: {exc}"
+            ) from exc
+        scenario_index = row.get("scenario_index")
+        seed = row.get("seed")
+        generation_attempt = row.get("generation_attempt")
+
+        def require_crn_digest(value: object, label: str, entity: str, operation: str) -> str:
+            digest = _require_digest(value, label)
+            expected = crn_digest(
+                "crn.v1",
+                int(scenario_index),
+                int(seed),
+                int(generation_attempt),
+                entity,
+                operation,
+            )
+            if digest != expected:
+                raise DatasetContractError(f"{label} does not match canonical CRN tuple")
+            return digest
+
+        if kind != "forced_failure":
+            u = payload.get("u")
+            if isinstance(u, bool) or not isinstance(u, (int, float)) or not math.isfinite(float(u)) or not 0.0 <= float(u) < 1.0:
+                raise DatasetContractError(f"event_latents row {ordinal} u must be in [0,1)")
+            if kind == "document":
+                u_entity, u_operation = str(entity_id), "document"
+            elif kind == "base_failure":
+                u_entity, u_operation = "yard", "base_failure"
+            elif kind == "priority_shift":
+                u_entity, u_operation = "yard", "priority_shift_time"
+            else:
+                block_index = int(payload.get("block_index", -1))
+                u_entity, u_operation = "hopper-1", f"rain_block_{block_index}"
+            require_crn_digest(
+                payload.get("u_draw_key"),
+                f"event_latents row {ordinal} u_draw_key",
+                u_entity,
+                u_operation,
+            )
+        if kind == "document":
+            duration = payload.get("release_duration_min")
+            if (
+                isinstance(duration, bool)
+                or not isinstance(duration, (int, float))
+                or not math.isfinite(float(duration))
+                or not 30.0 <= float(duration) <= 120.0
+            ):
+                raise DatasetContractError(f"event_latents row {ordinal} release duration is outside the canonical range")
+            require_crn_digest(
+                payload.get("release_duration_draw_key"),
+                f"event_latents row {ordinal} release_duration_draw_key",
+                str(entity_id),
+                "document_release",
+            )
+        elif kind == "base_failure":
+            if not isinstance(payload.get("resource_id"), str) or not payload["resource_id"].strip():
+                raise DatasetContractError(f"event_latents row {ordinal} resource_id is invalid")
+            for name, operation in (
+                ("resource_draw_key", "base_failure_resource"),
+                ("start_draw_key", "failure_start"),
+                ("duration_draw_key", "failure_duration"),
+            ):
+                require_crn_digest(
+                    payload.get(name),
+                    f"event_latents row {ordinal} {name}",
+                    "yard",
+                    operation,
+                )
+            for name in ("start_minute", "duration_min"):
+                value = payload.get(name)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) < 0:
+                    raise DatasetContractError(f"event_latents row {ordinal} {name} is invalid")
+        elif kind == "priority_shift":
+            value = payload.get("shift_time_minute")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) < 0:
+                raise DatasetContractError(f"event_latents row {ordinal} shift time is invalid")
+            for name in ("candidate_truck_ids", "selected_truck_ids"):
+                values = payload.get(name)
+                if not isinstance(values, list) or any(not isinstance(item, str) or not item.strip() for item in values):
+                    raise DatasetContractError(f"event_latents row {ordinal} {name} is invalid")
+        elif kind == "rain_block":
+            block_index = payload.get("block_index")
+            if isinstance(block_index, bool) or not isinstance(block_index, int) or not 0 <= block_index < 24:
+                raise DatasetContractError(f"event_latents row {ordinal} block_index is invalid")
+            if payload.get("resource_id") != "hopper-1":
+                raise DatasetContractError(f"event_latents row {ordinal} rain resource is invalid")
+            start = payload.get("start_minute")
+            duration = payload.get("duration_min")
+            end = payload.get("end_minute")
+            if start != float(30 * block_index) or duration != 30.0 or end != float(start + duration):
+                raise DatasetContractError(f"event_latents row {ordinal} rain block timing is not canonical")
+        elif kind == "forced_failure":
+            if payload.get("forced_event_type") != "resource_failure":
+                raise DatasetContractError(f"event_latents row {ordinal} forced event type is invalid")
+            if not isinstance(payload.get("resource_id"), str) or not payload["resource_id"].strip():
+                raise DatasetContractError(f"event_latents row {ordinal} forced resource is invalid")
+            for name, operation in (
+                ("start_draw_key", "critical_failure_start"),
+                ("duration_draw_key", "critical_failure_duration"),
+            ):
+                require_crn_digest(
+                    payload.get(name),
+                    f"event_latents row {ordinal} {name}",
+                    "yard",
+                    operation,
+                )
+            start = payload.get("start_minute")
+            duration = payload.get("duration_min")
+            end = payload.get("end_minute")
+            if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) < 0 for value in (start, duration, end)) or not math.isclose(float(end), float(start) + float(duration), rel_tol=0.0, abs_tol=1e-9):
+                raise DatasetContractError(f"event_latents row {ordinal} forced timing is invalid")
+    try:
+        return EventLatentLedger(tuple(rows))
+    except (TypeError, ValueError) as exc:
+        raise DatasetContractError("event_latents ledger is not canonical") from exc
+
+
+def load_event_latents(path: str | Path) -> EventLatentLedger:
+    """Load and validate the canonical ``event_latents.jsonl`` payload."""
+
+    root = Path(path)
+    payload_path = root / "event_latents.jsonl" if root.is_dir() else root
+    if not payload_path.is_file():
+        raise DatasetContractError(f"MISSING_EVENT_LATENTS: {payload_path}")
+    rows = _read_jsonl(payload_path, "event_latents.jsonl", "event_latents")
+    if not rows:
+        raise DatasetContractError("event_latents ledger is empty")
+    return _validate_event_latent_rows(rows)
+
+
+def _controlled_event_hash(row: Mapping[str, Any]) -> str:
+    return _digest_value(dict(row))
+
+
+def _coalesced_rain_rows(
+    instance: FrozenInstance,
+    blocks: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    active = sorted(tuple(blocks), key=lambda row: int(row["payload"]["block_index"]))
+    if not active:
+        return []
+    rows: list[dict[str, Any]] = []
+    first = int(active[0]["payload"]["block_index"])
+    previous = first
+    for row in active[1:] + [None]:
+        block_index = None if row is None else int(row["payload"]["block_index"])
+        if block_index is not None and block_index == previous + 1:
+            previous = block_index
+            continue
+        start = float(first * 30)
+        end = float((previous + 1) * 30)
+        latent_id = f"{instance.instance_id}:rain_coalesce:{first:02d}-{previous:02d}"
+        common = {
+            "instance_id": instance.instance_id,
+            "scenario_index": instance.scenario_index,
+            "scenario_id": instance.scenario_id,
+            "seed": instance.seed,
+            "resource_id": "hopper-1",
+            "truck_id": "",
+            "cause": "rain",
+            "operation": "",
+            "latent_id": latent_id,
+            "event_origin": "sampled",
+        }
+        start_row = {
+            **common,
+            "time": start,
+            "event_rank": _CANONICAL_EVENT_RANKS["rain_start"],
+            "sequence": 0,
+            "event_type": "rain_start",
+            "duration_min": end - start,
+            "return_time": end,
+            "payload_hash": "",
+        }
+        end_row = {
+            **common,
+            "time": end,
+            "event_rank": _CANONICAL_EVENT_RANKS["rain_end"],
+            "sequence": 0,
+            "event_type": "rain_end",
+            "duration_min": 0.0,
+            "return_time": 0.0,
+            "payload_hash": "",
+        }
+        rows.extend((start_row, end_row))
+        if block_index is not None:
+            first = block_index
+            previous = block_index
+    return rows
+
+
+def _derive_controlled_instance(
+    instance: FrozenInstance,
+    event_latents: EventLatentLedger,
+    controls: ExecutionControls,
+) -> FrozenInstance:
+    """Purely derive a base/high event overlay from frozen instance inputs."""
+
+    if not isinstance(instance, FrozenInstance):
+        raise TypeError("instance must be a FrozenInstance")
+    if not isinstance(event_latents, EventLatentLedger):
+        raise TypeError("event_latents must be an EventLatentLedger")
+    if not isinstance(controls, ExecutionControls):
+        raise TypeError("controls must be ExecutionControls")
+    if controls.event_latents_sha256 != event_latents.event_latents_sha256:
+        raise ValueError("event_latents_sha256 does not match the supplied ledger")
+    expected_control_hash = ExecutionControls.compute_hash(
+        ordinary_window=controls.ordinary_window,
+        buffer_capacity=controls.buffer_capacity,
+        threshold_multiplier=controls.threshold_multiplier,
+        intensity=controls.intensity,
+        source_dataset_root_hash=controls.source_dataset_root_hash,
+        event_latents_sha256=controls.event_latents_sha256,
+    )
+    if controls.control_hash != expected_control_hash:
+        raise ValueError("control_hash does not match the supplied controls")
+    instance_rows = event_latents.for_instance(instance.instance_id)
+    if not instance_rows:
+        raise DatasetContractError("event latent ledger does not contain the supplied instance")
+    # Validate the supplied ledger against the frozen instance before either
+    # intensity returns or derives an overlay.  The protocol constants are
+    # embedded here deliberately: this pure function may not read/mutate a
+    # live ExperimentConfig or touch the filesystem.
+    regime = instance.scenario_id.rsplit("-", 1)[-1]
+    pure_protocol = SimpleNamespace(
+        horizon_minutes=720,
+        document_release_distribution=(30.0, 60.0, 120.0),
+        failure_start_window=(240, 480),
+        failure_duration_distribution=(20.0, 40.0, 70.0),
+        priority_shift_window=(240, 480),
+        priority_shift_fraction=0.10,
+        rain_block_minutes=30,
+    )
+    _validate_event_latent_projection(
+        instance.instance_id,
+        instance_rows,
+        instance.disruptions,
+        scenario={
+            "regime": regime,
+            "N": len(instance.trucks),
+            "hopper_count": sum(resource.kind == "hopper" for resource in instance.resources),
+            "scale_count": sum(resource.kind == "scale" for resource in instance.resources),
+        },
+        trucks=instance.trucks,
+        config=pure_protocol,
+    )
+    # Validate the persisted stream before deriving any variant.  This is a
+    # trust boundary: high projections may only add canonical rows, never
+    # silently repair forged envelopes, sequence/order, or payload hashes.
+    _validate_instance_disruption_stream(instance, config=pure_protocol)
+    if controls.intensity == "base":
+        projected = instance
+    else:
+        rows = [
+            dict(row)
+            for row in instance.disruptions
+            if row.get("event_type") not in {"rain_start", "rain_end"}
+        ]
+        existing_latents = {str(row.get("latent_id")) for row in instance.disruptions}
+        trucks = list(instance.trucks)
+        truck_by_id = {truck.truck_id: truck for truck in trucks}
+        for latent in instance_rows:
+            kind = latent["latent_kind"]
+            payload = latent["payload"]
+            if kind == "document" and float(payload["u"]) < min(1.0, 2.0 * 0.03):
+                truck_id = str(latent["entity_id"])
+                if truck_id in truck_by_id and latent["latent_id"] not in existing_latents:
+                    truck = truck_by_id[truck_id]
+                    if truck.document_status == "CLEAR":
+                        replacement = FrozenTruck(
+                            instance_id=truck.instance_id,
+                            scenario_index=truck.scenario_index,
+                            scenario_id=truck.scenario_id,
+                            seed=truck.seed,
+                            truck_id=truck.truck_id,
+                            arrival_minute=truck.arrival_minute,
+                            cargo_type=truck.cargo_type,
+                            priority=truck.priority,
+                            document_status="BLOCKED",
+                            stage=truck.stage,
+                            eligible_resources=truck.eligible_resources,
+                            generation_attempt=truck.generation_attempt,
+                            truck_record_hash=None,
+                        )
+                        trucks[trucks.index(truck)] = replacement
+                    delay = float(payload["release_duration_min"])
+                    rows.append(
+                        {
+                            "instance_id": instance.instance_id,
+                            "scenario_index": instance.scenario_index,
+                            "scenario_id": instance.scenario_id,
+                            "seed": instance.seed,
+                            "time": min(720.0, float(truck.arrival_minute) + delay),
+                            "event_rank": _CANONICAL_EVENT_RANKS["document_release"],
+                            "resource_id": "",
+                            "truck_id": truck_id,
+                            "sequence": 0,
+                            "event_type": "document_release",
+                            "cause": "document",
+                            "operation": "gate",
+                            "duration_min": delay,
+                            "return_time": 0.0,
+                            "latent_id": latent["latent_id"],
+                            "event_origin": "sampled",
+                            "payload_hash": "",
+                        }
+                    )
+            elif kind == "base_failure" and float(payload["u"]) < min(1.0, 2.0 * 0.05):
+                if latent["latent_id"] not in existing_latents:
+                    start = float(payload["start_minute"])
+                    duration = float(payload["duration_min"])
+                    rows.append(
+                        {
+                            "instance_id": instance.instance_id,
+                            "scenario_index": instance.scenario_index,
+                            "scenario_id": instance.scenario_id,
+                            "seed": instance.seed,
+                            "time": start,
+                            "event_rank": _CANONICAL_EVENT_RANKS["resource_failure"],
+                            "resource_id": str(payload["resource_id"]),
+                            "truck_id": "",
+                            "sequence": 0,
+                            "event_type": "resource_failure",
+                            "cause": "base_failure",
+                            "operation": "",
+                            "duration_min": duration,
+                            "return_time": start + duration,
+                            "latent_id": latent["latent_id"],
+                            "event_origin": "sampled",
+                            "payload_hash": "",
+                        }
+                    )
+        active_rain = [
+            row
+            for row in instance_rows
+            if row["latent_kind"] == "rain_block"
+            and float(row["payload"]["u"]) < min(1.0, 2.0 * 0.10)
+        ]
+        rows.extend(_coalesced_rain_rows(instance, active_rain))
+        rows.sort(
+            key=lambda row: (
+                row["time"],
+                row["event_rank"],
+                row.get("resource_id", ""),
+                row.get("truck_id", ""),
+                row.get("sequence", 0),
+            )
+        )
+        # A controlled projection is a fresh canonical event list.  Renumber all
+        # rows after rain removal/recoalescing so there are no gaps or duplicate
+        # sequence values, then recompute each row hash over that exact wire form.
+        for sequence, row in enumerate(rows, start=1):
+            row["sequence"] = sequence
+            row["payload_hash"] = _disruption_payload_hash(row)
+        projected = FrozenInstance(
+            instance_id=instance.instance_id,
+            scenario_index=instance.scenario_index,
+            scenario_id=instance.scenario_id,
+            seed=instance.seed,
+            generation_attempt=instance.generation_attempt,
+            trucks=tuple(trucks),
+            resources=instance.resources,
+            service_times=instance.service_times,
+            disruptions=tuple(rows),
+        )
+    _validate_instance_disruption_stream(projected, config=pure_protocol)
+    return projected
+
+
+_OVERLAY_SEMANTIC_FIELDS: tuple[str, ...] = (
+    "event_type",
+    "latent_id",
+    "event_origin",
+    "resource_id",
+    "truck_id",
+    "cause",
+    "operation",
+    "time",
+    "duration_min",
+    "return_time",
+)
+
+
+def _controlled_view_hash(controls: ExecutionControls) -> str:
+    """Hash the complete immutable seven-field control recipe."""
+
+    return _controlled_projection_view_hash(controls)
+
+
+def _event_overlay_hash(
+    instance: FrozenInstance,
+    controls: ExecutionControls,
+) -> str:
+    """Hash projection semantics independently of stream-local bookkeeping."""
+
+    return _controlled_projection_overlay_hash(instance, controls)
+
+
+def derive_controlled_projection(
+    instance: FrozenInstance,
+    event_latents: EventLatentLedger,
+    controls: ExecutionControls,
+) -> ControlledProjection:
+    """Derive a frozen projection and return its two identity attestations."""
+
+    projected = _derive_controlled_instance(instance, event_latents, controls)
+    return ControlledProjection(instance=projected, controls=controls)
+
+
+def derive_controlled_instance(
+    instance: FrozenInstance,
+    event_latents: EventLatentLedger,
+    controls: ExecutionControls,
+) -> FrozenInstance:
+    """Documented projection API returning the frozen instance component."""
+
+    return derive_controlled_projection(instance, event_latents, controls).instance
 
 
 def _validate_disruption_event_type(event_type: object) -> str:
@@ -2710,6 +3546,10 @@ def _validate_namespace_inventory(path: Path, manifest: Mapping[str, Any]) -> No
     else:
         raise DatasetContractError("manifest resample_provenance must be null or an object")
     if observed != expected:
+        if "event_latents.jsonl" not in observed:
+            raise DatasetContractError(
+                "MISSING_EVENT_LATENTS: event_latents.jsonl is required for a public freeze"
+            )
         missing = sorted(expected - observed)
         extra = sorted(observed - expected)
         details: list[str] = []
@@ -2804,8 +3644,17 @@ def _validate_disruption_semantics(
     """Validate one instance's complete disruption realization against the protocol."""
 
     protocol = _canonical_confirmatory_config() if config is None else config
-    if not isinstance(protocol, ExperimentConfig):
-        raise TypeError("config must be an ExperimentConfig")
+    required_protocol_fields = (
+        "horizon_minutes",
+        "document_release_distribution",
+        "failure_start_window",
+        "failure_duration_distribution",
+        "priority_shift_window",
+        "priority_shift_fraction",
+        "rain_block_minutes",
+    )
+    if any(not hasattr(protocol, name) for name in required_protocol_fields):
+        raise TypeError("config must expose the canonical disruption protocol")
     if dict(event_ranks) != dict(_CANONICAL_EVENT_RANKS):
         raise DatasetContractError("disruption event_ranks must equal canonical values")
     try:
@@ -2869,7 +3718,10 @@ def _validate_disruption_semantics(
                 raise DatasetContractError(f"disruptions row {ordinal} truck FK is invalid")
             truck = truck_lookup.get(truck_id)
             if truck is None:
-                raise DatasetContractError(f"disruptions row {ordinal} references an unknown truck")
+                cause = KeyError(truck_id)
+                raise DatasetContractError(
+                    f"disruptions row {ordinal} references unknown truck {truck_id}"
+                ) from cause
         if event_type == "document_release":
             document_rows.append(row)
             truck = truck_lookup[truck_id]
@@ -2972,6 +3824,288 @@ def _validate_disruption_semantics(
         previous_end = end_time
 
 
+def _validate_instance_disruption_stream(
+    instance: FrozenInstance,
+    *,
+    config: Any,
+) -> None:
+    """Validate one immutable disruption stream before any projection rewrite."""
+
+    rows = tuple(instance.disruptions)
+    expected_fields = set(_JSONL_SCHEMA_NAMES["disruptions.jsonl"])
+    sequences: list[int] = []
+    for ordinal, row in enumerate(rows):
+        if not isinstance(row, Mapping) or set(row) != expected_fields:
+            raise DatasetContractError(
+                f"{instance.instance_id} disruptions row {ordinal} envelope is not canonical"
+            )
+        envelope = {
+            "instance_id": instance.instance_id,
+            "scenario_index": instance.scenario_index,
+            "scenario_id": instance.scenario_id,
+            "seed": instance.seed,
+        }
+        if any(row.get(name) != expected for name, expected in envelope.items()):
+            raise DatasetContractError(
+                f"{instance.instance_id} disruptions row {ordinal} instance envelope diverges"
+            )
+        event_type = _validate_disruption_event_type(row.get("event_type"))
+        if row.get("event_rank") != _CANONICAL_EVENT_RANKS[event_type]:
+            raise DatasetContractError(
+                f"{instance.instance_id} disruptions row {ordinal} event_rank is not canonical"
+            )
+        sequence = row.get("sequence")
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
+            raise DatasetContractError(
+                f"{instance.instance_id} disruptions row {ordinal} sequence is not canonical"
+            )
+        sequences.append(sequence)
+        try:
+            expected_hash = _disruption_payload_hash(row)
+        except (TypeError, ValueError) as exc:
+            raise DatasetContractError(
+                f"{instance.instance_id} disruptions row {ordinal} payload is not canonical"
+            ) from exc
+        if row.get("payload_hash") != expected_hash:
+            raise DatasetContractError(
+                f"{instance.instance_id} disruptions row {ordinal} payload_hash mismatch"
+            )
+    # Run semantic FK/protocol checks before order comparison so malformed
+    # identifiers retain their causal KeyError at this public boundary.
+    _validate_disruption_semantics(
+        rows,
+        scenario={
+            "regime": instance.scenario_id.rsplit("-", 1)[-1],
+            "N": len(instance.trucks),
+            "hopper_count": sum(resource.kind == "hopper" for resource in instance.resources),
+            "scale_count": sum(resource.kind == "scale" for resource in instance.resources),
+        },
+        trucks=instance.trucks,
+        event_ranks=_CANONICAL_EVENT_RANKS,
+        horizon_minutes=float(config.horizon_minutes),
+        config=config,
+    )
+    if sorted(sequences) != list(range(1, len(rows) + 1)):
+        raise DatasetContractError(
+            f"{instance.instance_id} disruption sequence is not contiguous"
+        )
+    try:
+        canonical_rows = tuple(
+            sorted(
+                rows,
+                key=lambda row: (
+                    row["time"],
+                    row["event_rank"],
+                    row["resource_id"],
+                    row["truck_id"],
+                    row["sequence"],
+                ),
+            )
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DatasetContractError(
+            f"{instance.instance_id} disruptions order is not canonical"
+        ) from exc
+    if rows != canonical_rows:
+        raise DatasetContractError(
+            f"{instance.instance_id} disruptions order is not canonical"
+        )
+
+
+def _validate_event_latent_projection(
+    instance_id: str,
+    latent_rows: Iterable[Mapping[str, Any]],
+    disruption_rows: Iterable[Mapping[str, Any]],
+    *,
+    scenario: Mapping[str, Any],
+    trucks: Iterable[FrozenTruck],
+    config: ExperimentConfig,
+) -> None:
+    """Reconcile immutable candidates with their realized disruption rows."""
+
+    latents = tuple(latent_rows)
+    disruptions = tuple(disruption_rows)
+    truck_lookup = {truck.truck_id: truck for truck in trucks}
+    regime = str(scenario["regime"])
+    hopper_count = int(scenario["hopper_count"])
+    scale_count = int(scenario["scale_count"])
+    valid_resources = {"gate-1"}
+    valid_resources.update(f"scale-{index}" for index in range(1, scale_count + 1))
+    valid_resources.update(f"hopper-{index}" for index in range(1, hopper_count + 1))
+    by_kind = {str(row["latent_kind"]): row for row in latents if row["latent_kind"] not in {"document", "rain_block"}}
+    document_latents = {str(row["entity_id"]): row for row in latents if row["latent_kind"] == "document"}
+    rain_latents = {str(row["entity_id"]): row for row in latents if row["latent_kind"] == "rain_block"}
+    if set(document_latents) != set(truck_lookup):
+        raise DatasetContractError(f"{instance_id} document latent/truck identity diverges")
+    if any(len([row for row in latents if row["latent_kind"] == kind]) > 1 for kind in {"base_failure", "priority_shift", "forced_failure"}):
+        raise DatasetContractError(f"{instance_id} latent identity is not unique")
+
+    def rows_for(latent_id: str) -> tuple[Mapping[str, Any], ...]:
+        return tuple(row for row in disruptions if row.get("latent_id") == latent_id)
+
+    for truck_id, latent in document_latents.items():
+        payload = latent["payload"]
+        release_duration = float(payload["release_duration_min"])
+        if not (
+            float(config.document_release_distribution[0])
+            <= release_duration
+            <= float(config.document_release_distribution[2])
+        ):
+            raise DatasetContractError(f"{instance_id} document release duration is outside the protocol range")
+        blocked = float(payload["u"]) < _DOCUMENT_BLOCK_PROBABILITY
+        if truck_lookup[truck_id].document_status == ("BLOCKED" if blocked else "CLEAR"):
+            pass
+        else:
+            raise DatasetContractError(f"{instance_id} document status diverges from latent candidate")
+        observed = rows_for(str(latent["latent_id"]))
+        if blocked:
+            if len(observed) != 1:
+                raise DatasetContractError(f"{instance_id} blocked truck lacks one document_release projection")
+            row = observed[0]
+            expected_time = min(float(config.horizon_minutes), truck_lookup[truck_id].arrival_minute + release_duration)
+            if (
+                row.get("event_type") != "document_release"
+                or row.get("truck_id") != truck_id
+                or row.get("event_origin") != latent.get("event_origin")
+                or row.get("duration_min") != release_duration
+                or not math.isclose(float(row.get("time")), expected_time, rel_tol=0.0, abs_tol=1e-9)
+            ):
+                raise DatasetContractError(f"{instance_id} document latent projection diverges")
+        elif observed:
+            raise DatasetContractError(f"{instance_id} clear truck has an unexpected document_release projection")
+
+    base_latent = next((row for row in latents if row["latent_kind"] == "base_failure"), None)
+    if base_latent is not None:
+        payload = base_latent["payload"]
+        resource_id = str(payload["resource_id"])
+        if resource_id not in valid_resources:
+            raise DatasetContractError(f"{instance_id} base failure resource is not canonical")
+        if not float(config.failure_start_window[0]) <= float(payload["start_minute"]) <= float(config.failure_start_window[1]):
+            raise DatasetContractError(f"{instance_id} base failure start is outside the protocol window")
+        if not float(config.failure_duration_distribution[0]) <= float(payload["duration_min"]) <= float(config.failure_duration_distribution[2]):
+            raise DatasetContractError(f"{instance_id} base failure duration is outside the protocol range")
+        observed = rows_for(str(base_latent["latent_id"]))
+        active = float(payload["u"]) < _BASE_FAILURE_PROBABILITY
+        if active:
+            if len(observed) != 1:
+                raise DatasetContractError(f"{instance_id} active base failure lacks one projection")
+            row = observed[0]
+            if (
+                row.get("event_type") != "resource_failure"
+                or row.get("cause") != "base_failure"
+                or row.get("event_origin") != base_latent.get("event_origin")
+                or row.get("resource_id") != resource_id
+                or row.get("time") != payload["start_minute"]
+                or row.get("duration_min") != payload["duration_min"]
+                or row.get("return_time") != float(payload["start_minute"] + payload["duration_min"])
+            ):
+                raise DatasetContractError(f"{instance_id} base failure latent projection diverges")
+        elif observed:
+            raise DatasetContractError(f"{instance_id} inactive base failure has a projection")
+    elif regime != "critical_failure":
+        raise DatasetContractError(f"{instance_id} non-critical instance lacks base_failure latent")
+
+    forced_latent = next((row for row in latents if row["latent_kind"] == "forced_failure"), None)
+    if regime == "critical_failure":
+        if forced_latent is None:
+            raise DatasetContractError(f"{instance_id} critical instance lacks forced_failure latent")
+        payload = forced_latent["payload"]
+        expected_resource = "hopper-1" if 36 * hopper_count <= 72 * scale_count else "scale-1"
+        if payload["resource_id"] != expected_resource or payload["resource_id"] not in valid_resources:
+            raise DatasetContractError(f"{instance_id} forced failure resource is not canonical")
+        if not float(config.failure_start_window[0]) <= float(payload["start_minute"]) <= float(config.failure_start_window[1]):
+            raise DatasetContractError(f"{instance_id} forced failure start is outside the protocol window")
+        if not float(config.failure_duration_distribution[0]) <= float(payload["duration_min"]) <= float(config.failure_duration_distribution[2]):
+            raise DatasetContractError(f"{instance_id} forced failure duration is outside the protocol range")
+        observed = rows_for(str(forced_latent["latent_id"]))
+        if len(observed) != 1:
+            raise DatasetContractError(f"{instance_id} forced failure projection cardinality diverges")
+        row = observed[0]
+        if (
+            row.get("event_type") != "resource_failure"
+            or row.get("cause") != "critical_failure"
+            or row.get("event_origin") != "forced"
+            or row.get("resource_id") != expected_resource
+            or row.get("time") != payload["start_minute"]
+            or row.get("duration_min") != payload["duration_min"]
+            or row.get("return_time") != payload["end_minute"]
+        ):
+            raise DatasetContractError(f"{instance_id} forced failure latent projection diverges")
+    elif forced_latent is not None:
+        raise DatasetContractError(f"{instance_id} non-critical instance has forced_failure latent")
+
+    priority_latent = next((row for row in latents if row["latent_kind"] == "priority_shift"), None)
+    if regime == "priority_shift":
+        if priority_latent is None:
+            raise DatasetContractError(f"{instance_id} priority instance lacks priority_shift latent")
+        payload = priority_latent["payload"]
+        shift_time = float(payload["shift_time_minute"])
+        if not float(config.priority_shift_window[0]) <= shift_time <= float(config.priority_shift_window[1]):
+            raise DatasetContractError(f"{instance_id} priority shift time is outside the protocol window")
+        expected_candidates = [
+            truck.truck_id
+            for truck in sorted(truck_lookup.values(), key=lambda item: (item.arrival_minute, item.truck_id))
+            if truck.arrival_minute >= shift_time
+        ]
+        if list(payload["candidate_truck_ids"]) != expected_candidates:
+            raise DatasetContractError(f"{instance_id} priority candidate IDs diverge from arrivals")
+        expected_selected = expected_candidates[: math.ceil(config.priority_shift_fraction * int(scenario["N"]))]
+        if list(payload["selected_truck_ids"]) != expected_selected:
+            raise DatasetContractError(f"{instance_id} priority selected IDs diverge from canonical order")
+        observed = [row for row in disruptions if row.get("latent_id") == priority_latent["latent_id"]]
+        for row in observed:
+            observed_truck_id = str(row.get("truck_id"))
+            if observed_truck_id not in truck_lookup:
+                cause = KeyError(observed_truck_id)
+                raise DatasetContractError(
+                    f"{instance_id} priority latent projection references unknown truck {observed_truck_id}"
+                ) from cause
+        observed_ids = [
+            str(row.get("truck_id"))
+            for row in sorted(
+                observed,
+                key=lambda row: (truck_lookup[str(row.get("truck_id"))].arrival_minute, str(row.get("truck_id"))),
+            )
+        ]
+        if (
+            observed_ids != expected_selected
+            or any(float(row.get("time")) != shift_time for row in observed)
+            or any(row.get("event_origin") != priority_latent.get("event_origin") for row in observed)
+        ):
+            raise DatasetContractError(f"{instance_id} priority latent projection diverges")
+    elif priority_latent is not None:
+        raise DatasetContractError(f"{instance_id} non-priority instance has priority_shift latent")
+
+    if hopper_count >= 2:
+        if set(rain_latents) != {f"rain-{index:02d}" for index in range(24)}:
+            raise DatasetContractError(f"{instance_id} rain latent IDs are not exactly rain-00..rain-23")
+        active_ids = {
+            str(row["latent_id"])
+            for row in rain_latents.values()
+            if float(row["payload"]["u"]) < _RAIN_PROBABILITY
+        }
+        starts = [row for row in disruptions if row.get("event_type") == "rain_start"]
+        ends = [row for row in disruptions if row.get("event_type") == "rain_end"]
+        covered: set[str] = set()
+        for start, end in zip(sorted(starts, key=lambda row: (float(row["time"]), int(row["sequence"]))), sorted(ends, key=lambda row: (float(row["time"]), int(row["sequence"])) )):
+            if start.get("latent_id") != end.get("latent_id"):
+                raise DatasetContractError(f"{instance_id} rain pair latent IDs diverge")
+            if start.get("event_origin") != "sampled" or end.get("event_origin") != "sampled":
+                raise DatasetContractError(f"{instance_id} rain event origin is not canonical")
+            ids = _rain_covered_latent_ids(start)
+            if covered.intersection(ids):
+                raise DatasetContractError(f"{instance_id} rain interval coverage overlaps")
+            covered.update(ids)
+            if any(item.rsplit(":rain_block:", 1)[-1] not in rain_latents for item in ids):
+                raise DatasetContractError(f"{instance_id} rain interval references an unknown latent block")
+            if _disruption_payload_hash(start) != start.get("payload_hash") or _disruption_payload_hash(end) != end.get("payload_hash"):
+                raise DatasetContractError(f"{instance_id} rain payload_hash does not bind block IDs")
+        if covered != active_ids:
+            raise DatasetContractError(f"{instance_id} rain disruption coverage diverges from active latent blocks")
+    elif rain_latents:
+        raise DatasetContractError(f"{instance_id} m=1 instance has rain latents")
+
+
 def _validate_full_payloads(
     root: Path,
     manifest: Mapping[str, Any],
@@ -2991,7 +4125,9 @@ def _validate_full_payloads(
     # Validate the persisted protocol before inspecting derived header/index
     # metadata so malformed configuration fails at its causal boundary.
     protocol_config, expected_distributions, event_ranks, horizon_minutes = _validate_manifest_configuration(manifest)
-    scenario_rows, truck_rows, service_rows, disruption_rows, rejection_rows = _read_payloads(root)
+    canonical_plan = expected_plan or plan_synthetic_dataset(protocol_config)
+    _validate_generation_plan_receipt(manifest, canonical_plan)
+    scenario_rows, truck_rows, service_rows, disruption_rows, event_latent_rows, rejection_rows = _read_payloads(root)
     scenario_lookup = _validate_scenario_rows(scenario_rows, manifest, expected_plan)
     expected_ids = _expected_instance_ids(manifest, expected_plan)
     expected_id_set = set(expected_ids)
@@ -3010,6 +4146,55 @@ def _validate_full_payloads(
         current_headers=instance_headers,
     )
     seeds = _manifest_seeds(manifest)
+    try:
+        event_latent_ledger = _validate_event_latent_rows(event_latent_rows)
+    except DatasetContractError:
+        raise
+    if manifest.get("event_latents_sha256") != event_latent_ledger.event_latents_sha256:
+        raise DatasetContractError("manifest event_latents_sha256 does not match ledger bytes")
+    latent_by_instance: dict[str, list[Mapping[str, Any]]] = {}
+    for ordinal, row in enumerate(event_latent_ledger):
+        instance_id = str(row["instance_id"])
+        if instance_id not in expected_id_set:
+            raise DatasetContractError(f"event_latents row {ordinal} has an unknown instance_id")
+        scenario_index = int(instance_id.split("-seed", 1)[0][1:])
+        if (
+            row["scenario_index"] != scenario_index
+            or row["scenario_id"] != scenario_lookup[scenario_index]["scenario_id"]
+            or row["seed"] != int(instance_id.split("-seed", 1)[1])
+            or row["generation_attempt"] != generation_attempt_lookup[instance_id]
+        ):
+            raise DatasetContractError(f"event_latents row {ordinal} identity diverges from instance plan")
+        latent_by_instance.setdefault(instance_id, []).append(row)
+    for instance_id in expected_ids:
+        scenario_index = int(instance_id.split("-seed", 1)[0][1:])
+        scenario = scenario_lookup[scenario_index]
+        rows = latent_by_instance.get(instance_id, [])
+        expected_kinds = {
+            "document": int(scenario["N"]),
+            "base_failure": 0 if scenario["regime"] == "critical_failure" else 1,
+            "priority_shift": 1 if scenario["regime"] == "priority_shift" else 0,
+            "rain_block": 24 if int(scenario["hopper_count"]) >= 2 else 0,
+            "forced_failure": 1 if scenario["regime"] == "critical_failure" else 0,
+        }
+        observed_kinds = {kind: 0 for kind in expected_kinds}
+        for row in rows:
+            observed_kinds[str(row["latent_kind"])] += 1
+        if observed_kinds != expected_kinds:
+            raise DatasetContractError(
+                f"{instance_id} event_latents cardinality diverges from scenario"
+            )
+        document_ids = {
+            str(row["entity_id"])
+            for row in rows
+            if row["latent_kind"] == "document"
+        }
+        expected_truck_ids = {f"T-{index:03d}" for index in range(1, int(scenario["N"]) + 1)}
+        if document_ids != expected_truck_ids:
+            raise DatasetContractError(f"{instance_id} document latent IDs diverge from trucks")
+        rain_rows = [row for row in rows if row["latent_kind"] == "rain_block"]
+        if rain_rows and {int(row["payload"]["block_index"]) for row in rain_rows} != set(range(24)):
+            raise DatasetContractError(f"{instance_id} rain latent block IDs are not 0..23")
     by_instance_trucks: dict[str, list[FrozenTruck]] = {}
     by_instance_services: dict[str, list[FrozenServiceTime]] = {}
     by_instance_disruptions: dict[str, list[Mapping[str, Any]]] = {}
@@ -3133,10 +4318,20 @@ def _validate_full_payloads(
         event_type = _validate_disruption_event_type(row.get("event_type"))
         if row.get("event_rank") != event_ranks[event_type]:
             raise DatasetContractError(f"disruptions row {ordinal} event_rank diverges from event_type")
+        latent_id = row.get("latent_id")
+        event_origin = row.get("event_origin")
+        instance_latent_ids = {
+            str(item["latent_id"])
+            for item in latent_by_instance.get(str(instance_id), [])
+        }
+        if event_type in {"document_release", "resource_failure", "priority_change"}:
+            if latent_id not in instance_latent_ids or event_origin not in {"sampled", "forced"}:
+                raise DatasetContractError(f"disruptions row {ordinal} latent back-reference is invalid")
+        elif event_type in {"rain_start", "rain_end"}:
+            if not isinstance(latent_id, str) or ":rain_coalesce:" not in latent_id or event_origin != "sampled":
+                raise DatasetContractError(f"disruptions row {ordinal} rain latent back-reference is invalid")
         observed_hash = row.get("payload_hash")
-        payload = dict(row)
-        payload.pop("payload_hash", None)
-        if observed_hash != _digest_value(payload):
+        if observed_hash != _disruption_payload_hash(row):
             raise DatasetContractError(f"disruptions row {ordinal} payload_hash mismatch")
         disruption_row_instance_order.append(instance_id)
         by_instance_disruptions.setdefault(instance_id, []).append(row)
@@ -3175,6 +4370,14 @@ def _validate_full_payloads(
             horizon_minutes=horizon_minutes,
             config=protocol_config,
         )
+        _validate_event_latent_projection(
+            instance_id,
+            latent_by_instance.get(instance_id, ()),
+            rows,
+            scenario=scenario_lookup[scenario_index],
+            trucks=by_instance_trucks[instance_id],
+            config=protocol_config,
+        )
 
     for ordinal, row in enumerate(rejection_rows):
         if row.get("dataset_id") != manifest.get("dataset_id"):
@@ -3190,6 +4393,7 @@ def _validate_full_payloads(
         "trucks": len(truck_rows),
         "service_times": len(service_rows),
         "disruptions": len(disruption_rows),
+        "event_latents": len(event_latent_rows),
         "rejection_log": len(rejection_rows),
     }
     expected_trucks = sum(int(row["N"]) for row in scenario_rows) * len(seeds)
@@ -3256,7 +4460,7 @@ def _validate_full_payloads(
         if instance.instance_hash != instance_hash_lookup[instance_id]:
             raise DatasetContractError(f"instance_hash mismatch for {instance_id}")
         instances.append(instance)
-    return FrozenDataset(root, manifest, tuple(instances))
+    return FrozenDataset(root, manifest, tuple(instances), event_latents=event_latent_ledger)
 
 
 def validate_frozen_dataset(
@@ -3291,7 +4495,7 @@ def load_frozen_dataset(path: str | Path, expected_plan: DatasetPlan | None = No
 
 
 def freeze_dataset(path: str | Path, manifest: Mapping[str, Any] | None = None) -> FrozenDataset:
-    """Finalize a directory containing the five payloads and return its freeze."""
+    """Finalize a directory containing the six payloads and return its freeze."""
 
     root = Path(path)
     if not root.is_dir():
@@ -3312,6 +4516,23 @@ def freeze_dataset(path: str | Path, manifest: Mapping[str, Any] | None = None) 
         )
     if not isinstance(manifest, Mapping):
         raise DatasetContractError("manifest must be a mapping")
+    try:
+        observed = {entry.name for entry in root.iterdir()}
+    except OSError as exc:
+        raise DatasetContractError(f"could not inventory freeze namespace: {root}") from exc
+    expected = set(_PAYLOAD_NAMES)
+    if observed != expected:
+        missing = sorted(expected - observed)
+        extra = sorted(observed - expected)
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if extra:
+            details.append("unexpected=" + ",".join(extra))
+        raise DatasetContractError(
+            "freeze_dataset requires exactly six canonical payload files"
+            + (f" ({'; '.join(details)})" if details else "")
+        )
     return _finalize_freeze(root, manifest)
 
 
@@ -3343,11 +4564,15 @@ __all__ = [
     "RejectionLogRow",
     "ResamplePlan",
     "canonical_payload_schemas",
+    "canonical_event_latent_schema",
+    "derive_controlled_projection",
+    "derive_controlled_instance",
     "freeze_dataset",
     "generate_synthetic_dataset",
     "load_aborted_staging",
     "load_freeze_receipt",
     "load_frozen_dataset",
+    "load_event_latents",
     "plan_synthetic_dataset",
     "plan_explicit_resample",
     "probe_generation_attempt",

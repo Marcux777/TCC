@@ -1,5 +1,7 @@
 from pathlib import Path
 from datetime import datetime, timezone
+from dataclasses import replace
+from decimal import Decimal
 import hashlib
 import inspect
 import json
@@ -24,7 +26,10 @@ from pequiflux_experiment.dataset import (
     GenerationRejectedError,
     _install_tiny_generation_fixture,
     canonical_payload_schemas,
+    canonical_event_latent_schema,
+    derive_controlled_instance,
     generate_synthetic_dataset,
+    load_event_latents,
     load_aborted_staging,
     load_freeze_receipt,
     load_frozen_dataset,
@@ -40,6 +45,9 @@ from pequiflux_experiment.dataset import (
 )
 import pequiflux_experiment.dataset as dataset_module
 from pequiflux_experiment.domain import (
+    ControlledProjection,
+    EventLatentLedger,
+    ExecutionControls,
     FrozenInstance,
     FrozenResource,
     FrozenServiceTime,
@@ -160,7 +168,7 @@ def test_strict_loader_rejects_header_only_artifact(tmp_path):
         )
 
 
-def test_checksum_chain_accepts_exact_five_payload_mapping(tmp_path):
+def test_checksum_chain_accepts_exact_six_payload_mapping(tmp_path):
     from pequiflux_experiment.dataset import _PAYLOAD_NAMES, _validate_checksum_chain
     from pequiflux_experiment.manifest import canonical_checksum_bytes, canonical_file_hash, dataset_root_hash, write_manifest
 
@@ -1120,3 +1128,484 @@ def test_rain_pairs_must_not_overlap_or_be_adjacent():
             horizon_minutes=config.horizon_minutes,
             config=config,
         )
+
+
+def _task25_instance_and_ledger(config, *, regime: str, hopper_count: int | None = None):
+    scenarios = factorial_scenarios(config)
+    scenario = next(
+        item
+        for item in scenarios
+        if item.regime == regime
+        and (hopper_count is None or item.hopper_count == hopper_count)
+    )
+    instance = dataset_module._build_instance(config, scenario, config.seeds[0], 0)
+    ledger = dataset_module._build_event_latents(
+        config, scenario, instance.seed, instance.generation_attempt, instance.trucks
+    )
+    return instance, ledger
+
+
+def _task25_controls(ledger: EventLatentLedger, *, intensity: str) -> ExecutionControls:
+    return ExecutionControls.build(
+        ordinary_window=6,
+        buffer_capacity=12,
+        threshold_multiplier=Decimal("1.00"),
+        intensity=intensity,
+        source_dataset_root_hash="a" * 64,
+        event_latents_sha256=ledger.event_latents_sha256,
+    )
+
+
+def test_event_latent_schema_and_legacy_loader_fail_fast(tmp_path):
+    expected = {
+        "envelope": (
+            "instance_id", "scenario_index", "scenario_id", "seed",
+            "generation_attempt", "latent_id", "latent_kind", "event_origin",
+            "entity_id", "payload",
+        ),
+        "payload_variants": {
+            "document": ("u", "u_draw_key", "release_duration_min", "release_duration_draw_key"),
+            "base_failure": (
+                "u", "u_draw_key", "resource_id", "resource_draw_key",
+                "start_minute", "start_draw_key", "duration_min", "duration_draw_key",
+            ),
+            "priority_shift": (
+                "u", "u_draw_key", "shift_time_minute", "candidate_truck_ids", "selected_truck_ids",
+            ),
+            "rain_block": (
+                "u", "u_draw_key", "block_index", "resource_id", "start_minute", "duration_min", "end_minute",
+            ),
+            "forced_failure": (
+                "forced_event_type", "resource_id", "start_minute", "start_draw_key",
+                "duration_min", "duration_draw_key", "end_minute",
+            ),
+        },
+        "latent_kind_order": ("document", "base_failure", "priority_shift", "rain_block", "forced_failure"),
+    }
+    assert canonical_event_latent_schema() == expected
+
+    legacy = tmp_path / "legacy-v1"
+    _write_tiny_chain(legacy)
+    (legacy / "event_latents.jsonl").unlink()
+    with pytest.raises(DatasetContractError, match="MISSING_EVENT_LATENTS"):
+        load_frozen_dataset(legacy, expected_plan=plan_synthetic_dataset(load_config(CONFIG_PATH)))
+
+
+def test_event_latent_roundtrip_and_high_projection(tmp_path):
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    payload = dataset_module._jsonl_bytes(ledger.to_rows(), "event_latents")
+    path = tmp_path / "event_latents.jsonl"
+    path.write_bytes(payload)
+    loaded = load_event_latents(path)
+    assert loaded.event_latents_sha256 == hashlib.sha256(payload).hexdigest()
+    assert loaded.to_rows() == ledger.to_rows()
+
+    base = derive_controlled_instance(instance, loaded, _task25_controls(loaded, intensity="base"))
+    high = derive_controlled_instance(instance, loaded, _task25_controls(loaded, intensity="high"))
+    assert base.instance_hash == instance.instance_hash
+    assert base.disruptions == instance.disruptions
+    assert [row["sequence"] for row in high.disruptions] == list(range(1, len(high.disruptions) + 1))
+    base_non_rain = {
+        row["latent_id"] for row in base.disruptions
+        if row["event_type"] not in {"rain_start", "rain_end"}
+    }
+    high_non_rain = {
+        row["latent_id"] for row in high.disruptions
+        if row["event_type"] not in {"rain_start", "rain_end"}
+    }
+    assert base_non_rain <= high_non_rain
+    active_blocks = {
+        int(row["payload"]["block_index"])
+        for row in loaded
+        if row["latent_kind"] == "rain_block" and float(row["payload"]["u"]) < 0.20
+    }
+    covered_blocks: set[int] = set()
+    for row in high.disruptions:
+        if row["event_type"] == "rain_start":
+            covered_blocks.update(range(int(float(row["time"]) / 30), int(float(row["return_time"]) / 30)))
+        if row["event_type"] in {"rain_start", "rain_end"}:
+            assert row["payload_hash"] == dataset_module._disruption_payload_hash(row)
+    assert covered_blocks == active_blocks
+
+    for regime in ("priority_shift", "critical_failure"):
+        other, other_ledger = _task25_instance_and_ledger(config, regime=regime)
+        other_base = derive_controlled_instance(other, other_ledger, _task25_controls(other_ledger, intensity="base"))
+        other_high = derive_controlled_instance(other, other_ledger, _task25_controls(other_ledger, intensity="high"))
+        for event_type in ("priority_change", "resource_failure"):
+            if event_type == "resource_failure" and regime != "critical_failure":
+                continue
+            base_rows = tuple(row for row in other_base.disruptions if row["event_type"] == event_type)
+            high_rows = tuple(row for row in other_high.disruptions if row["event_type"] == event_type)
+            # High canonicalization may renumber the complete event stream (and
+            # consequently each row hash) after appending overlays.  The
+            # frozen forced/priority realization itself must remain unchanged.
+            projection = lambda row: (
+                row["event_type"], row["latent_id"], row["event_origin"],
+                row["resource_id"], row["truck_id"], row["cause"],
+                row["operation"], row["time"], row["duration_min"], row["return_time"],
+            )
+            assert tuple(map(projection, base_rows)) == tuple(map(projection, high_rows))
+
+
+def test_controlled_projection_sidecar_hashes_are_deterministic_and_distinct():
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    base_controls = _task25_controls(ledger, intensity="base")
+    high_controls = _task25_controls(ledger, intensity="high")
+
+    base_projection = dataset_module.derive_controlled_projection(instance, ledger, base_controls)
+    repeat_projection = dataset_module.derive_controlled_projection(instance, ledger, base_controls)
+    high_projection = dataset_module.derive_controlled_projection(instance, ledger, high_controls)
+
+    assert type(base_projection).__name__ == "ControlledProjection"
+    assert base_projection.instance == derive_controlled_instance(instance, ledger, base_controls)
+    assert base_projection.controlled_view_hash == repeat_projection.controlled_view_hash
+    assert base_projection.event_overlay_hash == repeat_projection.event_overlay_hash
+    assert base_projection.controlled_view_hash != high_projection.controlled_view_hash
+    assert base_projection.event_overlay_hash != high_projection.event_overlay_hash
+    for value in (
+        base_projection.controlled_view_hash,
+        base_projection.event_overlay_hash,
+        high_projection.controlled_view_hash,
+        high_projection.event_overlay_hash,
+    ):
+        assert isinstance(value, str) and len(value) == 64 and value == value.lower()
+
+
+def test_controlled_projection_hashes_change_with_control_fields():
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    base_controls = _task25_controls(ledger, intensity="base")
+    changed_controls = ExecutionControls.build(
+        ordinary_window=base_controls.ordinary_window + 1,
+        buffer_capacity=base_controls.buffer_capacity,
+        threshold_multiplier=base_controls.threshold_multiplier,
+        intensity=base_controls.intensity,
+        source_dataset_root_hash=base_controls.source_dataset_root_hash,
+        event_latents_sha256=base_controls.event_latents_sha256,
+    )
+    original = dataset_module.derive_controlled_projection(instance, ledger, base_controls)
+    changed = dataset_module.derive_controlled_projection(instance, ledger, changed_controls)
+    assert original.controlled_view_hash != changed.controlled_view_hash
+    assert original.event_overlay_hash == changed.event_overlay_hash
+
+
+def test_controlled_projection_rejects_forged_forced_origin_and_noncanonical_rain_id():
+    config = load_config(CONFIG_PATH)
+    critical_instance, critical_ledger = _task25_instance_and_ledger(config, regime="critical_failure")
+    forced_rows = [dict(row) for row in critical_instance.disruptions]
+    forced = next(row for row in forced_rows if row["event_type"] == "resource_failure")
+    forced["event_origin"] = "sampled"
+    forged_forced = replace(critical_instance, disruptions=tuple(forced_rows), canonical_record_hash=None, instance_hash=None)
+    with pytest.raises(DatasetContractError, match="forced|origin"):
+        dataset_module.derive_controlled_projection(
+            forged_forced,
+            critical_ledger,
+            _task25_controls(critical_ledger, intensity="base"),
+        )
+
+    rain_instance, rain_ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    rain_rows = [dict(row) for row in rain_instance.disruptions]
+    rain = next(row for row in rain_rows if row["event_type"] == "rain_start")
+    rain["latent_id"] = rain["latent_id"].replace(":01-", ":1-")
+    forged_rain = replace(rain_instance, disruptions=tuple(rain_rows), canonical_record_hash=None, instance_hash=None)
+    with pytest.raises(DatasetContractError, match="rain|latent"):
+        dataset_module.derive_controlled_projection(
+            forged_rain,
+            rain_ledger,
+            _task25_controls(rain_ledger, intensity="base"),
+        )
+
+
+def test_controlled_projection_rejects_rain_entity_index_mismatch():
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    rows = [dict(row) for row in ledger.to_rows()]
+    rain_rows = [row for row in rows if row["latent_kind"] == "rain_block"]
+    first, second = rain_rows[:2]
+    first_entity, second_entity = first["entity_id"], second["entity_id"]
+    first["entity_id"], second["entity_id"] = second_entity, first_entity
+    first["latent_id"] = f"{first['instance_id']}:rain_block:{first['entity_id']}"
+    second["latent_id"] = f"{second['instance_id']}:rain_block:{second['entity_id']}"
+    kind_order = {kind: index for index, kind in enumerate(("document", "base_failure", "priority_shift", "rain_block", "forced_failure"))}
+    rows.sort(key=lambda row: (row["instance_id"], kind_order[row["latent_kind"]], row["entity_id"], row["latent_id"]))
+    with pytest.raises((DatasetContractError, ValueError), match="rain|block|entity"):
+        EventLatentLedger(tuple(rows))
+
+
+def _assert_latent_rows_rejected(tmp_path, rows):
+    with pytest.raises((ValueError, DatasetContractError)):
+        EventLatentLedger(tuple(rows))
+    path = tmp_path / "event_latents.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(dataset_module._jsonl_bytes(rows, "event_latents"))
+    with pytest.raises(DatasetContractError):
+        load_event_latents(path)
+
+
+@pytest.mark.parametrize("resource_id", ["hopper-3", "scale-2"])
+def test_event_latent_ledger_rejects_resources_outside_scenario(tmp_path, resource_id):
+    config = load_config(CONFIG_PATH)
+    _instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=1)
+    rows = [dict(row) for row in ledger.to_rows()]
+    target = next(row for row in rows if row["latent_kind"] == "base_failure")
+    target["payload"] = dict(target["payload"])
+    target["payload"]["resource_id"] = resource_id
+    _assert_latent_rows_rejected(tmp_path, rows)
+
+
+def test_event_latent_ledger_rejects_scenario_id_rewrite(tmp_path):
+    config = load_config(CONFIG_PATH)
+    _instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=1)
+    rows = [dict(row) for row in ledger.to_rows()]
+    rows[0]["scenario_id"] = "n60-m1-b1-peak"
+    _assert_latent_rows_rejected(tmp_path, rows)
+
+
+def test_event_latent_ledger_rejects_rain_cardinality_for_m1_and_m2(tmp_path):
+    config = load_config(CONFIG_PATH)
+    m1_instance, m1_ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=1)
+    m2_instance, m2_ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    m1_rows = [dict(row) for row in m1_ledger.to_rows()]
+    rain = next(row for row in m2_ledger.to_rows() if row["latent_kind"] == "rain_block")
+    rain = dict(rain)
+    rain["instance_id"] = m1_instance.instance_id
+    rain["scenario_index"] = m1_instance.scenario_index
+    rain["scenario_id"] = m1_instance.scenario_id
+    rain["seed"] = m1_instance.seed
+    rain["generation_attempt"] = m1_instance.generation_attempt
+    rain["latent_id"] = f"{m1_instance.instance_id}:rain_block:{rain['entity_id']}"
+    rain["payload"] = dict(rain["payload"])
+    rain["payload"]["u_draw_key"] = crn_digest(
+        config.crn_version,
+        m1_instance.scenario_index,
+        m1_instance.seed,
+        m1_instance.generation_attempt,
+        "hopper-1",
+        "rain_block_0",
+    )
+    m1_rows.append(rain)
+    kind_order = {kind: index for index, kind in enumerate(("document", "base_failure", "priority_shift", "rain_block", "forced_failure"))}
+    m1_rows.sort(key=lambda row: (row["instance_id"], kind_order[row["latent_kind"]], row["entity_id"], row["latent_id"]))
+    _assert_latent_rows_rejected(tmp_path / "m1", m1_rows)
+
+    m2_rows = [row for row in m2_ledger.to_rows() if row["entity_id"] != "rain-00"]
+    _assert_latent_rows_rejected(tmp_path / "m2", m2_rows)
+
+
+def test_event_latent_ledger_rejects_forced_and_priority_regime_mismatch(tmp_path):
+    config = load_config(CONFIG_PATH)
+    nominal_instance, nominal_ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=1)
+    critical_instance, critical_ledger = _task25_instance_and_ledger(config, regime="critical_failure", hopper_count=1)
+    forced = next(row for row in critical_ledger.to_rows() if row["latent_kind"] == "forced_failure")
+    forced = dict(forced)
+    forced["instance_id"] = nominal_instance.instance_id
+    forced["scenario_index"] = nominal_instance.scenario_index
+    forced["scenario_id"] = nominal_instance.scenario_id
+    forced["seed"] = nominal_instance.seed
+    forced["generation_attempt"] = nominal_instance.generation_attempt
+    forced["latent_id"] = f"{nominal_instance.instance_id}:forced_failure:{forced['entity_id']}"
+    forced["payload"] = dict(forced["payload"])
+    forced["payload"]["start_draw_key"] = crn_digest(config.crn_version, nominal_instance.scenario_index, nominal_instance.seed, nominal_instance.generation_attempt, "yard", "critical_failure_start")
+    forced["payload"]["duration_draw_key"] = crn_digest(config.crn_version, nominal_instance.scenario_index, nominal_instance.seed, nominal_instance.generation_attempt, "yard", "critical_failure_duration")
+    _assert_latent_rows_rejected(tmp_path / "forced", [*nominal_ledger.to_rows(), forced])
+
+    priority_instance, priority_ledger = _task25_instance_and_ledger(config, regime="priority_shift", hopper_count=1)
+    priority = next(row for row in priority_ledger.to_rows() if row["latent_kind"] == "priority_shift")
+    priority = dict(priority)
+    priority["instance_id"] = nominal_instance.instance_id
+    priority["scenario_index"] = nominal_instance.scenario_index
+    priority["scenario_id"] = nominal_instance.scenario_id
+    priority["seed"] = nominal_instance.seed
+    priority["generation_attempt"] = nominal_instance.generation_attempt
+    priority["latent_id"] = f"{nominal_instance.instance_id}:priority_shift:{priority['entity_id']}"
+    priority["payload"] = dict(priority["payload"])
+    priority["payload"]["u_draw_key"] = crn_digest(config.crn_version, nominal_instance.scenario_index, nominal_instance.seed, nominal_instance.generation_attempt, "yard", "priority_shift_time")
+    _assert_latent_rows_rejected(tmp_path / "priority", [*nominal_ledger.to_rows(), priority])
+
+
+def test_derive_controlled_projection_rejects_forged_rain_semantics():
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    rows = [dict(row) for row in instance.disruptions]
+    rain_start = next(row for row in rows if row["event_type"] == "rain_start")
+    rain_start["cause"] = "forged"
+    rain_start["payload_hash"] = dataset_module._disruption_payload_hash(rain_start)
+    forged = replace(instance, disruptions=tuple(rows), canonical_record_hash=None, instance_hash=None)
+    with pytest.raises(DatasetContractError, match="rain"):
+        dataset_module.derive_controlled_projection(
+            forged,
+            ledger,
+            _task25_controls(ledger, intensity="base"),
+        )
+
+
+def test_controlled_projection_requires_controls_and_computes_hashes():
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    controls = _task25_controls(ledger, intensity="base")
+    projection = ControlledProjection(instance=instance, controls=controls)
+    assert projection.controls == controls
+    assert projection.controlled_view_hash == dataset_module._controlled_view_hash(controls)
+    with pytest.raises((TypeError, ValueError)):
+        ControlledProjection(
+            instance=instance,
+            controlled_view_hash="0" * 64,
+            event_overlay_hash="0" * 64,
+        )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["payload_hash", "instance_id", "scenario_index", "scenario_id", "seed", "sequence", "duplicate_sequence", "swap_order"],
+)
+def test_derive_controlled_projection_rejects_nonrain_stream_tamper(tamper):
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="priority_shift", hopper_count=1)
+    rows = [dict(row) for row in instance.disruptions]
+    target_index = next(index for index, row in enumerate(rows) if row["event_type"] == "priority_change")
+    target = rows[target_index]
+    if tamper == "payload_hash":
+        target["payload_hash"] = "0" * 64
+    elif tamper == "instance_id":
+        target["instance_id"] = "forged-instance"
+        target["payload_hash"] = dataset_module._disruption_payload_hash(target)
+    elif tamper == "scenario_index":
+        target["scenario_index"] = 999
+        target["payload_hash"] = dataset_module._disruption_payload_hash(target)
+    elif tamper == "scenario_id":
+        target["scenario_id"] = "n60-m1-b1-nominal"
+        target["payload_hash"] = dataset_module._disruption_payload_hash(target)
+    elif tamper == "seed":
+        target["seed"] = 999
+        target["payload_hash"] = dataset_module._disruption_payload_hash(target)
+    elif tamper == "sequence":
+        target["sequence"] = 999
+        target["payload_hash"] = dataset_module._disruption_payload_hash(target)
+    elif tamper == "duplicate_sequence":
+        target["sequence"] = rows[target_index - 1]["sequence"]
+        target["payload_hash"] = dataset_module._disruption_payload_hash(target)
+    else:
+        rows[target_index], rows[target_index + 1] = rows[target_index + 1], rows[target_index]
+    forged = replace(instance, disruptions=tuple(rows), canonical_record_hash=None, instance_hash=None)
+    with pytest.raises(DatasetContractError, match="disruption|sequence|canonical|payload|instance|scenario"):
+        dataset_module.derive_controlled_projection(
+            forged,
+            ledger,
+            _task25_controls(ledger, intensity="base"),
+        )
+
+
+def test_derive_controlled_projection_wraps_unknown_priority_truck():
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="priority_shift", hopper_count=1)
+    rows = [dict(row) for row in instance.disruptions]
+    target = next(row for row in rows if row["event_type"] == "priority_change")
+    target["truck_id"] = "T-999"
+    target["payload_hash"] = dataset_module._disruption_payload_hash(target)
+    forged = replace(instance, disruptions=tuple(rows), canonical_record_hash=None, instance_hash=None)
+    with pytest.raises(DatasetContractError) as caught:
+        dataset_module.derive_controlled_projection(
+            forged,
+            ledger,
+            _task25_controls(ledger, intensity="base"),
+        )
+    assert isinstance(caught.value.__cause__, KeyError)
+
+
+@pytest.mark.parametrize(
+    "regime, latent_kind, field, value",
+    [
+        ("nominal", "base_failure", "start_minute", 0.0),
+        ("nominal", "base_failure", "duration_min", 0.0),
+        ("nominal", "base_failure", "resource_id", "hopper-999"),
+        ("critical_failure", "forced_failure", "duration_min", 0.0),
+        ("priority_shift", "priority_shift", "shift_time_minute", 0.0),
+        ("priority_shift", "priority_shift", "candidate_truck_ids", []),
+    ],
+)
+def test_load_event_latents_rejects_variant_semantic_tamper(tmp_path, regime, latent_kind, field, value):
+    config = load_config(CONFIG_PATH)
+    _instance, ledger = _task25_instance_and_ledger(config, regime=regime)
+    rows = [dict(row) for row in ledger.to_rows()]
+    target = next(row for row in rows if row["latent_kind"] == latent_kind)
+    payload = dict(target["payload"])
+    payload[field] = value
+    target["payload"] = payload
+    path = tmp_path / "event_latents.jsonl"
+    path.write_bytes(dataset_module._jsonl_bytes(rows, "event_latents"))
+    with pytest.raises(DatasetContractError, match="latent|candidate|resource|range|priority|duration|window"):
+        load_event_latents(path)
+
+
+def test_controlled_derivation_reconciles_persisted_projection_and_hashes():
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="critical_failure")
+    forced = next(row for row in instance.disruptions if row["event_type"] == "resource_failure")
+    tampered_rows = [dict(row) for row in instance.disruptions]
+    tampered = next(row for row in tampered_rows if row["sequence"] == forced["sequence"])
+    tampered["duration_min"] = float(tampered["duration_min"]) + 1.0
+    tampered["return_time"] = float(tampered["return_time"]) + 1.0
+    forged = replace(
+        instance,
+        disruptions=tuple(tampered_rows),
+        canonical_record_hash=None,
+        instance_hash=None,
+    )
+    with pytest.raises(DatasetContractError, match="forced failure latent projection"):
+        derive_controlled_instance(forged, ledger, _task25_controls(ledger, intensity="base"))
+
+    wrong_hash_controls = ExecutionControls.build(
+        ordinary_window=6,
+        buffer_capacity=12,
+        threshold_multiplier=Decimal("1.00"),
+        intensity="base",
+        source_dataset_root_hash="a" * 64,
+        event_latents_sha256="b" * 64,
+    )
+    with pytest.raises(ValueError, match="event_latents_sha256"):
+        derive_controlled_instance(instance, ledger, wrong_hash_controls)
+
+
+@pytest.mark.parametrize("tamper", ["missing", "extra", "noncanonical", "crn", "document_range"])
+def test_event_latent_loader_rejects_tamper(tmp_path, tamper):
+    config = load_config(CONFIG_PATH)
+    _instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    rows = [dict(row) for row in ledger.to_rows()]
+    path = tmp_path / "event_latents.jsonl"
+    if tamper == "missing":
+        with pytest.raises(DatasetContractError, match="MISSING_EVENT_LATENTS"):
+            load_event_latents(path)
+        return
+    if tamper == "extra":
+        rows[0]["unexpected"] = True
+    elif tamper == "crn":
+        rows[0]["payload"]["u_draw_key"] = "0" * 64
+    elif tamper == "document_range":
+        rows[0]["payload"]["release_duration_min"] = 0.0
+    if tamper == "extra":
+        payload = b"".join(canonical_bytes(row) for row in rows)
+    else:
+        payload = dataset_module._jsonl_bytes(rows, "event_latents")
+        if tamper == "noncanonical":
+            payload = payload.replace(b"\n", b" \n", 1)
+    path.write_bytes(payload)
+    with pytest.raises(DatasetContractError, match="canonical|CRN|schema|unexpected"):
+        load_event_latents(path)
+
+
+def test_controlled_derivation_is_frozen_no_rng_regeneration_or_mutation(monkeypatch):
+    config = load_config(CONFIG_PATH)
+    instance, ledger = _task25_instance_and_ledger(config, regime="nominal", hopper_count=2)
+    before = instance.to_dict()
+    controls = _task25_controls(ledger, intensity="high")
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("controlled derivation must not sample or regenerate")
+
+    monkeypatch.setattr(dataset_module, "_rng", forbidden)
+    monkeypatch.setattr(dataset_module, "_build_instance", forbidden)
+    derived = derive_controlled_instance(instance, ledger, controls)
+    assert instance.to_dict() == before
+    assert derived.instance_hash

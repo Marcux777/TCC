@@ -439,7 +439,7 @@ def write_canonical_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
 def canonical_checksum_bytes(entries: Mapping[str, str] | list[tuple[str, str]] | tuple[tuple[str, str], ...]) -> bytes:
     """Serialize an ordered payload checksum list exactly once.
 
-    ``entries`` must contain the five scientific payloads in canonical order;
+    ``entries`` must contain the six scientific payloads in canonical order;
     the function rejects duplicates, unknown names and order changes so that a
     checksum file cannot silently grow a self-referential or auxiliary entry.
     """
@@ -449,6 +449,7 @@ def canonical_checksum_bytes(entries: Mapping[str, str] | list[tuple[str, str]] 
         "trucks.parquet",
         "service_times.parquet",
         "disruptions.jsonl",
+        "event_latents.jsonl",
         "rejection_log.jsonl",
     )
     if isinstance(entries, Mapping):
@@ -473,7 +474,7 @@ def canonical_checksum_bytes(entries: Mapping[str, str] | list[tuple[str, str]] 
 
 
 def write_checksums(path: str | Path, entries: Mapping[str, str] | list[tuple[str, str]] | tuple[tuple[str, str], ...]) -> Path:
-    """Persist the canonical five-payload checksum list."""
+    """Persist the canonical six-payload checksum list."""
 
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import copy
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import math
@@ -439,6 +440,583 @@ def _dataset_canonical_bytes(value: Any) -> bytes:
 
 def _dataset_digest(value: Any) -> str:
     return hashlib.sha256(_dataset_canonical_bytes(value)).hexdigest()
+
+
+# The latent ledger is part of the frozen scientific input, rather than an
+# emulator implementation detail.  Keep its wire vocabulary here so the
+# loader, controls and future execution layers share one immutable contract.
+EVENT_LATENT_KINDS: tuple[str, ...] = (
+    "document",
+    "base_failure",
+    "priority_shift",
+    "rain_block",
+    "forced_failure",
+)
+EVENT_LATENT_ENVELOPE: tuple[str, ...] = (
+    "instance_id",
+    "scenario_index",
+    "scenario_id",
+    "seed",
+    "generation_attempt",
+    "latent_id",
+    "latent_kind",
+    "event_origin",
+    "entity_id",
+    "payload",
+)
+EVENT_LATENT_PAYLOAD_FIELDS: Mapping[str, tuple[str, ...]] = {
+    "document": ("u", "u_draw_key", "release_duration_min", "release_duration_draw_key"),
+    "base_failure": (
+        "u",
+        "u_draw_key",
+        "resource_id",
+        "resource_draw_key",
+        "start_minute",
+        "start_draw_key",
+        "duration_min",
+        "duration_draw_key",
+    ),
+    "priority_shift": (
+        "u",
+        "u_draw_key",
+        "shift_time_minute",
+        "candidate_truck_ids",
+        "selected_truck_ids",
+    ),
+    "rain_block": (
+        "u",
+        "u_draw_key",
+        "block_index",
+        "resource_id",
+        "start_minute",
+        "duration_min",
+        "end_minute",
+    ),
+    "forced_failure": (
+        "forced_event_type",
+        "resource_id",
+        "start_minute",
+        "start_draw_key",
+        "duration_min",
+        "duration_draw_key",
+        "end_minute",
+    ),
+}
+_EVENT_LATENT_KIND_ORDER = {kind: index for index, kind in enumerate(EVENT_LATENT_KINDS)}
+
+
+def _expected_scenario_factors() -> tuple[tuple[int, int, int, str], ...]:
+    """Return the canonical confirmatory factorial in protocol order."""
+
+    return tuple(
+        (truck_count, hopper_count, scale_count, regime)
+        for truck_count in (60, 120, 180)
+        for hopper_count in (1, 2, 3)
+        for scale_count in (1, 2)
+        for regime in ("nominal", "peak", "critical_failure", "priority_shift")
+    )
+
+
+def _latent_sha256(rows: Iterable[Mapping[str, Any]]) -> str:
+    """Hash canonical event-latent rows without importing the dataset layer."""
+
+    # ``_dataset_canonical_bytes`` already includes the trailing LF on every
+    # canonical row (including the final row), matching the JSONL writer.
+    payload = b"".join(
+        _dataset_canonical_bytes(_thaw_dataset_value(row))
+        for row in rows
+    )
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _latent_digest(value: object, *, expected: str, label: str) -> None:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(char not in "0123456789abcdef" for char in value)
+    ):
+        raise ValueError(f"{label} must be a lowercase SHA-256 digest")
+    if value != expected:
+        raise ValueError(f"{label} does not match canonical CRN tuple")
+
+
+def _latent_number(value: object, *, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be numeric")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{label} must be finite")
+    return number
+
+
+def _latent_resource(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a resource identifier")
+    try:
+        kind, index_text = value.split("-", 1)
+        index = int(index_text)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"{label} is not canonical") from exc
+    if kind not in {"gate", "hopper", "scale"} or index < 1 or (kind == "hopper" and index > 3) or (kind == "scale" and index > 2) or (kind == "gate" and index != 1):
+        raise ValueError(f"{label} is not canonical")
+    return value
+
+
+def _validate_event_latent_payload_core(
+    row: Mapping[str, Any],
+    *,
+    ordinal: int,
+) -> None:
+    """Validate variant ranges and CRN/entity semantics without a live config."""
+
+    kind = row["latent_kind"]
+    payload = row["payload"]
+    try:
+        scenario_index = row["scenario_index"]
+        seed = row["seed"]
+        generation_attempt = row["generation_attempt"]
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (scenario_index, seed, generation_attempt)
+        ):
+            raise ValueError("scenario/seed/generation_attempt must be non-negative integers")
+        instance_id = row["instance_id"]
+        entity_id = row["entity_id"]
+        expected_origin = "forced" if kind == "forced_failure" else "sampled"
+        if row["event_origin"] != expected_origin:
+            raise ValueError("event_origin is not canonical")
+
+        def digest(field: str, entity: str, operation: str) -> None:
+            _latent_digest(
+                payload[field],
+                expected=crn_digest("crn.v1", scenario_index, seed, generation_attempt, entity, operation),
+                label=f"row {ordinal} payload {field}",
+            )
+
+        if kind != "forced_failure":
+            u = _latent_number(payload["u"], label=f"row {ordinal} payload u")
+            if not 0.0 <= u < 1.0:
+                raise ValueError(f"row {ordinal} payload u is outside [0,1)")
+        if kind == "document":
+            if not isinstance(entity_id, str) or not entity_id.startswith("T-"):
+                raise ValueError(f"row {ordinal} document entity_id is not canonical")
+            digest("u_draw_key", entity_id, "document")
+            duration = _latent_number(payload["release_duration_min"], label=f"row {ordinal} release_duration_min")
+            if not 30.0 <= duration <= 120.0:
+                raise ValueError(f"row {ordinal} canonical release duration is outside [30,120]")
+            digest("release_duration_draw_key", entity_id, "document_release")
+        elif kind == "base_failure":
+            if entity_id not in {"nominal", "peak", "priority_shift"}:
+                raise ValueError(f"row {ordinal} base failure entity_id is not canonical")
+            resource = _latent_resource(payload["resource_id"], label=f"row {ordinal} resource_id")
+            digest("u_draw_key", "yard", "base_failure")
+            digest("resource_draw_key", "yard", "base_failure_resource")
+            digest("start_draw_key", "yard", "failure_start")
+            digest("duration_draw_key", "yard", "failure_duration")
+            start = _latent_number(payload["start_minute"], label=f"row {ordinal} start_minute")
+            duration = _latent_number(payload["duration_min"], label=f"row {ordinal} duration_min")
+            if not 240.0 <= start <= 480.0 or not 20.0 <= duration <= 70.0:
+                raise ValueError(f"row {ordinal} base failure candidate is outside the protocol")
+            _ = resource
+        elif kind == "priority_shift":
+            if entity_id != "priority_shift":
+                raise ValueError(f"row {ordinal} priority entity_id is not canonical")
+            digest("u_draw_key", "yard", "priority_shift_time")
+            shift = _latent_number(payload["shift_time_minute"], label=f"row {ordinal} shift_time_minute")
+            if not 240.0 <= shift <= 480.0:
+                raise ValueError(f"row {ordinal} priority shift is outside the protocol window")
+            candidates = payload["candidate_truck_ids"]
+            selected = payload["selected_truck_ids"]
+            if (
+                not isinstance(candidates, (list, tuple))
+                or not candidates
+                or any(not isinstance(item, str) or not item.startswith("T-") for item in candidates)
+                or len(set(candidates)) != len(candidates)
+                or not isinstance(selected, (list, tuple))
+                or not selected
+                or any(item not in candidates for item in selected)
+                or len(set(selected)) != len(selected)
+            ):
+                raise ValueError(f"row {ordinal} priority candidate/selected IDs are not canonical")
+        elif kind == "rain_block":
+            if not isinstance(entity_id, str) or not entity_id.startswith("rain-"):
+                raise ValueError(f"row {ordinal} rain entity_id is not canonical")
+            try:
+                block_index = int(entity_id.rsplit("-", 1)[1])
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"row {ordinal} rain entity_id is not canonical") from exc
+            if entity_id != f"rain-{block_index:02d}" or not 0 <= block_index < 24:
+                raise ValueError(f"row {ordinal} rain entity_id is not canonical")
+            if payload["block_index"] != block_index or payload["resource_id"] != "hopper-1":
+                raise ValueError(f"row {ordinal} rain block/resource mapping is not canonical")
+            digest("u_draw_key", "hopper-1", f"rain_block_{block_index}")
+            start = _latent_number(payload["start_minute"], label=f"row {ordinal} start_minute")
+            duration = _latent_number(payload["duration_min"], label=f"row {ordinal} duration_min")
+            end = _latent_number(payload["end_minute"], label=f"row {ordinal} end_minute")
+            if start != float(30 * block_index) or duration != 30.0 or end != start + duration:
+                raise ValueError(f"row {ordinal} rain block timing is not canonical")
+        elif kind == "forced_failure":
+            resource = _latent_resource(payload["resource_id"], label=f"row {ordinal} resource_id")
+            if entity_id != resource or payload["forced_event_type"] != "resource_failure":
+                raise ValueError(f"row {ordinal} forced failure identity is not canonical")
+            digest("start_draw_key", "yard", "critical_failure_start")
+            digest("duration_draw_key", "yard", "critical_failure_duration")
+            start = _latent_number(payload["start_minute"], label=f"row {ordinal} start_minute")
+            duration = _latent_number(payload["duration_min"], label=f"row {ordinal} duration_min")
+            end = _latent_number(payload["end_minute"], label=f"row {ordinal} end_minute")
+            if not 240.0 <= start <= 480.0 or not 20.0 <= duration <= 70.0 or not math.isclose(end, start + duration, rel_tol=0.0, abs_tol=1e-9):
+                raise ValueError(f"row {ordinal} forced failure timing is outside the protocol")
+    except KeyError as exc:
+        raise ValueError(f"row {ordinal} payload is missing {exc.args[0]}") from exc
+
+
+def _validate_event_latent_scenario_contract(
+    rows: Iterable[Mapping[str, Any]],
+) -> None:
+    """Validate scenario identity, cardinality and resource eligibility."""
+
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    factors = _expected_scenario_factors()
+    for ordinal, row in enumerate(rows):
+        scenario_index = row["scenario_index"]
+        scenario_id = row["scenario_id"]
+        instance_id = row["instance_id"]
+        seed = row["seed"]
+        if scenario_index < 0 or scenario_index >= len(factors):
+            raise ValueError(f"event latent row {ordinal} scenario_index is not canonical")
+        truck_count, hopper_count, scale_count, regime = factors[scenario_index]
+        expected_scenario_id = f"n{truck_count}-m{hopper_count}-b{scale_count}-{regime}"
+        if scenario_id != expected_scenario_id:
+            raise ValueError(f"event latent row {ordinal} scenario_id diverges from scenario_index")
+        if seed < 101 or seed > 150:
+            raise ValueError(f"event latent row {ordinal} seed is outside the confirmatory range")
+        expected_instance_id = f"s{scenario_index:02d}-seed{seed}"
+        if instance_id != expected_instance_id:
+            raise ValueError(f"event latent row {ordinal} instance_id diverges from scenario identity")
+        grouped.setdefault(instance_id, []).append(row)
+
+        valid_resources = {"gate-1"}
+        valid_resources.update(f"hopper-{index}" for index in range(1, hopper_count + 1))
+        valid_resources.update(f"scale-{index}" for index in range(1, scale_count + 1))
+        kind = row["latent_kind"]
+        payload = row["payload"]
+        if kind == "document":
+            expected_truck_ids = {f"T-{index:03d}" for index in range(1, truck_count + 1)}
+            if row["entity_id"] not in expected_truck_ids:
+                raise ValueError(f"event latent row {ordinal} document entity is outside the scenario")
+        elif kind == "base_failure":
+            if regime == "critical_failure" or payload["resource_id"] not in valid_resources:
+                raise ValueError(f"event latent row {ordinal} base failure is not eligible for the scenario")
+        elif kind == "priority_shift":
+            if regime != "priority_shift":
+                raise ValueError(f"event latent row {ordinal} priority shift regime is not canonical")
+            candidates = tuple(payload["candidate_truck_ids"])
+            selected = tuple(payload["selected_truck_ids"])
+            expected_truck_ids = {f"T-{index:03d}" for index in range(1, truck_count + 1)}
+            if (
+                len(candidates) > truck_count
+                or any(item not in expected_truck_ids for item in candidates)
+                or any(item not in expected_truck_ids for item in selected)
+                or len(selected) > math.ceil(0.10 * truck_count)
+            ):
+                raise ValueError(f"event latent row {ordinal} priority candidates are outside the scenario")
+        elif kind == "rain_block":
+            if hopper_count < 2:
+                raise ValueError(f"event latent row {ordinal} rain is not eligible for m={hopper_count}")
+        elif kind == "forced_failure":
+            expected_resource = "hopper-1" if 36 * hopper_count <= 72 * scale_count else "scale-1"
+            if regime != "critical_failure" or payload["resource_id"] != expected_resource:
+                raise ValueError(f"event latent row {ordinal} forced failure is not eligible for the scenario")
+
+    for instance_id, instance_rows in grouped.items():
+        scenario_index = instance_rows[0]["scenario_index"]
+        truck_count, hopper_count, _scale_count, regime = factors[scenario_index]
+        observed = {kind: 0 for kind in EVENT_LATENT_KINDS}
+        for row in instance_rows:
+            observed[row["latent_kind"]] += 1
+        expected = {
+            "document": truck_count,
+            "base_failure": 0 if regime == "critical_failure" else 1,
+            "priority_shift": 1 if regime == "priority_shift" else 0,
+            "rain_block": 24 if hopper_count >= 2 else 0,
+            "forced_failure": 1 if regime == "critical_failure" else 0,
+        }
+        if observed != expected:
+            raise ValueError(f"{instance_id} event latent cardinality diverges from scenario")
+
+
+@dataclass(frozen=True, slots=True)
+class EventLatentLedger:
+    """Immutable, keyed collection of all pre-realisation event candidates.
+
+    Rows are detached into immutable mappings and validated for exact envelope,
+    closed payload variants, canonical identity and order.  The SHA-256 digest
+    is over the same canonical JSONL bytes used by the persisted payload.
+    """
+
+    rows: tuple[Mapping[str, Any], ...]
+    sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        rows = tuple(_freeze_dataset_value(row) for row in self.rows)
+        if any(not isinstance(row, Mapping) for row in rows):
+            raise TypeError("event latent rows must contain mappings")
+        keys: set[tuple[str, str]] = set()
+        previous_order: tuple[Any, ...] | None = None
+        for ordinal, row in enumerate(rows):
+            if set(row) != set(EVENT_LATENT_ENVELOPE):
+                raise ValueError(f"event latent row {ordinal} envelope is not canonical")
+            kind = row["latent_kind"]
+            if kind not in EVENT_LATENT_PAYLOAD_FIELDS:
+                raise ValueError(f"event latent row {ordinal} has unknown latent_kind")
+            instance_id = row["instance_id"]
+            entity_id = row["entity_id"]
+            latent_id = row["latent_id"]
+            if not all(isinstance(value, str) and value.strip() for value in (instance_id, entity_id, latent_id)):
+                raise ValueError(f"event latent row {ordinal} identifiers must be non-empty strings")
+            expected_id = f"{instance_id}:{kind}:{entity_id}"
+            if latent_id != expected_id:
+                raise ValueError(f"event latent row {ordinal} latent_id is not canonical")
+            key = (instance_id, latent_id)
+            if key in keys:
+                raise ValueError("event latent rows must be unique by (instance_id, latent_id)")
+            keys.add(key)
+            origin = row["event_origin"]
+            expected_origin = "forced" if kind == "forced_failure" else "sampled"
+            if origin != expected_origin:
+                raise ValueError(f"event latent row {ordinal} event_origin is not canonical")
+            payload = row["payload"]
+            if not isinstance(payload, Mapping) or set(payload) != set(EVENT_LATENT_PAYLOAD_FIELDS[kind]):
+                raise ValueError(f"event latent row {ordinal} payload variant is not canonical")
+            _validate_event_latent_payload_core(row, ordinal=ordinal)
+            order = (instance_id, _EVENT_LATENT_KIND_ORDER[kind], entity_id, latent_id)
+            if previous_order is not None and order < previous_order:
+                raise ValueError("event latent rows are not in canonical order")
+            previous_order = order
+        _validate_event_latent_scenario_contract(rows)
+        digest = _latent_sha256(rows)
+        if self.sha256 is None:
+            object.__setattr__(self, "sha256", digest)
+        elif not isinstance(self.sha256, str) or self.sha256 != digest:
+            raise ValueError("event latent sha256 does not match canonical rows")
+        object.__setattr__(self, "rows", rows)
+
+    @property
+    def event_latents_sha256(self) -> str:
+        return str(self.sha256)
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __getitem__(self, key: int | tuple[str, str]) -> Mapping[str, Any]:
+        if isinstance(key, int):
+            return self.rows[key]
+        if not isinstance(key, tuple) or len(key) != 2:
+            raise TypeError("ledger key must be an integer or (instance_id, latent_id)")
+        for row in self.rows:
+            if (row["instance_id"], row["latent_id"]) == key:
+                return row
+        raise KeyError(key)
+
+    def for_instance(self, instance_id: str) -> tuple[Mapping[str, Any], ...]:
+        if not isinstance(instance_id, str) or not instance_id.strip():
+            raise ValueError("instance_id must be a non-empty string")
+        return tuple(row for row in self.rows if row["instance_id"] == instance_id)
+
+    def to_rows(self) -> tuple[dict[str, Any], ...]:
+        return tuple(_thaw_dataset_value(row) for row in self.rows)
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionControls:
+    """Complete immutable baseline/high control value for a frozen instance."""
+
+    ordinary_window: int
+    buffer_capacity: int
+    threshold_multiplier: Decimal
+    intensity: str
+    source_dataset_root_hash: str
+    event_latents_sha256: str
+    control_hash: str
+
+    def __post_init__(self) -> None:
+        for name in ("ordinary_window", "buffer_capacity"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        try:
+            multiplier = Decimal(str(self.threshold_multiplier)).quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValueError("threshold_multiplier must be a finite Decimal") from exc
+        if not multiplier.is_finite() or multiplier <= 0:
+            raise ValueError("threshold_multiplier must be a finite positive Decimal")
+        object.__setattr__(self, "threshold_multiplier", multiplier)
+        if self.intensity not in {"base", "high"}:
+            raise ValueError("intensity must be 'base' or 'high'")
+        for name in ("source_dataset_root_hash", "event_latents_sha256", "control_hash"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                raise ValueError(f"{name} must be a lowercase SHA-256 digest")
+        expected = self.compute_hash(
+            ordinary_window=self.ordinary_window,
+            buffer_capacity=self.buffer_capacity,
+            threshold_multiplier=multiplier,
+            intensity=self.intensity,
+            source_dataset_root_hash=self.source_dataset_root_hash,
+            event_latents_sha256=self.event_latents_sha256,
+        )
+        if self.control_hash != expected:
+            raise ValueError("control_hash does not match control fields")
+
+    @staticmethod
+    def compute_hash(
+        *,
+        ordinary_window: int,
+        buffer_capacity: int,
+        threshold_multiplier: Decimal,
+        intensity: str,
+        source_dataset_root_hash: str,
+        event_latents_sha256: str,
+    ) -> str:
+        material = {
+            "ordinary_window": int(ordinary_window),
+            "buffer_capacity": int(buffer_capacity),
+            "threshold_multiplier": str(Decimal(str(threshold_multiplier)).quantize(Decimal("0.01"))),
+            "intensity": intensity,
+            "source_dataset_root_hash": source_dataset_root_hash,
+            "event_latents_sha256": event_latents_sha256,
+        }
+        return hashlib.sha256(_dataset_canonical_bytes(material)).hexdigest()
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        ordinary_window: int,
+        buffer_capacity: int,
+        threshold_multiplier: Decimal,
+        intensity: str,
+        source_dataset_root_hash: str,
+        event_latents_sha256: str,
+    ) -> "ExecutionControls":
+        multiplier = Decimal(str(threshold_multiplier)).quantize(Decimal("0.01"))
+        control_hash = cls.compute_hash(
+            ordinary_window=ordinary_window,
+            buffer_capacity=buffer_capacity,
+            threshold_multiplier=multiplier,
+            intensity=intensity,
+            source_dataset_root_hash=source_dataset_root_hash,
+            event_latents_sha256=event_latents_sha256,
+        )
+        return cls(
+            ordinary_window=ordinary_window,
+            buffer_capacity=buffer_capacity,
+            threshold_multiplier=multiplier,
+            intensity=intensity,
+            source_dataset_root_hash=source_dataset_root_hash,
+            event_latents_sha256=event_latents_sha256,
+            control_hash=control_hash,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ordinary_window": self.ordinary_window,
+            "buffer_capacity": self.buffer_capacity,
+            "threshold_multiplier": str(self.threshold_multiplier),
+            "intensity": self.intensity,
+            "source_dataset_root_hash": self.source_dataset_root_hash,
+            "event_latents_sha256": self.event_latents_sha256,
+            "control_hash": self.control_hash,
+        }
+
+
+_CONTROLLED_OVERLAY_FIELDS: tuple[str, ...] = (
+    "event_type",
+    "latent_id",
+    "event_origin",
+    "resource_id",
+    "truck_id",
+    "cause",
+    "operation",
+    "time",
+    "duration_min",
+    "return_time",
+)
+
+
+def _controlled_projection_view_hash(controls: ExecutionControls) -> str:
+    material = {
+        "ordinary_window": controls.ordinary_window,
+        "buffer_capacity": controls.buffer_capacity,
+        "threshold_multiplier": str(controls.threshold_multiplier),
+        "intensity": controls.intensity,
+        "source_dataset_root_hash": controls.source_dataset_root_hash,
+        "event_latents_sha256": controls.event_latents_sha256,
+        "control_hash": controls.control_hash,
+    }
+    return _dataset_digest(material)
+
+
+def _controlled_rain_covered_latent_ids(row: Mapping[str, Any]) -> list[str]:
+    latent_id = row.get("latent_id")
+    instance_id = row.get("instance_id")
+    if not isinstance(latent_id, str) or not isinstance(instance_id, str):
+        raise ValueError("rain disruption latent_id is not canonical")
+    marker = ":rain_coalesce:"
+    if not latent_id.startswith(f"{instance_id}{marker}"):
+        raise ValueError("rain disruption latent_id prefix is not canonical")
+    interval = latent_id[len(instance_id) + len(marker) :]
+    parts = interval.split("-", 1)
+    if len(parts) != 2 or any(len(part) != 2 or not part.isdigit() for part in parts):
+        raise ValueError("rain disruption latent_id interval is not canonical")
+    first, last = (int(part) for part in parts)
+    if not 0 <= first <= last < 24:
+        raise ValueError("rain disruption latent_id interval is outside canonical blocks")
+    return [f"{instance_id}:rain_block:rain-{index:02d}" for index in range(first, last + 1)]
+
+
+def _controlled_projection_overlay_hash(instance: "FrozenInstance", controls: ExecutionControls) -> str:
+    rows: list[dict[str, Any]] = []
+    for row in instance.disruptions:
+        semantic = {name: row.get(name) for name in _CONTROLLED_OVERLAY_FIELDS}
+        if row.get("event_type") in {"rain_start", "rain_end"}:
+            semantic["covered_latent_ids"] = _controlled_rain_covered_latent_ids(row)
+        rows.append(semantic)
+    return _dataset_digest(
+        {
+            "instance_id": instance.instance_id,
+            "source_dataset_root_hash": controls.source_dataset_root_hash,
+            "event_latents_sha256": controls.event_latents_sha256,
+            "intensity": controls.intensity,
+            "rows": rows,
+        }
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ControlledProjection:
+    """Immutable projection plus attestations for a control/overlay view.
+
+    Projection identity is deliberately kept outside ``FrozenInstance`` so
+    instance canonical hashes remain independent of the control ledger and
+    cannot become stale through ``dataclasses.replace``.
+    """
+
+    instance: "FrozenInstance"
+    controls: ExecutionControls
+    controlled_view_hash: str = field(init=False)
+    event_overlay_hash: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.instance, FrozenInstance):
+            raise TypeError("projection instance must be a FrozenInstance")
+        if not isinstance(self.controls, ExecutionControls):
+            raise TypeError("projection controls must be ExecutionControls")
+        object.__setattr__(self, "controlled_view_hash", _controlled_projection_view_hash(self.controls))
+        object.__setattr__(self, "event_overlay_hash", _controlled_projection_overlay_hash(self.instance, self.controls))
 
 
 _FROZEN_DOCUMENT_STATUSES = frozenset({"CLEAR", "BLOCKED"})
@@ -887,6 +1465,7 @@ class FrozenDataset:
     path: Path
     manifest: Mapping[str, Any]
     instances: tuple[FrozenInstance, ...]
+    event_latents: EventLatentLedger | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.path, Path):
@@ -899,6 +1478,14 @@ class FrozenDataset:
         if len(set(ids)) != len(ids):
             raise ValueError("dataset instance IDs must be unique")
         object.__setattr__(self, "instances", instances)
+        if self.event_latents is not None and not isinstance(self.event_latents, EventLatentLedger):
+            raise TypeError("event_latents must be an EventLatentLedger or None")
+
+    @property
+    def latent_ledger(self) -> EventLatentLedger | None:
+        """Explicit alias for the immutable event-latent payload."""
+
+        return self.event_latents
 
     @property
     def dataset_id(self) -> str:
