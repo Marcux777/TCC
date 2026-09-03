@@ -17,6 +17,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
+from .config import crn_digest
+
 
 def _identifier(name: str, value: object) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -458,6 +460,7 @@ class FrozenTruck:
     document_status: str
     stage: str = "gate"
     eligible_resources: tuple[str, ...] = ()
+    generation_attempt: int = 0
     truck_record_hash: str | None = None
 
     def __post_init__(self) -> None:
@@ -479,6 +482,8 @@ class FrozenTruck:
             raise ValueError("document_status must be CLEAR or BLOCKED")
         if self.stage not in _FROZEN_STAGES:
             raise ValueError(f"stage must be one of {sorted(_FROZEN_STAGES)!r}")
+        if isinstance(self.generation_attempt, bool) or not isinstance(self.generation_attempt, int) or self.generation_attempt < 0:
+            raise ValueError("generation_attempt must be a non-negative integer")
         resources = tuple(self.eligible_resources)
         if any(not isinstance(item, str) or not item.strip() for item in resources):
             raise ValueError("eligible_resources must contain non-empty strings")
@@ -512,6 +517,7 @@ class FrozenTruck:
             "document_status": self.document_status,
             "stage": self.stage,
             "eligible_resources": list(self.eligible_resources),
+            "generation_attempt": self.generation_attempt,
         }
 
     @property
@@ -520,6 +526,7 @@ class FrozenTruck:
 
     def to_dict(self) -> dict[str, Any]:
         record = self._record_without_hash()
+        record.pop("generation_attempt", None)
         record["truck_record_hash"] = self.canonical_record_hash
         return record
 
@@ -529,11 +536,15 @@ class FrozenTruck:
             raise TypeError("frozen truck must be a mapping")
         required = {
             "instance_id", "scenario_index", "scenario_id", "seed", "truck_id",
-            "arrival_minute", "cargo_type", "priority", "document_status",
+            "arrival_minute", "cargo_type", "priority", "document_status", "stage",
+            "eligible_resources", "truck_record_hash",
         }
         missing = sorted(required - set(value))
         if missing:
             raise ValueError(f"frozen truck missing required fields: {', '.join(missing)}")
+        unexpected = sorted(set(value) - required - {"generation_attempt"})
+        if unexpected:
+            raise ValueError(f"frozen truck has unexpected fields: {', '.join(unexpected)}")
         return cls(
             instance_id=value["instance_id"],
             scenario_index=value["scenario_index"],
@@ -544,9 +555,10 @@ class FrozenTruck:
             cargo_type=value["cargo_type"],
             priority=value["priority"],
             document_status=value["document_status"],
-            stage=value.get("stage", "gate"),
-            eligible_resources=value.get("eligible_resources", ()),
-            truck_record_hash=value.get("truck_record_hash"),
+            stage=value["stage"],
+            eligible_resources=value["eligible_resources"],
+            generation_attempt=value.get("generation_attempt", 0),
+            truck_record_hash=value["truck_record_hash"],
         )
 
 
@@ -592,34 +604,45 @@ class FrozenServiceTime:
 
     instance_id: str
     scenario_index: int
+    scenario_id: str
     seed: int
     truck_id: str
     operation: str
     duration_min: float
-    distribution: tuple[float, float, float]
+    source_a: float
+    source_mode: float
+    source_b: float
     draw_key: str
     crn_version: str
+    generation_attempt: int = 0
     service_record_hash: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.operation, str) or not self.operation.strip():
-            raise ValueError("operation must be a non-empty string")
+        for name in ("instance_id", "scenario_id", "truck_id", "operation", "draw_key", "crn_version"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if isinstance(self.scenario_index, bool) or not isinstance(self.scenario_index, int) or self.scenario_index < 0:
+            raise ValueError("scenario_index must be a non-negative integer")
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int) or self.seed < 0:
+            raise ValueError("seed must be a non-negative integer")
+        if isinstance(self.generation_attempt, bool) or not isinstance(self.generation_attempt, int) or self.generation_attempt < 0:
+            raise ValueError("generation_attempt must be a non-negative integer")
         if not isinstance(self.duration_min, (int, float)) or isinstance(self.duration_min, bool):
             raise TypeError("duration_min must be numeric")
         duration = float(self.duration_min)
         if not math.isfinite(duration) or duration < 0:
             raise ValueError("duration_min must be finite and non-negative")
         object.__setattr__(self, "duration_min", duration)
-        distribution = tuple(float(item) for item in self.distribution)
-        if len(distribution) != 3 or any(not math.isfinite(item) or item < 0 for item in distribution):
-            raise ValueError("distribution must contain three finite non-negative values")
-        if not distribution[0] <= distribution[1] <= distribution[2]:
-            raise ValueError("distribution must be ordered")
-        object.__setattr__(self, "distribution", distribution)
-        for name in ("draw_key", "crn_version"):
-            value = getattr(self, name)
-            if not isinstance(value, str) or len(value) < 1:
-                raise ValueError(f"{name} must be a non-empty string")
+        sources = tuple(float(getattr(self, name)) for name in ("source_a", "source_mode", "source_b"))
+        if any(not math.isfinite(item) or item < 0 for item in sources):
+            raise ValueError("service sources must be finite and non-negative")
+        if not sources[0] <= sources[1] <= sources[2]:
+            raise ValueError("service sources must be ordered")
+        for name, item in zip(("source_a", "source_mode", "source_b"), sources):
+            object.__setattr__(self, name, item)
+        if len(self.draw_key) != 64 or any(char not in "0123456789abcdefABCDEF" for char in self.draw_key):
+            raise ValueError("draw_key must be a SHA-256 digest")
         expected = _dataset_digest(self._record_without_hash())
         if self.service_record_hash is None:
             object.__setattr__(self, "service_record_hash", expected)
@@ -630,19 +653,60 @@ class FrozenServiceTime:
         return {
             "instance_id": self.instance_id,
             "scenario_index": self.scenario_index,
+            "scenario_id": self.scenario_id,
             "seed": self.seed,
             "truck_id": self.truck_id,
             "operation": self.operation,
             "duration_min": self.duration_min,
-            "distribution": list(self.distribution),
+            "source_a": self.source_a,
+            "source_mode": self.source_mode,
+            "source_b": self.source_b,
             "draw_key": self.draw_key,
             "crn_version": self.crn_version,
+            "generation_attempt": self.generation_attempt,
         }
+
+    @property
+    def distribution(self) -> tuple[float, float, float]:
+        return (self.source_a, self.source_mode, self.source_b)
 
     def to_dict(self) -> dict[str, Any]:
         result = self._record_without_hash()
+        result.pop("generation_attempt", None)
         result["service_record_hash"] = self.service_record_hash
         return result
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "FrozenServiceTime":
+        if not isinstance(value, Mapping):
+            raise TypeError("frozen service time must be a mapping")
+        required = {
+            "instance_id", "scenario_index", "scenario_id", "seed", "truck_id", "operation",
+            "duration_min", "source_a", "source_mode", "source_b", "draw_key", "crn_version",
+            "service_record_hash",
+        }
+        missing = sorted(required - set(value))
+        if missing:
+            raise ValueError(f"frozen service time missing required fields: {', '.join(missing)}")
+        unexpected = sorted(set(value) - required - {"generation_attempt"})
+        if unexpected:
+            raise ValueError(f"frozen service time has unexpected fields: {', '.join(unexpected)}")
+        return cls(
+            instance_id=value["instance_id"],
+            scenario_index=value["scenario_index"],
+            scenario_id=value["scenario_id"],
+            seed=value["seed"],
+            truck_id=value["truck_id"],
+            operation=value["operation"],
+            duration_min=value["duration_min"],
+            source_a=value["source_a"],
+            source_mode=value["source_mode"],
+            source_b=value["source_b"],
+            draw_key=value["draw_key"],
+            crn_version=value["crn_version"],
+            generation_attempt=value.get("generation_attempt", 0),
+            service_record_hash=value["service_record_hash"],
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -681,6 +745,32 @@ class FrozenInstance:
             raise TypeError("service_times must contain FrozenServiceTime values")
         if any(item.instance_id != self.instance_id for item in trucks + service_times):
             raise ValueError("instance records must use the same instance_id")
+        if any(item.scenario_index != self.scenario_index or item.seed != self.seed for item in trucks):
+            raise ValueError("truck records must match instance scenario and seed")
+        if any(
+            item.scenario_index != self.scenario_index
+            or item.seed != self.seed
+            or item.scenario_id != self.scenario_id
+            for item in service_times
+        ):
+            raise ValueError("service records must match instance scenario, ID and seed")
+        if any(item.generation_attempt != self.generation_attempt for item in trucks + service_times):
+            raise ValueError("instance generation_attempt must match child records")
+        truck_ids = [item.truck_id for item in trucks]
+        if len(set(truck_ids)) != len(truck_ids):
+            raise ValueError("instance truck IDs must be unique")
+        trucks = tuple(sorted(trucks, key=lambda item: (item.arrival_minute, item.truck_id)))
+        truck_order = {item.truck_id: index for index, item in enumerate(trucks)}
+        operation_order = {name: index for index, name in enumerate(("gate", "scale_in", "unload", "scale_out"))}
+        service_keys = [(item.truck_id, item.operation) for item in service_times]
+        if len(set(service_keys)) != len(service_keys):
+            raise ValueError("instance service operations must be unique per truck")
+        service_times = tuple(
+            sorted(
+                service_times,
+                key=lambda item: (truck_order.get(item.truck_id, len(trucks)), operation_order.get(item.operation, len(operation_order)), item.truck_id),
+            )
+        )
         object.__setattr__(self, "trucks", trucks)
         object.__setattr__(self, "resources", resources)
         object.__setattr__(self, "service_times", service_times)
@@ -715,14 +805,27 @@ class FrozenInstance:
             "scenario_id": self.scenario_id,
             "seed": self.seed,
             "generation_attempt": self.generation_attempt,
-            "trucks": [item.to_dict() for item in self.trucks],
+            "trucks": [item._record_without_hash() for item in self.trucks],
             "resources": [item.to_dict() for item in self.resources],
-            "service_times": [item.to_dict() for item in self.service_times],
+            "service_times": [item._record_without_hash() for item in self.service_times],
             "disruptions": [_thaw_dataset_value(item) for item in self.disruptions],
         }
 
     def canonical_dict(self) -> dict[str, Any]:
+        # Keep the instance-level canonical record independent from the
+        # persisted child-record hashes, while still making ``to_dict`` a
+        # lossless round-trip representation.  The generation attempt is an
+        # internal provenance field (not a payload column), so include it here
+        # explicitly alongside each child's persisted hash.
         result = self._record_without_hash()
+        result["trucks"] = [
+            {**item.to_dict(), "generation_attempt": item.generation_attempt}
+            for item in self.trucks
+        ]
+        result["service_times"] = [
+            {**item.to_dict(), "generation_attempt": item.generation_attempt}
+            for item in self.service_times
+        ]
         result["canonical_record_hash"] = self.canonical_record_hash
         result["instance_hash"] = self.instance_hash
         return result
@@ -758,18 +861,7 @@ class FrozenInstance:
                 for item in value["resources"]
             ),
             service_times=tuple(
-                FrozenServiceTime(
-                    instance_id=item["instance_id"],
-                    scenario_index=item["scenario_index"],
-                    seed=item["seed"],
-                    truck_id=item["truck_id"],
-                    operation=item["operation"],
-                    duration_min=item["duration_min"],
-                    distribution=item["distribution"],
-                    draw_key=item["draw_key"],
-                    crn_version=item["crn_version"],
-                    service_record_hash=item.get("service_record_hash"),
-                )
+                FrozenServiceTime.from_dict(item)
                 for item in value["service_times"]
             ),
             disruptions=tuple(value["disruptions"]),

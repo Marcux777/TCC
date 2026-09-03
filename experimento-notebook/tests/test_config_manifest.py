@@ -1,5 +1,6 @@
 from pathlib import Path
 import hashlib
+import inspect
 import json
 
 import pytest
@@ -12,10 +13,21 @@ from pequiflux_experiment.config import (
     load_config,
 )
 from pequiflux_experiment.dataset import (
+    DatasetPlan,
     DatasetContractError,
-    generate_synthetic_dataset,
+    GenerationPlanReceipt,
+    canonical_payload_schemas,
+    load_frozen_dataset,
     plan_synthetic_dataset,
-    validate_frozen_dataset,
+    validate_generation_headers,
+    _prepare_destination,
+    _read_jsonl,
+)
+from pequiflux_experiment.domain import (
+    FrozenInstance,
+    FrozenResource,
+    FrozenServiceTime,
+    FrozenTruck,
 )
 import pequiflux_experiment.face_validation as face_validation
 from pequiflux_experiment.face_validation import validate_face_validation_receipt
@@ -40,42 +52,133 @@ def test_synthetic_plan_contract():
     assert plan.instance_ids[-1] == "s71-seed150"
 
 
-def test_generate_freezes_complete_dataset(tmp_path, approved_face, monkeypatch):
+def test_generation_headers_receipt_is_non_publishing():
     plan = plan_synthetic_dataset(load_config(CONFIG_PATH))
 
-    class HeaderMaterializerSpy:
-        count = 0
-
-        def __call__(self, header, writer):
-            self.count += 1
-            writer.write_header(
-                {"instance_id": header.instance_id, "generation_attempt": 0}
-            )
-
-    writer = HeaderMaterializerSpy()
-    monkeypatch.setattr(
-        "pequiflux_experiment.dataset._materialize_production_header", writer
-    )
-    generate_synthetic_dataset(
-        load_config(CONFIG_PATH),
-        approved_face,
-        tmp_path,
-        now_utc="2026-09-03T12:00:00+00:00",
-        generator_version="generator.v1",
+    receipt = validate_generation_headers(
+        plan.ordered_instance_headers,
+        expected_plan=plan,
     )
 
-    assert writer.count == 3_600
-    validate_frozen_dataset(tmp_path, expected_plan=plan, strict_production=True)
+    assert isinstance(receipt, GenerationPlanReceipt)
+    assert (receipt.scenario_count, receipt.instance_count, receipt.policy_day_count) == (
+        72,
+        3_600,
+        18_000,
+    )
+    assert receipt.ordered_instance_ids == plan.instance_ids
+    assert not hasattr(receipt, "path")
 
 
-def test_production_refuses_incomplete_freeze(tmp_path, approved_face):
-    del approved_face
-    with pytest.raises(DatasetContractError, match="3,600"):
-        validate_frozen_dataset(
-            tmp_path,
+def test_strict_loader_rejects_header_only_artifact(tmp_path):
+    artifact = tmp_path / "header-only"
+    artifact.mkdir()
+    with pytest.raises(DatasetContractError, match="FREEZE|header-only|schema"):
+        load_frozen_dataset(
+            artifact,
             expected_plan=plan_synthetic_dataset(load_config(CONFIG_PATH)),
-            strict_production=True,
         )
+
+
+def test_canonical_payload_schemas_are_exact():
+    assert canonical_payload_schemas() == {
+        "scenario_index.parquet": (
+            "scenario_index", "scenario_id", "N", "hopper_count", "scale_count",
+            "regime", "rho", "stratum", "protocol_version", "config_hash", "generator_version",
+        ),
+        "trucks.parquet": (
+            "instance_id", "scenario_index", "scenario_id", "seed", "truck_id", "arrival_minute",
+            "cargo_type", "priority", "document_status", "stage", "eligible_resources", "truck_record_hash",
+        ),
+        "service_times.parquet": (
+            "instance_id", "scenario_index", "scenario_id", "seed", "truck_id", "operation",
+            "duration_min", "source_a", "source_mode", "source_b", "draw_key", "crn_version",
+            "service_record_hash",
+        ),
+    }
+
+
+def test_frozen_instance_round_trip_preserves_hash_cargo_and_service_order():
+    truck = FrozenTruck(
+        instance_id="s00-seed101",
+        scenario_index=0,
+        scenario_id="n60-m1-b1-nominal",
+        seed=101,
+        truck_id="T-001",
+        arrival_minute=4.0,
+        cargo_type="soy",
+        priority=1,
+        document_status="CLEAR",
+        eligible_resources=("gate-1", "hopper-2"),
+    )
+    resource = FrozenResource("hopper-2", "hopper", ("soy",))
+    service_late = FrozenServiceTime(
+        instance_id=truck.instance_id,
+        scenario_index=0,
+        scenario_id=truck.scenario_id,
+        seed=101,
+        truck_id=truck.truck_id,
+        operation="unload",
+        duration_min=20.0,
+        source_a=12.0,
+        source_mode=20.0,
+        source_b=35.0,
+        draw_key="a" * 64,
+        crn_version="crn.v1",
+    )
+    service_early = FrozenServiceTime(
+        instance_id=truck.instance_id,
+        scenario_index=0,
+        scenario_id=truck.scenario_id,
+        seed=101,
+        truck_id=truck.truck_id,
+        operation="gate",
+        duration_min=4.0,
+        source_a=2.0,
+        source_mode=4.0,
+        source_b=7.0,
+        draw_key="b" * 64,
+        crn_version="crn.v1",
+    )
+    instance = FrozenInstance(
+        instance_id=truck.instance_id,
+        scenario_index=0,
+        scenario_id=truck.scenario_id,
+        seed=101,
+        generation_attempt=0,
+        trucks=(truck,),
+        resources=(resource,),
+        service_times=(service_late, service_early),
+    )
+    round_trip = FrozenInstance.from_dict(instance.to_dict())
+
+    assert round_trip.instance_hash == instance.instance_hash
+    assert round_trip.trucks[0].cargo_type == "soy"
+    assert round_trip.resources[0].allowed_cargo_types == ("soy",)
+    assert tuple(item.operation for item in round_trip.service_times) == (
+        "gate",
+        "unload",
+    )
+
+
+def test_jsonl_loader_rejects_noncanonical_line_endings(tmp_path):
+    path = tmp_path / "events.jsonl"
+    path.write_bytes(b'{"a":1}\r\n')
+    with pytest.raises(DatasetContractError, match="canonical|LF"):
+        _read_jsonl(path, "events.jsonl")
+
+
+def test_public_generator_has_no_test_injector():
+    from pequiflux_experiment.dataset import generate_synthetic_dataset
+
+    assert "rejection_injector" not in inspect.signature(generate_synthetic_dataset).parameters
+
+
+def test_existing_destination_is_a_collision(tmp_path):
+    destination = tmp_path / "existing"
+    destination.mkdir()
+    with pytest.raises(FileExistsError):
+        _prepare_destination(destination)
 
 
 def test_config_contract_and_hash():
