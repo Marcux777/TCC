@@ -1,7 +1,9 @@
 from pathlib import Path
+from datetime import datetime, timezone
 import hashlib
 import inspect
 import json
+import os
 
 import pytest
 
@@ -9,12 +11,14 @@ from pequiflux_experiment.config import (
     CapacityRequirements,
     canonical_bytes,
     config_hash,
+    crn_digest,
     factorial_scenarios,
     load_config,
 )
 from pequiflux_experiment.dataset import (
     DatasetPlan,
     DatasetContractError,
+    FaceValidationError,
     GenerationPlanReceipt,
     canonical_payload_schemas,
     load_frozen_dataset,
@@ -22,7 +26,10 @@ from pequiflux_experiment.dataset import (
     validate_generation_headers,
     _prepare_destination,
     _read_jsonl,
+    _validate_disruption_event_type,
+    _validate_approved_face,
 )
+import pequiflux_experiment.dataset as dataset_module
 from pequiflux_experiment.domain import (
     FrozenInstance,
     FrozenResource,
@@ -30,11 +37,44 @@ from pequiflux_experiment.domain import (
     FrozenTruck,
 )
 import pequiflux_experiment.face_validation as face_validation
-from pequiflux_experiment.face_validation import validate_face_validation_receipt
+from pequiflux_experiment.face_validation import FaceValidationReport, validate_face_validation_receipt
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "confirmatory.json"
+
+
+def _tiny_payload_manifest(root: Path, dataset_id: str) -> tuple[dict, list[tuple[str, str]]]:
+    """Create only tiny arbitrary payload bytes for hash-chain boundary tests."""
+
+    from pequiflux_experiment.dataset import _PAYLOAD_NAMES, _build_manifest
+    from pequiflux_experiment.manifest import canonical_file_hash
+
+    root.mkdir(parents=True, exist_ok=True)
+    for name in _PAYLOAD_NAMES:
+        (root / name).write_bytes(name.encode("utf-8"))
+    entries = [(name, canonical_file_hash(root / name)) for name in _PAYLOAD_NAMES]
+    config = load_config(CONFIG_PATH)
+    manifest = _build_manifest(
+        config,
+        plan_synthetic_dataset(config),
+        Path(root.parent / dataset_id),
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "test-generator",
+        tuple(entries),
+        0,
+        instance_hashes=[],
+        cardinalities={
+            "scenario_index": 72,
+            "instances": 3_600,
+            "trucks": 1,
+            "service_times": 1,
+            "disruptions": 0,
+            "rejection_log": 0,
+        },
+    )
+    manifest["dataset_id"] = dataset_id
+    return manifest, entries
 
 
 @pytest.fixture
@@ -80,6 +120,79 @@ def test_strict_loader_rejects_header_only_artifact(tmp_path):
         )
 
 
+def test_checksum_chain_accepts_exact_five_payload_mapping(tmp_path):
+    from pequiflux_experiment.dataset import _PAYLOAD_NAMES, _validate_checksum_chain
+    from pequiflux_experiment.manifest import canonical_checksum_bytes, canonical_file_hash, dataset_root_hash, write_manifest
+
+    root = tmp_path / "published"
+    manifest, entries = _tiny_payload_manifest(root, root.name)
+    write_manifest(root / "manifest.json", manifest)
+    checksums = canonical_checksum_bytes(entries)
+    (root / "checksums.sha256").write_bytes(checksums)
+    manifest_hash = canonical_file_hash(root / "manifest.json")
+    checksums_hash = hashlib.sha256(checksums).hexdigest()
+    (root / "FREEZE.json").write_bytes(
+        canonical_bytes(
+            {
+                "manifest_hash": manifest_hash,
+                "checksums_hash": checksums_hash,
+                "dataset_root_hash": dataset_root_hash(manifest_hash, checksums_hash),
+            }
+        )
+    )
+
+    _loaded_manifest, observed = _validate_checksum_chain(root)
+
+    assert tuple(observed) == tuple(_PAYLOAD_NAMES)
+    assert observed == dict(entries)
+
+
+def test_checksum_chain_rejects_manifest_extra_field(tmp_path):
+    from pequiflux_experiment.dataset import _validate_checksum_chain
+    from pequiflux_experiment.manifest import canonical_checksum_bytes, canonical_file_hash, dataset_root_hash, write_manifest
+
+    root = tmp_path / "published"
+    manifest, entries = _tiny_payload_manifest(root, root.name)
+    manifest["unexpected"] = True
+    write_manifest(root / "manifest.json", manifest)
+    checksums = canonical_checksum_bytes(entries)
+    (root / "checksums.sha256").write_bytes(checksums)
+    manifest_hash = canonical_file_hash(root / "manifest.json")
+    checksums_hash = hashlib.sha256(checksums).hexdigest()
+    (root / "FREEZE.json").write_bytes(
+        canonical_bytes(
+            {
+                "manifest_hash": manifest_hash,
+                "checksums_hash": checksums_hash,
+                "dataset_root_hash": dataset_root_hash(manifest_hash, checksums_hash),
+            }
+        )
+    )
+
+    with pytest.raises(DatasetContractError, match="unexpected fields"):
+        _validate_checksum_chain(root)
+
+
+def test_staging_validates_with_published_dataset_id_before_atomic_rename(tmp_path, monkeypatch):
+    staging = tmp_path / ".published.staging-test"
+    destination = tmp_path / "published"
+    manifest, _entries = _tiny_payload_manifest(staging, destination.name)
+    calls = []
+    monkeypatch.setattr(
+        dataset_module,
+        "_load_frozen_dataset",
+        lambda path, expected_plan=None, published_dataset_id=None: calls.append(
+            (Path(path).name, published_dataset_id)
+        ) or "validated",
+    )
+
+    assert dataset_module._finalize_freeze(staging, manifest) == "validated"
+    assert calls == [(staging.name, destination.name)]
+    os.replace(staging, destination)
+    assert destination.is_dir()
+    assert not staging.exists()
+
+
 def test_canonical_payload_schemas_are_exact():
     assert canonical_payload_schemas() == {
         "scenario_index.parquet": (
@@ -123,7 +236,7 @@ def test_frozen_instance_round_trip_preserves_hash_cargo_and_service_order():
         source_a=12.0,
         source_mode=20.0,
         source_b=35.0,
-        draw_key="a" * 64,
+        draw_key=crn_digest("crn.v1", 0, 101, 0, "T-001", "unload"),
         crn_version="crn.v1",
     )
     service_early = FrozenServiceTime(
@@ -137,7 +250,7 @@ def test_frozen_instance_round_trip_preserves_hash_cargo_and_service_order():
         source_a=2.0,
         source_mode=4.0,
         source_b=7.0,
-        draw_key="b" * 64,
+        draw_key=crn_digest("crn.v1", 0, 101, 0, "T-001", "gate"),
         crn_version="crn.v1",
     )
     instance = FrozenInstance(
@@ -161,6 +274,140 @@ def test_frozen_instance_round_trip_preserves_hash_cargo_and_service_order():
     )
 
 
+def test_frozen_service_rejects_forged_crn_draw_key():
+    with pytest.raises(ValueError, match="draw_key"):
+        FrozenServiceTime(
+            instance_id="s00-seed101",
+            scenario_index=0,
+            scenario_id="n60-m1-b1-nominal",
+            seed=101,
+            truck_id="T-001",
+            operation="gate",
+            duration_min=4.0,
+            source_a=2.0,
+            source_mode=4.0,
+            source_b=7.0,
+            draw_key="a" * 64,
+            crn_version="crn.v1",
+        )
+
+
+@pytest.mark.parametrize("event_type", ["unknown", "arrival", ""])
+def test_disruption_event_type_is_closed(event_type):
+    with pytest.raises(DatasetContractError, match="event_type"):
+        _validate_disruption_event_type(event_type)
+
+
+@pytest.mark.parametrize(
+    ("frozen_parameters", "message"),
+    [(None, "frozen_parameters"), ({}, "service_distributions"), ({"service_distributions": {"gate": [1, 2, 3]}}, "service_distributions")],
+)
+def test_loader_rejects_missing_frozen_service_parameters(tmp_path, monkeypatch, frozen_parameters, message):
+    root = tmp_path / "dataset"
+    root.mkdir()
+    truck = FrozenTruck(
+        instance_id="s00-seed101",
+        scenario_index=0,
+        scenario_id="n60-m1-b1-nominal",
+        seed=101,
+        truck_id="T-001",
+        arrival_minute=1.0,
+        cargo_type="soy",
+        priority=0,
+        document_status="CLEAR",
+        eligible_resources=("gate-1",),
+    )
+    manifest = {
+        "dataset_id": root.name,
+        "phase": "synthetic",
+        "freeze_status": "FROZEN",
+        "policy_days_executed": False,
+        "parameters": {"seeds": list(range(101, 151))},
+        "frozen_parameters": frozen_parameters,
+    }
+    monkeypatch.setattr(
+        dataset_module,
+        "_read_payloads",
+        lambda _root: ([], [truck.to_dict()], [], [], []),
+    )
+    monkeypatch.setattr(
+        dataset_module,
+        "_validate_scenario_rows",
+        lambda _rows, _manifest, _plan: {
+            0: {
+                "scenario_id": "n60-m1-b1-nominal",
+                "N": 1,
+                "hopper_count": 1,
+                "scale_count": 1,
+                "regime": "nominal",
+            }
+        },
+    )
+    monkeypatch.setattr(dataset_module, "_expected_instance_ids", lambda _manifest, _plan: ("s00-seed101",))
+
+    with pytest.raises(DatasetContractError, match=message):
+        dataset_module._validate_full_payloads(root, manifest, None)
+
+
+def test_frozen_instance_service_order_keeps_truck_identity():
+    def make_truck(truck_id: str, arrival: float) -> FrozenTruck:
+        return FrozenTruck(
+            instance_id="s00-seed101",
+            scenario_index=0,
+            scenario_id="n60-m1-b1-nominal",
+            seed=101,
+            truck_id=truck_id,
+            arrival_minute=arrival,
+            cargo_type="soy",
+            priority=1,
+            document_status="CLEAR",
+            eligible_resources=("gate-1",),
+        )
+
+    def make_service(truck_id: str, operation: str) -> FrozenServiceTime:
+        distribution = {
+            "gate": (2.0, 4.0, 7.0),
+            "unload": (12.0, 20.0, 35.0),
+        }[operation]
+        return FrozenServiceTime(
+            instance_id="s00-seed101",
+            scenario_index=0,
+            scenario_id="n60-m1-b1-nominal",
+            seed=101,
+            truck_id=truck_id,
+            operation=operation,
+            duration_min=distribution[1],
+            source_a=distribution[0],
+            source_mode=distribution[1],
+            source_b=distribution[2],
+            draw_key=crn_digest("crn.v1", 0, 101, 0, truck_id, operation),
+            crn_version="crn.v1",
+        )
+
+    instance = FrozenInstance(
+        instance_id="s00-seed101",
+        scenario_index=0,
+        scenario_id="n60-m1-b1-nominal",
+        seed=101,
+        generation_attempt=0,
+        trucks=(make_truck("T-002", 2.0), make_truck("T-001", 8.0)),
+        resources=(FrozenResource("gate-1", "gate", ("soy", "corn")),),
+        service_times=(
+            make_service("T-001", "unload"),
+            make_service("T-002", "unload"),
+            make_service("T-001", "gate"),
+            make_service("T-002", "gate"),
+        ),
+    )
+
+    assert [(item.truck_id, item.operation) for item in instance.service_times] == [
+        ("T-002", "gate"),
+        ("T-002", "unload"),
+        ("T-001", "gate"),
+        ("T-001", "unload"),
+    ]
+
+
 def test_jsonl_loader_rejects_noncanonical_line_endings(tmp_path):
     path = tmp_path / "events.jsonl"
     path.write_bytes(b'{"a":1}\r\n')
@@ -172,6 +419,18 @@ def test_public_generator_has_no_test_injector():
     from pequiflux_experiment.dataset import generate_synthetic_dataset
 
     assert "rejection_injector" not in inspect.signature(generate_synthetic_dataset).parameters
+
+
+def test_fabricated_face_report_is_rejected_at_generation_boundary():
+    config = load_config(CONFIG_PATH)
+    fabricated = FaceValidationReport(
+        status="APPROVED",
+        cause="fabricated",
+        receipt_path=PROJECT_ROOT / "inputs" / "face_validation_receipt.json",
+    )
+
+    with pytest.raises(FaceValidationError, match="exactly|receipt|revalidated"):
+        _validate_approved_face(fabricated, config)
 
 
 def test_existing_destination_is_a_collision(tmp_path):

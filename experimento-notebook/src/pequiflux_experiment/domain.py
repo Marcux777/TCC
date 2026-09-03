@@ -643,6 +643,16 @@ class FrozenServiceTime:
             object.__setattr__(self, name, item)
         if len(self.draw_key) != 64 or any(char not in "0123456789abcdefABCDEF" for char in self.draw_key):
             raise ValueError("draw_key must be a SHA-256 digest")
+        expected_draw_key = crn_digest(
+            self.crn_version,
+            self.scenario_index,
+            self.seed,
+            self.generation_attempt,
+            self.truck_id,
+            self.operation,
+        )
+        if self.draw_key != expected_draw_key:
+            raise ValueError("draw_key does not match the canonical CRN tuple")
         expected = _dataset_digest(self._record_without_hash())
         if self.service_record_hash is None:
             object.__setattr__(self, "service_record_hash", expected)

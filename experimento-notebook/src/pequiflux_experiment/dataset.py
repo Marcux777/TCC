@@ -19,7 +19,7 @@ from pathlib import Path
 import platform
 import subprocess
 import tempfile
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Iterable, Mapping
 
 from .config import (
     ExperimentConfig,
@@ -40,13 +40,12 @@ from .domain import (
     FrozenTruck,
     canonical_allowed_cargo_types,
 )
-from .face_validation import FaceValidationReport
+from .face_validation import FaceValidationReport, validate_face_validation_receipt
 from .manifest import (
     canonical_checksum_bytes,
     canonical_file_hash,
     create_run_directory,
     dataset_root_hash,
-    write_checksums,
     write_manifest,
 )
 
@@ -223,6 +222,15 @@ _JSONL_SCHEMA_NAMES: dict[str, tuple[str, ...]] = {
 }
 _OPERATIONS: tuple[str, ...] = ("gate", "scale_in", "unload", "scale_out")
 _RESOURCE_KINDS: tuple[tuple[str, str], ...] = (("gate-1", "gate"),)
+_DISRUPTION_EVENT_TYPES: frozenset[str] = frozenset(
+    {"document_release", "resource_failure", "priority_change", "rain_start", "rain_end"}
+)
+_EVENT_RANK_NAMES: frozenset[str] = frozenset(
+    {
+        "service_completion", "resource_recovery", "rain_end", "resource_failure",
+        "rain_start", "document_release", "priority_change", "arrival",
+    }
+)
 
 
 def _as_utc(value: datetime | str | None) -> datetime:
@@ -827,6 +835,17 @@ def _validate_approved_face(face_report: Any, config: ExperimentConfig) -> FaceV
         raise FaceValidationError(
             "generate_synthetic_dataset requires a validated FaceValidationReport"
         )
+    receipt_path = face_report.receipt_path
+    if not isinstance(receipt_path, Path) or not receipt_path.is_file():
+        raise FaceValidationError(
+            "generate_synthetic_dataset requires a FaceValidationReport with an existing receipt_path"
+        )
+    pdf_path = Path(__file__).resolve().parents[3] / "main.pdf"
+    revalidated = validate_face_validation_receipt(receipt_path, config, pdf_path)
+    if revalidated != face_report:
+        raise FaceValidationError(
+            "FaceValidationReport does not exactly match revalidated receipt evidence"
+        )
     if face_report.status != "APPROVED":
         raise FaceValidationError(
             f"generate_synthetic_dataset blocked before namespace: FACE_VALIDATION={face_report.status}; {face_report.cause}"
@@ -948,13 +967,19 @@ def _finalize_freeze(destination: Path, manifest: Mapping[str, Any]) -> FrozenDa
         "dataset_root_hash": root_hash,
     }
     (destination / "FREEZE.json").write_bytes(canonical_bytes(freeze_payload))
-    # Loading performs the full independent chain/cardinality check.
-    return load_frozen_dataset(destination)
+    # Loading performs the full independent chain/cardinality check.  During
+    # generation this path is the sibling staging directory, while the
+    # manifest already names the eventual published destination; carry that
+    # explicit identity through the private staging boundary.
+    return _load_frozen_dataset(
+        destination,
+        published_dataset_id=str(manifest.get("dataset_id", "")),
+    )
 
 
 def generate_synthetic_dataset(
     config: ExperimentConfig,
-    face_report: Any,
+    face_report: FaceValidationReport,
     dataset_root: str | Path,
     *,
     now_utc: datetime | str | None = None,
@@ -1184,6 +1209,11 @@ def _validate_checksum_chain(path: Path) -> tuple[dict[str, Any], dict[str, str]
         raise DatasetContractError(
             "manifest is missing required fields: " + ", ".join(missing_manifest)
         )
+    unknown_manifest = sorted(set(manifest) - _REQUIRED_MANIFEST_FIELDS)
+    if unknown_manifest:
+        raise DatasetContractError(
+            "manifest contains unexpected fields: " + ", ".join(unknown_manifest)
+        )
     if not isinstance(freeze, dict) or set(freeze) != {"manifest_hash", "checksums_hash", "dataset_root_hash"}:
         raise DatasetContractError("FREEZE.json must contain exactly three hash fields")
     try:
@@ -1220,7 +1250,7 @@ def _validate_checksum_chain(path: Path) -> tuple[dict[str, Any], dict[str, str]
     expected_payload_rows = [{"path": name, "sha256": digest} for name, digest in entries]
     if payload_hashes != expected_payload_rows:
         raise DatasetContractError("manifest payload hashes do not match checksums.sha256")
-    if manifest.get("scenario_index_hash") != entries["scenario_index.parquet"]:
+    if manifest.get("scenario_index_hash") != dict(entries)["scenario_index.parquet"]:
         raise DatasetContractError(
             "manifest scenario_index_hash does not match scenario_index.parquet checksum"
         )
@@ -1355,15 +1385,75 @@ def _read_payloads(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any
         (rejection_rows, "rejection_log.jsonl"),
     ):
         _assert_finite_json(value, label)
+    _validate_jsonl_types(disruption_rows, "disruptions")
+    _validate_jsonl_types(rejection_rows, "rejection_log")
     return scenario_rows, truck_rows, service_rows, disruption_rows, rejection_rows
+
+
+def _validate_jsonl_types(
+    rows: list[dict[str, Any]],
+    kind: str,
+) -> None:
+    """Validate the scalar shape of exact JSONL rows after byte parsing."""
+
+    if kind == "disruptions":
+        integer_fields = {"scenario_index", "seed", "event_rank", "sequence"}
+        number_fields = {"time", "duration_min", "return_time"}
+        string_fields = {
+            "instance_id", "scenario_id", "resource_id", "truck_id", "event_type",
+            "cause", "operation", "payload_hash",
+        }
+        optional_text_fields = {"resource_id", "truck_id", "operation"}
+    elif kind == "rejection_log":
+        integer_fields = {"candidate_ordinal", "scenario_index", "seed", "generation_attempt"}
+        number_fields = set()
+        string_fields = {
+            "dataset_id", "instance_id", "reason_code", "validator", "candidate_hash",
+            "automatic_resample_status", "next_action", "timestamp",
+        }
+        optional_text_fields = set()
+    else:  # pragma: no cover - private helper called only with known kinds
+        raise ValueError(f"unknown JSONL schema kind: {kind}")
+    expected = set(_JSONL_SCHEMA_NAMES[f"{kind}.jsonl"])
+    for ordinal, row in enumerate(rows):
+        for name in integer_fields:
+            value = row[name]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise DatasetContractError(f"{kind} row {ordinal} field {name} must be a non-negative integer")
+        for name in number_fields:
+            value = row[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                raise DatasetContractError(f"{kind} row {ordinal} field {name} must be finite numeric")
+        for name in string_fields:
+            value = row[name]
+            if not isinstance(value, str) or (name not in optional_text_fields and not value.strip()):
+                raise DatasetContractError(f"{kind} row {ordinal} field {name} must be non-empty text")
+        for name in expected - integer_fields - number_fields - string_fields:
+            if row[name] is None:
+                raise DatasetContractError(f"{kind} row {ordinal} field {name} must not be null")
+        if "payload_hash" in row and (len(row["payload_hash"]) != 64 or any(c not in "0123456789abcdefABCDEF" for c in row["payload_hash"])):
+            raise DatasetContractError(f"{kind} row {ordinal} payload_hash must be a SHA-256 digest")
+        if "candidate_hash" in row and (len(row["candidate_hash"]) != 64 or any(c not in "0123456789abcdefABCDEF" for c in row["candidate_hash"])):
+            raise DatasetContractError(f"{kind} row {ordinal} candidate_hash must be a SHA-256 digest")
+
+
+def _validate_disruption_event_type(event_type: object) -> str:
+    if not isinstance(event_type, str) or event_type not in _DISRUPTION_EVENT_TYPES:
+        raise DatasetContractError("disruptions row has an unsupported event_type")
+    return event_type
 
 
 def _validate_full_payloads(
     root: Path,
     manifest: Mapping[str, Any],
     expected_plan: DatasetPlan | None,
+    *,
+    published_dataset_id: str | None = None,
 ) -> FrozenDataset:
-    if manifest.get("dataset_id") != root.name:
+    expected_dataset_id = root.name if published_dataset_id is None else published_dataset_id
+    if not isinstance(expected_dataset_id, str) or not expected_dataset_id.strip():
+        raise DatasetContractError("published dataset_id must be non-empty")
+    if manifest.get("dataset_id") != expected_dataset_id:
         raise DatasetContractError("manifest dataset_id does not match destination namespace")
     if manifest.get("phase") != "synthetic" or manifest.get("freeze_status") != "FROZEN":
         raise DatasetContractError("dataset manifest must be a frozen synthetic phase")
@@ -1377,9 +1467,10 @@ def _validate_full_payloads(
     by_instance_trucks: dict[str, list[FrozenTruck]] = {}
     by_instance_services: dict[str, list[FrozenServiceTime]] = {}
     by_instance_disruptions: dict[str, list[Mapping[str, Any]]] = {}
+    disruption_row_instance_order: list[str] = []
     truck_row_instance_order: list[str] = []
     service_row_instance_order: list[str] = []
-    observed_service_order: list[tuple[str, str]] = []
+    observed_service_order: list[tuple[str, str, str]] = []
     for ordinal, row in enumerate(truck_rows):
         try:
             truck = FrozenTruck.from_dict(row)
@@ -1424,7 +1515,33 @@ def _validate_full_payloads(
             raise DatasetContractError(f"{instance_id} truck rows are not in canonical arrival order")
 
     frozen_parameters = manifest.get("frozen_parameters")
-    service_distributions = frozen_parameters.get("service_distributions") if isinstance(frozen_parameters, Mapping) else None
+    if not isinstance(frozen_parameters, Mapping):
+        raise DatasetContractError("manifest frozen_parameters must be an object")
+    service_distributions = frozen_parameters.get("service_distributions")
+    if not isinstance(service_distributions, Mapping) or set(service_distributions) != set(_OPERATIONS):
+        raise DatasetContractError("manifest frozen_parameters.service_distributions must cover all four operations")
+    expected_distributions: dict[str, tuple[float, float, float]] = {}
+    for operation in _OPERATIONS:
+        values = service_distributions[operation]
+        if not isinstance(values, (list, tuple)) or len(values) != 3:
+            raise DatasetContractError(f"manifest service distribution for {operation} must contain three values")
+        try:
+            distribution = tuple(float(value) for value in values)
+        except (TypeError, ValueError) as exc:
+            raise DatasetContractError(f"manifest service distribution for {operation} is not numeric") from exc
+        if any(not math.isfinite(value) or value < 0 for value in distribution) or not distribution[0] <= distribution[1] <= distribution[2]:
+            raise DatasetContractError(f"manifest service distribution for {operation} is invalid")
+        expected_distributions[operation] = distribution
+    parameters = manifest.get("parameters")
+    event_ranks = parameters.get("event_ranks") if isinstance(parameters, Mapping) else None
+    if not isinstance(event_ranks, Mapping) or set(event_ranks) != set(_EVENT_RANK_NAMES):
+        raise DatasetContractError("manifest parameters.event_ranks must define the canonical event ranks")
+    for event_name, rank in event_ranks.items():
+        if isinstance(rank, bool) or not isinstance(rank, int) or rank < 0:
+            raise DatasetContractError(f"manifest event rank for {event_name} must be a non-negative integer")
+    horizon_minutes = frozen_parameters.get("horizon_minutes")
+    if isinstance(horizon_minutes, bool) or not isinstance(horizon_minutes, (int, float)) or not math.isfinite(float(horizon_minutes)) or horizon_minutes <= 0:
+        raise DatasetContractError("manifest frozen_parameters.horizon_minutes must be finite and positive")
     for ordinal, row in enumerate(service_rows):
         try:
             service = FrozenServiceTime.from_dict(row)
@@ -1450,23 +1567,21 @@ def _validate_full_payloads(
         )
         if service.draw_key != expected_draw_key:
             raise DatasetContractError(f"service_times row {ordinal} draw_key diverges from CRN tuple")
-        if isinstance(service_distributions, Mapping):
-            expected_distribution = service_distributions.get(service.operation)
-            if expected_distribution is None or tuple(float(value) for value in expected_distribution) != service.distribution:
-                raise DatasetContractError(f"service_times row {ordinal} source distribution diverges")
+        if service.operation not in expected_distributions or expected_distributions[service.operation] != service.distribution:
+            raise DatasetContractError(f"service_times row {ordinal} source distribution diverges")
         if service.truck_id not in {truck.truck_id for truck in by_instance_trucks[service.instance_id]}:
             raise DatasetContractError(f"service_times row {ordinal} references an unknown truck")
         service_row_instance_order.append(service.instance_id)
-        observed_service_order.append((service.instance_id, service.operation))
+        observed_service_order.append((service.instance_id, service.truck_id, service.operation))
         by_instance_services.setdefault(service.instance_id, []).append(service)
-    expected_service_order: list[tuple[str, str]] = []
+    expected_service_order: list[tuple[str, str, str]] = []
     for instance_id in expected_ids:
         trucks = by_instance_trucks.get(instance_id, [])
         for truck in trucks:
-            expected_service_order.extend((instance_id, operation) for operation in _OPERATIONS)
+            expected_service_order.extend((instance_id, truck.truck_id, operation) for operation in _OPERATIONS)
     if observed_service_order != expected_service_order:
         raise DatasetContractError("service_times payload order diverges from canonical truck/operation order")
-    expected_service_instance_order = [instance_id for instance_id, _operation in expected_service_order]
+    expected_service_instance_order = [instance_id for instance_id, _truck_id, _operation in expected_service_order]
     if service_row_instance_order != expected_service_instance_order:
         raise DatasetContractError("service_times payload instance order diverges from canonical plan")
     for instance_id in expected_ids:
@@ -1485,12 +1600,68 @@ def _validate_full_payloads(
         scenario_index = int(instance_id.split("-seed", 1)[0][1:])
         if row.get("scenario_index") != scenario_index or row.get("scenario_id") != scenario_lookup[scenario_index]["scenario_id"] or row.get("seed") != int(instance_id.split("-seed", 1)[1]):
             raise DatasetContractError(f"disruptions row {ordinal} identity diverges from instance plan")
+        event_type = _validate_disruption_event_type(row["event_type"])
+        if row["event_rank"] != event_ranks[event_type]:
+            raise DatasetContractError(f"disruptions row {ordinal} event_rank diverges from event_type")
+        event_time = float(row["time"])
+        duration = float(row["duration_min"])
+        return_time = float(row["return_time"])
+        if event_time < 0 or event_time > float(horizon_minutes) or duration < 0 or return_time < 0:
+            raise DatasetContractError(f"disruptions row {ordinal} time/duration is outside the horizon")
+        if event_type in {"resource_failure", "rain_start", "rain_end"}:
+            if not row["resource_id"] or row["truck_id"] or row["operation"]:
+                raise DatasetContractError(f"disruptions row {ordinal} resource failure FK is invalid")
+            valid_resources = {"gate-1"}
+            valid_resources.update(
+                f"scale-{index}" for index in range(1, int(scenario_lookup[scenario_index]["scale_count"]) + 1)
+            )
+            valid_resources.update(
+                f"hopper-{index}" for index in range(1, int(scenario_lookup[scenario_index]["hopper_count"]) + 1)
+            )
+            if row["resource_id"] not in valid_resources:
+                raise DatasetContractError(f"disruptions row {ordinal} references an unknown resource")
+            if event_type == "rain_end":
+                if return_time != 0 or duration != 0:
+                    raise DatasetContractError(f"disruptions row {ordinal} rain end semantics are invalid")
+            elif return_time < event_time + duration or duration <= 0:
+                raise DatasetContractError(f"disruptions row {ordinal} recovery time is incoherent")
+        elif event_type in {"document_release", "priority_change"}:
+            if not row["truck_id"] or row["resource_id"]:
+                raise DatasetContractError(f"disruptions row {ordinal} truck FK is invalid")
+            if row["truck_id"] not in {truck.truck_id for truck in by_instance_trucks[instance_id]}:
+                raise DatasetContractError(f"disruptions row {ordinal} references an unknown truck")
+            if event_type == "document_release" and row["operation"] != "gate":
+                raise DatasetContractError(f"disruptions row {ordinal} document release operation must be gate")
+            if event_type == "priority_change" and row["operation"]:
+                raise DatasetContractError(f"disruptions row {ordinal} priority change operation must be empty")
+            if return_time != 0:
+                raise DatasetContractError(f"disruptions row {ordinal} non-recovery return_time must be zero")
+        expected_cause = {
+            "document_release": "document",
+            "priority_change": "priority_shift",
+            "resource_failure": {"critical_failure", "base_failure"},
+            "rain_start": "rain",
+            "rain_end": "rain",
+        }[event_type]
+        if isinstance(expected_cause, set):
+            if row["cause"] not in expected_cause:
+                raise DatasetContractError(f"disruptions row {ordinal} cause diverges from event_type")
+        elif row["cause"] != expected_cause:
+            raise DatasetContractError(f"disruptions row {ordinal} cause diverges from event_type")
         observed_hash = row.get("payload_hash")
         payload = dict(row)
         payload.pop("payload_hash", None)
         if observed_hash != _digest_value(payload):
             raise DatasetContractError(f"disruptions row {ordinal} payload_hash mismatch")
+        disruption_row_instance_order.append(instance_id)
         by_instance_disruptions.setdefault(instance_id, []).append(row)
+    expected_disruption_instance_order = [
+        instance_id
+        for instance_id in expected_ids
+        for _row in by_instance_disruptions.get(instance_id, [])
+    ]
+    if disruption_row_instance_order != expected_disruption_instance_order:
+        raise DatasetContractError("disruptions payload instance order diverges from canonical plan")
     for instance_id, rows in by_instance_disruptions.items():
         sequences = [row["sequence"] for row in rows]
         if sorted(sequences) != list(range(1, len(rows) + 1)):
@@ -1524,6 +1695,8 @@ def _validate_full_payloads(
             raise DatasetContractError(f"manifest cardinalities.{name} does not match {name} payload")
     if len(rejection_rows) != manifest["rejection_count"]:
         raise DatasetContractError("rejection_log row count diverges from rejection_count")
+    if manifest.get("resample_provenance") is None and rejection_rows:
+        raise DatasetContractError("initial frozen dataset rejection_log must be empty")
 
     manifest_instance_hashes = manifest.get("instance_hashes")
     if not isinstance(manifest_instance_hashes, list) or len(manifest_instance_hashes) != 3_600:
@@ -1535,7 +1708,7 @@ def _validate_full_payloads(
         if not isinstance(item, Mapping) or set(item) != {"instance_id", "instance_hash"}:
             raise DatasetContractError("manifest instance_hashes rows must contain instance_id and instance_hash")
         digest = item["instance_hash"]
-        if not isinstance(digest, str) or len(digest) != 64:
+        if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise DatasetContractError("manifest instance_hashes values must be SHA-256 digests")
         instance_hash_lookup[str(item["instance_id"])] = digest
 
@@ -1583,20 +1756,48 @@ def validate_frozen_dataset(
     return load_frozen_dataset(path, expected_plan=expected_plan)
 
 
+def _load_frozen_dataset(
+    path: str | Path,
+    expected_plan: DatasetPlan | None = None,
+    *,
+    published_dataset_id: str | None = None,
+) -> FrozenDataset:
+    root = Path(path)
+    manifest, _checksums = _validate_checksum_chain(root)
+    return _validate_full_payloads(
+        root,
+        manifest,
+        expected_plan,
+        published_dataset_id=published_dataset_id,
+    )
+
+
 def load_frozen_dataset(path: str | Path, expected_plan: DatasetPlan | None = None) -> FrozenDataset:
     """Load a complete, canonical production freeze; never headers or defaults."""
 
-    root = Path(path)
-    manifest, _checksums = _validate_checksum_chain(root)
-    return _validate_full_payloads(root, manifest, expected_plan)
+    return _load_frozen_dataset(path, expected_plan=expected_plan)
 
 
 def freeze_dataset(path: str | Path, manifest: Mapping[str, Any] | None = None) -> FrozenDataset:
     """Finalize a directory containing the five payloads and return its freeze."""
 
     root = Path(path)
+    if not root.is_dir():
+        raise DatasetContractError(f"freeze staging directory is missing: {root}")
+    existing_metadata = [
+        root / "manifest.json",
+        root / "checksums.sha256",
+        root / "FREEZE.json",
+    ]
+    if any(item.exists() for item in existing_metadata):
+        raise FileExistsError(
+            "refusing to overwrite existing freeze metadata: "
+            + ", ".join(item.name for item in existing_metadata if item.exists())
+        )
     if manifest is None:
-        manifest = _load_json(root / "manifest.json", "manifest")
+        raise DatasetContractError(
+            "freeze_dataset requires an explicit manifest; implicit metadata discovery is forbidden"
+        )
     if not isinstance(manifest, Mapping):
         raise DatasetContractError("manifest must be a mapping")
     return _finalize_freeze(root, manifest)
