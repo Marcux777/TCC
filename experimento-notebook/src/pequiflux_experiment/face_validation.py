@@ -289,6 +289,8 @@ def validate_face_validation_receipt(
         rubric_payload = json.loads(rubric_bytes.decode("utf-8"))
         if rubric_payload != _RUBRIC:
             raise ValueError("rubric content does not match the frozen rubric")
+        if rubric_bytes != canonical_bytes(rubric_payload):
+            raise ValueError("rubric bytes must use canonical JSON serialization")
         _validate_discrepancies(raw["discrepancies"])
     except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeError) as exc:
         return _pending(receipt_path, f"face-validation receipt rejected: {exc}", raw)

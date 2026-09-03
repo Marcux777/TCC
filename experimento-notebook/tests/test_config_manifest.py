@@ -1,11 +1,15 @@
 from pathlib import Path
+import hashlib
+import json
 
 from pequiflux_experiment.config import (
     CapacityRequirements,
+    canonical_bytes,
     config_hash,
     factorial_scenarios,
     load_config,
 )
+import pequiflux_experiment.face_validation as face_validation
 from pequiflux_experiment.face_validation import validate_face_validation_receipt
 
 
@@ -46,3 +50,51 @@ def test_face_validation_receipt_gate():
 
     assert report.status == "PENDING"
     assert "APPROVED" in report.cause
+
+
+def test_face_validation_rejects_noncanonical_rubric_bytes(tmp_path, monkeypatch):
+    project_root = tmp_path / "project"
+    rubric_path = project_root / "inputs" / "face_validation_rubric.v1.json"
+    rubric_path.parent.mkdir(parents=True)
+    rubric_payload = json.loads(
+        (PROJECT_ROOT / "inputs" / "face_validation_rubric.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    rubric_path.write_text(
+        json.dumps(rubric_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(face_validation, "_project_root", lambda: project_root)
+
+    cfg = load_config(CONFIG_PATH)
+    pdf_path = PROJECT_ROOT.parent / "main.pdf"
+    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    receipt = {
+        "status": "APPROVED",
+        "protocol_version": cfg.protocol_version,
+        "config_hash": config_hash(cfg),
+        "source_document": "main.pdf",
+        "source_sha256": digest(pdf_path),
+        "round_id": "noncanonical-rubric",
+        "completed_at": "2026-09-03T12:00:00-03:00",
+        "blind": True,
+        "reviewer_ids": [
+            {"id": "reviewer-a", "independent": True},
+            {"id": "reviewer-b", "independent": True},
+        ],
+        "rubric_path": "inputs/face_validation_rubric.v1.json",
+        "rubric_version": "face_validation_rubric.v1",
+        "rubric_sha256": digest(rubric_path),
+        "discrepancies": [
+            {"item": "format", "decision": "MAINTAINED", "rationale": "unchanged"}
+        ],
+        "final_decision": "APPROVED",
+    }
+    receipt_path = project_root / "receipt.json"
+    receipt_path.write_bytes(canonical_bytes(receipt))
+
+    report = validate_face_validation_receipt(receipt_path, cfg, pdf_path)
+
+    assert report.status == "PENDING"
+    assert "canonical" in report.cause.lower()
