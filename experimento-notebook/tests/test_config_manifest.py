@@ -521,3 +521,155 @@ def test_face_validation_rejects_noncanonical_rubric_bytes(tmp_path, monkeypatch
 
     assert report.status == "PENDING"
     assert "canonical" in report.cause.lower()
+
+
+def _write_tiny_chain(root: Path, manifest: dict | None = None) -> dict:
+    """Write the tiny canonical hash-chain fixture and return its manifest."""
+
+    from pequiflux_experiment.manifest import canonical_checksum_bytes, canonical_file_hash, dataset_root_hash, write_manifest
+
+    if manifest is None:
+        manifest, entries = _tiny_payload_manifest(root, root.name)
+    else:
+        entries = [(name, dataset_module.canonical_file_hash(root / name)) for name in dataset_module._PAYLOAD_NAMES]
+    write_manifest(root / "manifest.json", manifest)
+    checksums = canonical_checksum_bytes(entries)
+    (root / "checksums.sha256").write_bytes(checksums)
+    manifest_hash = canonical_file_hash(root / "manifest.json")
+    checksums_hash = hashlib.sha256(checksums).hexdigest()
+    (root / "FREEZE.json").write_bytes(
+        canonical_bytes(
+            {
+                "manifest_hash": manifest_hash,
+                "checksums_hash": checksums_hash,
+                "dataset_root_hash": dataset_root_hash(manifest_hash, checksums_hash),
+            }
+        )
+    )
+    return manifest
+
+
+@pytest.mark.parametrize("extra_name", ["STAGING.json", "resample_provenance.json", "unexpected.bin"])
+def test_initial_freeze_rejects_namespace_extras(tmp_path, extra_name):
+    root = tmp_path / "published"
+    root.mkdir()
+    _write_tiny_chain(root)
+    (root / extra_name).write_bytes(b"{}")
+
+    with pytest.raises(DatasetContractError, match="namespace|unexpected|inventory"):
+        dataset_module._validate_checksum_chain(root)
+
+
+@pytest.mark.parametrize("mutator", [
+    lambda manifest: manifest.__setitem__("protocol_version", "9.9.9"),
+    lambda manifest: manifest["parameters"]["event_ranks"].__setitem__("arrival", 31),
+    lambda manifest: manifest["frozen_parameters"].__setitem__("horizon_minutes", 721),
+    lambda manifest: manifest["frozen_parameters"]["service_distributions"].__setitem__("gate", [99.0, 100.0, 101.0]),
+])
+def test_manifest_configuration_is_anchored_to_current_config(tmp_path, mutator):
+    root = tmp_path / "published"
+    root.mkdir()
+    manifest, _entries = _tiny_payload_manifest(root, root.name)
+    mutator(manifest)
+    _write_tiny_chain(root, manifest)
+
+    with pytest.raises(DatasetContractError, match="canonical|configuration|config"):
+        dataset_module._validate_checksum_chain(root)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "row", "message"),
+    [
+        (
+            {"scenario_id": "n60-m1-b1-nominal", "N": 60, "hopper_count": 1, "scale_count": 1, "regime": "nominal"},
+            {"event_type": "rain_start", "resource_id": "hopper-1", "cause": "rain", "truck_id": "", "operation": "", "time": 10.0, "duration_min": 30.0, "return_time": 40.0, "event_rank": 13},
+            "rain",
+        ),
+        (
+            {"scenario_id": "n60-m1-b1-nominal", "N": 60, "hopper_count": 1, "scale_count": 1, "regime": "nominal"},
+            {"event_type": "priority_change", "resource_id": "", "cause": "priority_shift", "truck_id": "T-001", "operation": "", "time": 10.0, "duration_min": 0.0, "return_time": 0.0, "event_rank": 21},
+            "priority",
+        ),
+        (
+            {"scenario_id": "n60-m1-b1-priority_shift", "N": 60, "hopper_count": 1, "scale_count": 1, "regime": "priority_shift"},
+            {"event_type": "document_release", "resource_id": "", "cause": "document", "truck_id": "T-001", "operation": "gate", "time": 10.0, "duration_min": 0.0, "return_time": 0.0, "event_rank": 20},
+            "document",
+        ),
+        (
+            {"scenario_id": "n60-m1-b1-nominal", "N": 60, "hopper_count": 1, "scale_count": 1, "regime": "nominal"},
+            {"event_type": "resource_failure", "resource_id": "hopper-1", "cause": "critical_failure", "truck_id": "", "operation": "", "time": 10.0, "duration_min": 30.0, "return_time": 40.0, "event_rank": 12},
+            "failure",
+        ),
+    ],
+)
+def test_disruption_semantics_follow_canonical_scenario_rules(scenario, row, message):
+    from pequiflux_experiment.dataset import _validate_disruption_semantics
+
+    config = load_config(CONFIG_PATH)
+    truck = FrozenTruck(
+        instance_id="s00-seed101",
+        scenario_index=0,
+        scenario_id=scenario["scenario_id"],
+        seed=101,
+        truck_id="T-001",
+        arrival_minute=1.0,
+        cargo_type="soy",
+        priority=1,
+        document_status="CLEAR",
+        eligible_resources=("gate-1", "hopper-1"),
+    )
+    row = {
+        "instance_id": "s00-seed101",
+        "scenario_index": 0,
+        "scenario_id": scenario["scenario_id"],
+        "seed": 101,
+        "sequence": 1,
+        "payload_hash": "0" * 64,
+        **row,
+    }
+    with pytest.raises(DatasetContractError, match=message):
+        _validate_disruption_semantics(
+            (row,),
+            scenario=scenario,
+            trucks=(truck,),
+            event_ranks=config.event_ranks,
+            horizon_minutes=config.horizon_minutes,
+        )
+
+
+def test_disruption_return_time_must_remain_within_horizon():
+    from pequiflux_experiment.dataset import _validate_disruption_semantics
+
+    config = load_config(CONFIG_PATH)
+    row = {
+        "instance_id": "s00-seed101",
+        "scenario_index": 0,
+        "scenario_id": "n60-m1-b1-critical_failure",
+        "seed": 101,
+        "sequence": 1,
+        "event_type": "resource_failure",
+        "event_rank": 12,
+        "resource_id": "hopper-1",
+        "truck_id": "",
+        "cause": "critical_failure",
+        "operation": "",
+        "time": 240.0,
+        "duration_min": 20.0,
+        "return_time": float(config.horizon_minutes) + 1.0,
+        "payload_hash": "0" * 64,
+    }
+    with pytest.raises(DatasetContractError, match="horizon"):
+        _validate_disruption_semantics(
+            (row,),
+            scenario={
+                "scenario_id": "n60-m1-b1-critical_failure",
+                "N": 60,
+                "hopper_count": 1,
+                "scale_count": 1,
+                "regime": "critical_failure",
+            },
+            trucks=(),
+            event_ranks=config.event_ranks,
+            horizon_minutes=config.horizon_minutes,
+            config=config,
+        )

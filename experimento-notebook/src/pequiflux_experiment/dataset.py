@@ -30,7 +30,9 @@ from .config import (
     crn_digest,
     crn_seed,
     factorial_scenarios,
+    load_config,
     validate_confirmatory_config,
+    _EVENT_RANKS,
 )
 from .domain import (
     FrozenDataset,
@@ -230,6 +232,13 @@ _EVENT_RANK_NAMES: frozenset[str] = frozenset(
         "service_completion", "resource_recovery", "rain_end", "resource_failure",
         "rain_start", "document_release", "priority_change", "arrival",
     }
+)
+_CANONICAL_EVENT_RANKS: Mapping[str, int] = dict(_EVENT_RANKS)
+_INITIAL_NAMESPACE_FILES: frozenset[str] = frozenset(
+    (*_PAYLOAD_NAMES, "manifest.json", "checksums.sha256", "FREEZE.json")
+)
+_RESAMPLE_NAMESPACE_FILES: frozenset[str] = frozenset(
+    (*_INITIAL_NAMESPACE_FILES, "resample_provenance.json")
 )
 
 
@@ -920,13 +929,9 @@ def _build_manifest(
         "crn_version": config.crn_version,
         "generator_version": generator_version,
         "parameters": config_as_dict(config),
-        "frozen_parameters": {
-            "horizon_minutes": config.horizon_minutes,
-            "buffer_capacity": config.buffer_capacity,
-            "ordinary_window": config.ordinary_window,
-            "priority_thresholds": list(config.priority_thresholds),
-            "service_distributions": config_as_dict(config)["service_distributions"],
-        },
+        # Persist the complete validated protocol, not a self-described subset.
+        # The loader anchors this object byte-for-byte to the canonical config.
+        "frozen_parameters": config_as_dict(config),
         "freeze_status": "FROZEN",
         "created_at_utc": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "git_commit": commit,
@@ -1214,6 +1219,8 @@ def _validate_checksum_chain(path: Path) -> tuple[dict[str, Any], dict[str, str]
         raise DatasetContractError(
             "manifest contains unexpected fields: " + ", ".join(unknown_manifest)
         )
+    _validate_namespace_inventory(path, manifest)
+    _validate_manifest_configuration(manifest)
     if not isinstance(freeze, dict) or set(freeze) != {"manifest_hash", "checksums_hash", "dataset_root_hash"}:
         raise DatasetContractError("FREEZE.json must contain exactly three hash fields")
     try:
@@ -1443,6 +1450,261 @@ def _validate_disruption_event_type(event_type: object) -> str:
     return event_type
 
 
+def _canonical_confirmatory_config() -> ExperimentConfig:
+    """Load the one protocol configuration used by a published freeze."""
+
+    config_path = Path(__file__).resolve().parents[1].parent / "config" / "confirmatory.json"
+    try:
+        return load_config(config_path)
+    except (OSError, TypeError, ValueError) as exc:
+        raise DatasetContractError(
+            f"canonical confirmatory configuration could not be loaded: {config_path}"
+        ) from exc
+
+
+def _validate_namespace_inventory(path: Path, manifest: Mapping[str, Any]) -> None:
+    """Require the exact immutable file set for an initial or resampled freeze."""
+
+    try:
+        observed = {entry.name for entry in path.iterdir()}
+    except OSError as exc:
+        raise DatasetContractError(f"could not inventory frozen dataset namespace: {path}") from exc
+    provenance = manifest.get("resample_provenance")
+    if provenance is None:
+        expected = _INITIAL_NAMESPACE_FILES
+    elif isinstance(provenance, Mapping):
+        expected = _RESAMPLE_NAMESPACE_FILES
+    else:
+        raise DatasetContractError("manifest resample_provenance must be null or an object")
+    if observed != expected:
+        missing = sorted(expected - observed)
+        extra = sorted(observed - expected)
+        details: list[str] = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if extra:
+            details.append("unexpected=" + ",".join(extra))
+        raise DatasetContractError(
+            "frozen dataset namespace inventory diverges from the exact file set"
+            + (f" ({'; '.join(details)})" if details else "")
+        )
+
+
+def _validate_manifest_configuration(
+    manifest: Mapping[str, Any],
+    *,
+    config: ExperimentConfig | None = None,
+) -> tuple[ExperimentConfig, dict[str, tuple[float, float, float]], dict[str, int], float]:
+    """Anchor every persisted protocol value to the canonical config on disk."""
+
+    if not isinstance(manifest, Mapping):
+        raise DatasetContractError("manifest must be an object")
+    frozen_parameters = manifest.get("frozen_parameters")
+    if not isinstance(frozen_parameters, Mapping):
+        raise DatasetContractError("manifest frozen_parameters must be an object")
+    service_distributions = frozen_parameters.get("service_distributions")
+    if not isinstance(service_distributions, Mapping) or set(service_distributions) != set(_OPERATIONS):
+        raise DatasetContractError(
+            "manifest frozen_parameters.service_distributions must cover all four operations"
+        )
+    for operation in _OPERATIONS:
+        values = service_distributions[operation]
+        if not isinstance(values, (list, tuple)) or len(values) != 3:
+            raise DatasetContractError(
+                f"manifest service distribution for {operation} must contain three values"
+            )
+        try:
+            distribution = tuple(float(value) for value in values)
+        except (TypeError, ValueError) as exc:
+            raise DatasetContractError(
+                f"manifest service distribution for {operation} is not numeric"
+            ) from exc
+        if (
+            any(not math.isfinite(value) or value < 0 for value in distribution)
+            or not distribution[0] <= distribution[1] <= distribution[2]
+        ):
+            raise DatasetContractError(f"manifest service distribution for {operation} is invalid")
+    horizon_minutes = frozen_parameters.get("horizon_minutes")
+    if (
+        isinstance(horizon_minutes, bool)
+        or not isinstance(horizon_minutes, (int, float))
+        or not math.isfinite(float(horizon_minutes))
+        or horizon_minutes <= 0
+    ):
+        raise DatasetContractError("manifest frozen_parameters.horizon_minutes must be finite and positive")
+
+    canonical = _canonical_confirmatory_config() if config is None else config
+    if not isinstance(canonical, ExperimentConfig):
+        raise TypeError("config must be an ExperimentConfig")
+    expected_parameters = config_as_dict(canonical)
+    if manifest.get("protocol_version") != canonical.protocol_version:
+        raise DatasetContractError("manifest protocol_version diverges from canonical configuration")
+    if manifest.get("config_hash") != config_hash(canonical):
+        raise DatasetContractError("manifest config_hash diverges from canonical configuration")
+    if manifest.get("crn_version") != canonical.crn_version:
+        raise DatasetContractError("manifest crn_version diverges from canonical configuration")
+    if manifest.get("parameters") != expected_parameters:
+        raise DatasetContractError("manifest parameters diverge from canonical configuration")
+    if dict(frozen_parameters) != expected_parameters:
+        raise DatasetContractError("manifest frozen_parameters diverge from canonical configuration")
+    expected_ranks = dict(_CANONICAL_EVENT_RANKS)
+    observed_ranks = expected_parameters.get("event_ranks")
+    if observed_ranks != expected_ranks:
+        raise DatasetContractError("canonical configuration event_ranks are invalid")
+    return (
+        canonical,
+        {name: tuple(float(value) for value in canonical.service_distributions[name]) for name in _OPERATIONS},
+        expected_ranks,
+        float(canonical.horizon_minutes),
+    )
+
+
+def _validate_disruption_semantics(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    scenario: Mapping[str, Any],
+    trucks: Iterable[FrozenTruck],
+    event_ranks: Mapping[str, int],
+    horizon_minutes: float,
+    config: ExperimentConfig | None = None,
+) -> None:
+    """Validate one instance's complete disruption realization against the protocol."""
+
+    protocol = _canonical_confirmatory_config() if config is None else config
+    if not isinstance(protocol, ExperimentConfig):
+        raise TypeError("config must be an ExperimentConfig")
+    if dict(event_ranks) != dict(_CANONICAL_EVENT_RANKS):
+        raise DatasetContractError("disruption event_ranks must equal canonical values")
+    try:
+        regime = str(scenario["regime"])
+        truck_count = int(scenario["N"])
+        hopper_count = int(scenario["hopper_count"])
+        scale_count = int(scenario["scale_count"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DatasetContractError("disruption scenario metadata is incomplete") from exc
+    if regime not in {"nominal", "peak", "critical_failure", "priority_shift"}:
+        raise DatasetContractError("disruption scenario regime is not canonical")
+    if truck_count <= 0 or hopper_count <= 0 or scale_count <= 0:
+        raise DatasetContractError("disruption scenario resources must be positive")
+    if float(horizon_minutes) != float(protocol.horizon_minutes):
+        raise DatasetContractError("disruption horizon diverges from canonical configuration")
+    truck_lookup = {truck.truck_id: truck for truck in trucks}
+    valid_resources = {"gate-1"}
+    valid_resources.update(f"scale-{index}" for index in range(1, scale_count + 1))
+    valid_resources.update(f"hopper-{index}" for index in range(1, hopper_count + 1))
+    records = tuple(rows)
+    rain_starts: list[Mapping[str, Any]] = []
+    rain_ends: list[Mapping[str, Any]] = []
+    priority_rows: list[Mapping[str, Any]] = []
+    document_rows: list[Mapping[str, Any]] = []
+    critical_failures: list[Mapping[str, Any]] = []
+    base_failures: list[Mapping[str, Any]] = []
+    for ordinal, row in enumerate(records):
+        if not isinstance(row, Mapping):
+            raise DatasetContractError(f"disruptions row {ordinal} must be an object")
+        event_type = _validate_disruption_event_type(row.get("event_type"))
+        if row.get("event_rank") != _CANONICAL_EVENT_RANKS[event_type]:
+            raise DatasetContractError(f"disruptions row {ordinal} event_rank is not canonical")
+        try:
+            event_time = float(row["time"])
+            duration = float(row["duration_min"])
+            return_time = float(row["return_time"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise DatasetContractError(f"disruptions row {ordinal} time fields are invalid") from exc
+        if (
+            not math.isfinite(event_time)
+            or not math.isfinite(duration)
+            or not math.isfinite(return_time)
+            or event_time < 0
+            or event_time > float(horizon_minutes)
+            or duration < 0
+            or return_time < 0
+            or return_time > float(horizon_minutes)
+        ):
+            raise DatasetContractError(f"disruptions row {ordinal} time/duration is outside the horizon")
+        resource_id = row.get("resource_id")
+        truck_id = row.get("truck_id")
+        operation = row.get("operation")
+        cause = row.get("cause")
+        if event_type in {"resource_failure", "rain_start", "rain_end"}:
+            if not isinstance(resource_id, str) or not resource_id or truck_id or operation:
+                raise DatasetContractError(f"disruptions row {ordinal} resource failure FK is invalid")
+            if resource_id not in valid_resources:
+                raise DatasetContractError(f"disruptions row {ordinal} references an unknown resource")
+        else:
+            if not isinstance(truck_id, str) or not truck_id or resource_id:
+                raise DatasetContractError(f"disruptions row {ordinal} truck FK is invalid")
+            truck = truck_lookup.get(truck_id)
+            if truck is None:
+                raise DatasetContractError(f"disruptions row {ordinal} references an unknown truck")
+        if event_type == "document_release":
+            document_rows.append(row)
+            truck = truck_lookup[truck_id]
+            if cause != "document" or operation != "gate" or truck.document_status != "BLOCKED":
+                raise DatasetContractError(f"disruptions row {ordinal} document release semantics are invalid")
+            if duration < protocol.document_release_distribution[0] or duration > protocol.document_release_distribution[2]:
+                raise DatasetContractError(f"disruptions row {ordinal} document release duration is outside the protocol")
+            if not math.isclose(event_time, min(float(horizon_minutes), truck.arrival_minute + duration), rel_tol=0.0, abs_tol=1e-9):
+                raise DatasetContractError(f"disruptions row {ordinal} document release time is incoherent")
+            if return_time != 0:
+                raise DatasetContractError(f"disruptions row {ordinal} non-recovery return_time must be zero")
+        elif event_type == "priority_change":
+            priority_rows.append(row)
+            if regime != "priority_shift" or cause != "priority_shift" or operation:
+                raise DatasetContractError(f"disruptions row {ordinal} priority semantics are invalid")
+            if not protocol.priority_shift_window[0] <= event_time <= protocol.priority_shift_window[1]:
+                raise DatasetContractError(f"disruptions row {ordinal} priority time is outside the protocol")
+            if truck_lookup[truck_id].arrival_minute < event_time:
+                raise DatasetContractError(f"disruptions row {ordinal} priority truck was not eligible")
+            if duration != 0 or return_time != 0:
+                raise DatasetContractError(f"disruptions row {ordinal} non-recovery return_time must be zero")
+        elif event_type == "resource_failure":
+            if cause not in {"critical_failure", "base_failure"} or duration <= 0 or return_time < event_time + duration:
+                raise DatasetContractError(f"disruptions row {ordinal} failure semantics are invalid")
+            if not protocol.failure_start_window[0] <= event_time <= protocol.failure_start_window[1]:
+                raise DatasetContractError(f"disruptions row {ordinal} failure time is outside the protocol")
+            if duration < protocol.failure_duration_distribution[0] or duration > protocol.failure_duration_distribution[2]:
+                raise DatasetContractError(f"disruptions row {ordinal} failure duration is outside the protocol")
+            if cause == "critical_failure":
+                critical_failures.append(row)
+                expected_resource = "hopper-1" if 36 * hopper_count <= 72 * scale_count else "scale-1"
+                if regime != "critical_failure" or resource_id != expected_resource:
+                    raise DatasetContractError(f"disruptions row {ordinal} critical failure substitution is invalid")
+            else:
+                base_failures.append(row)
+                if regime not in {"nominal", "peak", "priority_shift"}:
+                    raise DatasetContractError(f"disruptions row {ordinal} base failure regime is invalid")
+        elif event_type == "rain_start":
+            rain_starts.append(row)
+            if hopper_count < 2 or cause != "rain" or resource_id != "hopper-1":
+                raise DatasetContractError(f"disruptions row {ordinal} rain start semantics are invalid")
+            block = protocol.rain_block_minutes
+            if duration <= 0 or duration % block != 0 or event_time % block != 0 or return_time != event_time + duration or return_time % block != 0:
+                raise DatasetContractError(f"disruptions row {ordinal} rain start interval is invalid")
+        elif event_type == "rain_end":
+            rain_ends.append(row)
+            if hopper_count < 2 or cause != "rain" or resource_id != "hopper-1" or duration != 0 or return_time != 0 or event_time % protocol.rain_block_minutes != 0:
+                raise DatasetContractError(f"disruptions row {ordinal} rain end semantics are invalid")
+    if len(critical_failures) != (1 if regime == "critical_failure" else 0):
+        raise DatasetContractError("critical failure event count is incompatible with scenario regime")
+    if len(base_failures) > (0 if regime == "critical_failure" else 1):
+        raise DatasetContractError("base failure event count is incompatible with scenario regime")
+    expected_priority_count = math.ceil(protocol.priority_shift_fraction * truck_count)
+    if len(priority_rows) != (expected_priority_count if regime == "priority_shift" else 0):
+        raise DatasetContractError("priority_change event count is incompatible with scenario regime")
+    blocked_ids = {truck.truck_id for truck in truck_lookup.values() if truck.document_status == "BLOCKED"}
+    observed_document_ids = [str(row["truck_id"]) for row in document_rows]
+    if len(observed_document_ids) != len(set(observed_document_ids)) or set(observed_document_ids) != blocked_ids:
+        raise DatasetContractError("document_release events do not match blocked trucks")
+    if len(rain_starts) != len(rain_ends):
+        raise DatasetContractError("rain events must form start/end pairs")
+    starts = sorted(rain_starts, key=lambda row: (float(row["time"]), int(row["sequence"])))
+    ends = sorted(rain_ends, key=lambda row: (float(row["time"]), int(row["sequence"])))
+    for ordinal, (start, end) in enumerate(zip(starts, ends)):
+        if float(end["time"]) != float(start["return_time"]) or float(end["time"]) <= float(start["time"]):
+            raise DatasetContractError(f"rain event pair {ordinal} is not coherent")
+
+
 def _validate_full_payloads(
     root: Path,
     manifest: Mapping[str, Any],
@@ -1514,34 +1776,7 @@ def _validate_full_payloads(
         if records != sorted(records, key=lambda item: (item.arrival_minute, item.truck_id)):
             raise DatasetContractError(f"{instance_id} truck rows are not in canonical arrival order")
 
-    frozen_parameters = manifest.get("frozen_parameters")
-    if not isinstance(frozen_parameters, Mapping):
-        raise DatasetContractError("manifest frozen_parameters must be an object")
-    service_distributions = frozen_parameters.get("service_distributions")
-    if not isinstance(service_distributions, Mapping) or set(service_distributions) != set(_OPERATIONS):
-        raise DatasetContractError("manifest frozen_parameters.service_distributions must cover all four operations")
-    expected_distributions: dict[str, tuple[float, float, float]] = {}
-    for operation in _OPERATIONS:
-        values = service_distributions[operation]
-        if not isinstance(values, (list, tuple)) or len(values) != 3:
-            raise DatasetContractError(f"manifest service distribution for {operation} must contain three values")
-        try:
-            distribution = tuple(float(value) for value in values)
-        except (TypeError, ValueError) as exc:
-            raise DatasetContractError(f"manifest service distribution for {operation} is not numeric") from exc
-        if any(not math.isfinite(value) or value < 0 for value in distribution) or not distribution[0] <= distribution[1] <= distribution[2]:
-            raise DatasetContractError(f"manifest service distribution for {operation} is invalid")
-        expected_distributions[operation] = distribution
-    parameters = manifest.get("parameters")
-    event_ranks = parameters.get("event_ranks") if isinstance(parameters, Mapping) else None
-    if not isinstance(event_ranks, Mapping) or set(event_ranks) != set(_EVENT_RANK_NAMES):
-        raise DatasetContractError("manifest parameters.event_ranks must define the canonical event ranks")
-    for event_name, rank in event_ranks.items():
-        if isinstance(rank, bool) or not isinstance(rank, int) or rank < 0:
-            raise DatasetContractError(f"manifest event rank for {event_name} must be a non-negative integer")
-    horizon_minutes = frozen_parameters.get("horizon_minutes")
-    if isinstance(horizon_minutes, bool) or not isinstance(horizon_minutes, (int, float)) or not math.isfinite(float(horizon_minutes)) or horizon_minutes <= 0:
-        raise DatasetContractError("manifest frozen_parameters.horizon_minutes must be finite and positive")
+    protocol_config, expected_distributions, event_ranks, horizon_minutes = _validate_manifest_configuration(manifest)
     for ordinal, row in enumerate(service_rows):
         try:
             service = FrozenServiceTime.from_dict(row)
@@ -1598,56 +1833,15 @@ def _validate_full_payloads(
         if instance_id not in expected_id_set:
             raise DatasetContractError(f"disruptions row {ordinal} has an unknown instance_id")
         scenario_index = int(instance_id.split("-seed", 1)[0][1:])
-        if row.get("scenario_index") != scenario_index or row.get("scenario_id") != scenario_lookup[scenario_index]["scenario_id"] or row.get("seed") != int(instance_id.split("-seed", 1)[1]):
+        if (
+            row.get("scenario_index") != scenario_index
+            or row.get("scenario_id") != scenario_lookup[scenario_index]["scenario_id"]
+            or row.get("seed") != int(instance_id.split("-seed", 1)[1])
+        ):
             raise DatasetContractError(f"disruptions row {ordinal} identity diverges from instance plan")
-        event_type = _validate_disruption_event_type(row["event_type"])
-        if row["event_rank"] != event_ranks[event_type]:
+        event_type = _validate_disruption_event_type(row.get("event_type"))
+        if row.get("event_rank") != event_ranks[event_type]:
             raise DatasetContractError(f"disruptions row {ordinal} event_rank diverges from event_type")
-        event_time = float(row["time"])
-        duration = float(row["duration_min"])
-        return_time = float(row["return_time"])
-        if event_time < 0 or event_time > float(horizon_minutes) or duration < 0 or return_time < 0:
-            raise DatasetContractError(f"disruptions row {ordinal} time/duration is outside the horizon")
-        if event_type in {"resource_failure", "rain_start", "rain_end"}:
-            if not row["resource_id"] or row["truck_id"] or row["operation"]:
-                raise DatasetContractError(f"disruptions row {ordinal} resource failure FK is invalid")
-            valid_resources = {"gate-1"}
-            valid_resources.update(
-                f"scale-{index}" for index in range(1, int(scenario_lookup[scenario_index]["scale_count"]) + 1)
-            )
-            valid_resources.update(
-                f"hopper-{index}" for index in range(1, int(scenario_lookup[scenario_index]["hopper_count"]) + 1)
-            )
-            if row["resource_id"] not in valid_resources:
-                raise DatasetContractError(f"disruptions row {ordinal} references an unknown resource")
-            if event_type == "rain_end":
-                if return_time != 0 or duration != 0:
-                    raise DatasetContractError(f"disruptions row {ordinal} rain end semantics are invalid")
-            elif return_time < event_time + duration or duration <= 0:
-                raise DatasetContractError(f"disruptions row {ordinal} recovery time is incoherent")
-        elif event_type in {"document_release", "priority_change"}:
-            if not row["truck_id"] or row["resource_id"]:
-                raise DatasetContractError(f"disruptions row {ordinal} truck FK is invalid")
-            if row["truck_id"] not in {truck.truck_id for truck in by_instance_trucks[instance_id]}:
-                raise DatasetContractError(f"disruptions row {ordinal} references an unknown truck")
-            if event_type == "document_release" and row["operation"] != "gate":
-                raise DatasetContractError(f"disruptions row {ordinal} document release operation must be gate")
-            if event_type == "priority_change" and row["operation"]:
-                raise DatasetContractError(f"disruptions row {ordinal} priority change operation must be empty")
-            if return_time != 0:
-                raise DatasetContractError(f"disruptions row {ordinal} non-recovery return_time must be zero")
-        expected_cause = {
-            "document_release": "document",
-            "priority_change": "priority_shift",
-            "resource_failure": {"critical_failure", "base_failure"},
-            "rain_start": "rain",
-            "rain_end": "rain",
-        }[event_type]
-        if isinstance(expected_cause, set):
-            if row["cause"] not in expected_cause:
-                raise DatasetContractError(f"disruptions row {ordinal} cause diverges from event_type")
-        elif row["cause"] != expected_cause:
-            raise DatasetContractError(f"disruptions row {ordinal} cause diverges from event_type")
         observed_hash = row.get("payload_hash")
         payload = dict(row)
         payload.pop("payload_hash", None)
@@ -1662,12 +1856,34 @@ def _validate_full_payloads(
     ]
     if disruption_row_instance_order != expected_disruption_instance_order:
         raise DatasetContractError("disruptions payload instance order diverges from canonical plan")
-    for instance_id, rows in by_instance_disruptions.items():
+    if disruption_rows != sorted(
+        disruption_rows,
+        key=lambda item: (
+            item["instance_id"],
+            item["time"],
+            item["event_rank"],
+            item["resource_id"],
+            item["truck_id"],
+            item["sequence"],
+        ),
+    ):
+        raise DatasetContractError("disruptions payload is not in global canonical order")
+    for instance_id in expected_ids:
+        rows = by_instance_disruptions.get(instance_id, [])
         sequences = [row["sequence"] for row in rows]
         if sorted(sequences) != list(range(1, len(rows) + 1)):
             raise DatasetContractError(f"{instance_id} disruption sequence is not contiguous")
         if rows != sorted(rows, key=lambda item: (item["time"], item["event_rank"], item["resource_id"], item["truck_id"], item["sequence"])):
             raise DatasetContractError(f"{instance_id} disruptions are not in canonical event order")
+        scenario_index = int(instance_id.split("-seed", 1)[0][1:])
+        _validate_disruption_semantics(
+            rows,
+            scenario=scenario_lookup[scenario_index],
+            trucks=by_instance_trucks[instance_id],
+            event_ranks=event_ranks,
+            horizon_minutes=horizon_minutes,
+            config=protocol_config,
+        )
 
     for ordinal, row in enumerate(rejection_rows):
         if row.get("dataset_id") != manifest.get("dataset_id"):
