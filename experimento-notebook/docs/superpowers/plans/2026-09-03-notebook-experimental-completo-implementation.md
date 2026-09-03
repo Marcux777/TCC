@@ -21,8 +21,8 @@
 - Derive every random substream from `(crn_version, scenario_index, seed, generation_attempt, entity_id, operation/event)`; policy name never participates in the key.
 - `face_validation.py` must verify real SHA-256 bytes for `main.pdf` and `inputs/face_validation_rubric.v1.json`; absent, incomplete, divergent or unapproved human receipt is `FACE_VALIDATION=PENDING` and blocks every principal action before namespace creation.
 - `validation` alone may create a reduced, persisted, deterministic dataset with either an approved or `PENDING` face report and must label it `non_confirmatory=true`; `config/validation.json` is exactly `scenario_indices=[20,12,24]`, `seeds=[101]`, and the five canonical policies. Only `generate-synthetic`, `pilot`, `execute-confirmatory` and `sensitivity` block before namespace creation when face is not `APPROVED`; `audit-analyze` remains diagnostic.
-- `generate-synthetic`, `pilot`, `execute-confirmatory`, and `sensitivity` consume an approved face receipt and a complete frozen dataset; they never generate a fallback dataset, retry, or use a latest/implicit run.
-- `DayResult` carries no `MetricRow`, `None`, `NaN` or sentinel zero for an undefined metric; metrics are computed once from complete persisted events in Task 5 and missing definitions are fatal.
+- `generate-synthetic` requires an explicit `FaceValidationReport.status=APPROVED` and materializes/publishes the complete dataset from the canonical plan; it does not require a pre-existing frozen dataset. `pilot` requires an approved face report and an existing complete frozen dataset but no confirmatory capacity gate. `execute-confirmatory` additionally requires the single capacity gate. `sensitivity` requires an approved face report and an existing complete frozen dataset in its own namespace but no capacity gate. `audit-analyze` is diagnostic over an explicit existing `RUN_ID` and may inspect a package without a face receipt, leaving publication pending when the receipt is absent.
+- None of those actions generates a fallback dataset, retries, or uses a latest/implicit run. `DayResult` is immutable and carries the consumed instance/hash, complete logs/events, physical/digital snapshots, remnant queue and replay hashes but no `MetricRow`, `None`, `NaN` or sentinel zero. `compute_policy_day_metrics(persisted_day)` is the sole public metric producer, called after the persisted day/log is available and before its row is committed; no bundle closes without that complete canonical `MetricRow` and hashes, and audit recomputes/reconciles it.
 - All validation, capacity, cardinality, hash, collision, replay, hard-constraint and statistical failures are fatal, preserve `__cause__`, include operation and identifiers, and leave staging evidence intact.
 - Capacity is inspected once for all 18,000 policy-days: `estimate_output_bytes=sum(32768*N)+dataset_size_bytes`, `required_disk_bytes=ceil(1.25*estimate_output_bytes)+5 GiB`, `workers=min(4, logical_cpu-1, floor((free_ram_bytes-2 GiB)/1 GiB))`, at least one worker and at least 4 GiB free; receipt TTL is 60 seconds and CPU is canonical (GPU inventory only).
 - `CapacityRequirements` is part of `confirmatory.json` and is passed explicitly to every gate; no global capacity/profile state is read.
@@ -31,7 +31,7 @@
 - A1 is an eight-fixture persisted adversarial suite; A2 is structural plus optional human review, with `max(50, ceil(0,10*D_s))` per scenario, versioned rubric and Cohen kappa only for two reviewers; missing human review is `A2_human=PENDING`.
 - Sensitivity has its own namespace and never enters H1; `ROBUST` requires the same complete cells to pass p95 gain and throughput guard against all three primary comparators in at least 75% of cells; incomplete input is `INVALID_INPUT`.
 - Writes are staged and atomically renamed into new, collision-free namespaces. `results/` accepts only audited bundles, refuses overwrite, and fails explicitly when Parquet/`pyarrow` is unavailable.
-- Baseline before implementation: 162 passed, 1 warning, 1085.09 s. Final verification is one canonical `rtk .\\.venv\\Scripts\\python.exe -m pytest -q` (no retry), `compileall`, inspection of the notebook validation receipt from that run, and a live capacity preflight only when a real frozen dataset exists; record its actual `PASS`/`BLOCKED`, or `NOT_RUN_NO_FROZEN_DATASET`, without launching a campaign.
+- Baseline before implementation: 162 passed, 1 warning, 1085.09 s. Final verification is one canonical `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q` (no retry), `compileall`, inspection of the notebook validation receipt from that run, and a live capacity preflight only when a real frozen dataset exists; record its actual `PASS`/`BLOCKED`, or `NOT_RUN_NO_FROZEN_DATASET`, without launching a campaign.
 
 ## Architecture, Data Flow, and Public Interfaces
 
@@ -62,7 +62,7 @@ FrozenInstance ──> run_day(instance, policy) ──> complete event JSONL + 
 | `validation.py` | `build_validation_dataset(config, validation_config, run_root, face_report)`, `run_validation_checks`, `run_a1_adversarial_suite(fixtures_path)` | Persisted indices `[20,12,24]`, seed `101`, five policies, 15 policy-days and eight A1 contexts from disk. |
 | `dispatch.py`/`policies.py` | `DispatchContext`, `Candidate`, `make_policy`, `filter_admissible`, `select_candidate` | Shared hard constraints and five policy-only ranking rules. |
 | `emulator.py` | `run_day(instance: FrozenInstance, policy: DispatchPolicy | str) -> DayResult` | Terminant DES with no sampling, no lazy defaults and complete event/hash output. |
-| `metrics.py` | `compute_policy_day_metrics(result) -> MetricRow` | Eight PDF metric families plus exploratory CO2; no fabricated values. |
+| `metrics.py` | `compute_policy_day_metrics(persisted_day) -> MetricRow` | Sole producer of eight PDF metric families plus exploratory CO2 from persisted events; no fabricated values. |
 | `capacity.py` | `inspect_capacity(workload, requirements, run_root, providers=...) -> CapacityReceipt`; `require_capacity(receipt)` | Single TTL/hash/process/disk/RAM gate before confirmatory namespace. |
 | `profiles.py` | `ConfirmatoryWorkload.from_dataset(frozen_dataset, config)`; `plan_policy_days` | Actual dataset/config/workload hashes and pure cardinality plans. |
 | `experiment.py` | `run_policy_days(dataset, policies, phase, run_root, face_report, capacity_receipt=None, worker=...) -> RunBundle`; `load_run_bundle` | Pilot/confirmatory atomic rows/logs; production refuses partial grids. |
@@ -114,6 +114,15 @@ FrozenInstance ──> run_day(instance, policy) ──> complete event JSONL + 
 - [ ] **Step 1: Write the failing test (RED).**
 
 ```python
+from pathlib import Path
+import pytest
+
+from pequiflux_experiment.config import CapacityRequirements, factorial_scenarios, config_hash, load_config
+from pequiflux_experiment.face_validation import validate_face_validation_receipt
+
+ROOT = Path(__file__).resolve().parents[1]
+CONFIG = ROOT / "config" / "confirmatory.json"
+
 def test_config_contract_and_hash():
     cfg = load_config(ROOT / "config" / "confirmatory.json")
     scenarios = factorial_scenarios(cfg)
@@ -137,7 +146,7 @@ def test_face_validation_receipt_gate(tmp_path):
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_config_manifest.py::test_config_contract_and_hash`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py::test_config_contract_and_hash`
 
 Expected: FAIL because the canonical loader, scenario enumeration and face report do not yet exist.
 
@@ -151,7 +160,7 @@ Expected: FAIL because the canonical loader, scenario enumeration and face repor
 
 - [ ] **Step 4: Run the focused GREEN and face checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_config_manifest.py`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py`
 
 Expected: PASS for stable 72-scenario enumeration and `FACE_VALIDATION=PENDING` for the unapproved receipt.
 
@@ -178,6 +187,17 @@ rtk git commit -m "feat(experimento): freeze config and face validation gate"
 - [ ] **Step 1: Write the failing test (RED).**
 
 ```python
+from pathlib import Path
+from datetime import datetime, timezone
+import pytest
+
+from pequiflux_experiment.config import load_config
+from pequiflux_experiment.dataset import DatasetContractError, plan_synthetic_dataset, generate_synthetic_dataset, validate_frozen_dataset
+
+ROOT = Path(__file__).resolve().parents[1]
+CONFIG = load_config(ROOT / "config" / "confirmatory.json")
+FIXED_NOW = datetime(2026, 9, 3, 12, tzinfo=timezone.utc)
+
 def test_synthetic_plan_contract():
     plan = plan_synthetic_dataset(CONFIG)
     assert plan.scenario_indices == tuple(range(72))
@@ -206,7 +226,7 @@ def test_production_refuses_incomplete_freeze(tmp_path, approved_face):
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_config_manifest.py::test_synthetic_plan_contract`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py::test_synthetic_plan_contract`
 
 Expected: FAIL because the pure plan, explicit face-report signature and freeze validator are absent.
 
@@ -222,7 +242,7 @@ Expected: FAIL because the pure plan, explicit face-report signature and freeze 
 
 - [ ] **Step 4: Run the generator and refusal checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_config_manifest.py -k "synthetic_plan or generate_freezes_complete_dataset or incomplete_freeze"
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py -k "synthetic_plan or generate_freezes_complete_dataset or incomplete_freeze"`
 
 Expected: PASS for the pure 3,600-instance plan, header orchestration and explicit incomplete-freeze error; no full payload campaign runs in pytest.
 
@@ -288,7 +308,7 @@ def test_new_rejection_aborts_without_retry(tmp_path, approved_face):
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_config_manifest.py::test_explicit_resample_provenance_and_abort`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py::test_explicit_resample_provenance_and_abort`
 
 Expected: FAIL because `AbortedStaging`, explicit face/report/source-root validation and one-attempt provenance are not implemented.
 
@@ -302,7 +322,7 @@ Expected: FAIL because `AbortedStaging`, explicit face/report/source-root valida
 
 - [ ] **Step 4: Run the resample and abort checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_config_manifest.py -k "resample or staging"`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py -k "resample or staging"`
 
 Expected: PASS with exactly one attempt per rejected ID and a visible no-retry failure on a second rejection.
 
@@ -355,7 +375,7 @@ def test_event_rank_contract():
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_dispatch_emulator.py::test_run_day_requires_frozen_instance`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_dispatch_emulator.py::test_run_day_requires_frozen_instance`
 
 Expected: FAIL because the emulator still accepts legacy scenario/seed inputs or does not exist.
 
@@ -365,12 +385,12 @@ Expected: FAIL because the emulator still accepts legacy scenario/seed inputs or
   - Define exact numeric event ranks `0,10,11,12,13,20,21,30` for service completion, resource recovery, rain end, resource failure, rain start, document release, priority change and arrival. Sort by `(time,event_rank,resource_id_or_empty,truck_id_or_empty,sequence)` and apply the complete same-timestamp batch before any dispatch; recovery/end precede new failure/start and a new unavailability wins collisions.
   - Implement one common admissibility filter for cargo/resource compatibility, document, failure/availability, rain closure, precedence and buffer; `fifo_strict` sees only the raw queue head and idles when it is inadmissible, while the other four rank the same `C_adm`.
   - Implement exact `fifo_flow_faithful`, `priority_local`, frozen `fixed_score`, and pressure/mandatory-priority/reorder-penalty/affinity `lexicographic` rules. Commands never mutate policy inputs; human overrides require authorized profile, reason and rechecked constraints.
-  - Emit complete `DayResult` with consumed instance, events, physical/digital snapshots, A1 counts, A2 fields and replay hashes, but no metric field or fabricated metric value. Leave remnant trucks explicitly in the final queue; `MetricRow` is created only by Task 5 from persisted events.
+  - Emit immutable `DayResult` with consumed instance/hash, complete events/logs, physical/digital snapshots, A1 counts, A2 fields, remnant queue and replay hashes, but no metric field or fabricated metric value. Task 5's public `compute_policy_day_metrics(persisted_day)` is called by `run_policy_days` after the day/log has been persisted and before the policy-day row is committed; a run cannot close without its complete hashed `MetricRow`, and audit later recomputes/reconciles it.
   - Remove `tiny_scenario`, the old `run_day(scenario, seed, policy)` overload, random/generation/lazy-duration paths, old IDs/aliases and old event/result-schema assertions from `test_dispatch_emulator.py`; all callers use `run_day(FrozenInstance, policy)`.
 
 - [ ] **Step 4: Run emulator and CRN checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_dispatch_emulator.py`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_dispatch_emulator.py`
 
 Expected: PASS for early rejection of non-frozen input and equal exogenous event payloads across all five policies.
 
@@ -392,7 +412,7 @@ rtk git commit -m "feat(experimento): run deterministic frozen-instance dispatch
 
 **Interfaces:**
 - Consumes: an explicit approved/PENDING `FaceValidationReport`, frozen validation dataset, persisted event logs and `config/validation.json`; never calls a generator during checks.
-- Produces: `compute_policy_day_metrics(day_result) -> MetricRow`; `build_validation_dataset(config, validation_config, run_root, face_report) -> FrozenValidationDataset`; `run_validation_checks(dataset) -> ValidationReport`; `run_a1_adversarial_suite(fixtures_path) -> A1Report`; eight canonical A1 `dispatch_context` fixtures and `validation_scope_hash`.
+- Produces: `compute_policy_day_metrics(persisted_day) -> MetricRow`; `build_validation_dataset(config, validation_config, run_root, face_report) -> FrozenValidationDataset`; `run_validation_checks(dataset) -> ValidationReport`; `run_a1_adversarial_suite(fixtures_path) -> A1Report`; eight canonical A1 `dispatch_context` fixtures and `validation_scope_hash`. The runner invokes this sole producer after each event log is persisted and before its row is committed, and `audit_run` recomputes/reconciles the same hashes, so no persisted result lacks canonical metrics.
 
 - [ ] **Step 1: Write the failing tests (RED).**
 
@@ -419,8 +439,8 @@ def test_validation_dataset_persisted_with_pending_face(tmp_path, PENDING_FACE):
     assert dataset.manifest["face_validation_cause"]
     assert report.validation_scope_hash
 
-def test_metrics_have_eight_families_and_exploratory_co2(day_result):
-    row = compute_policy_day_metrics(day_result)
+def test_metrics_have_eight_families_and_exploratory_co2(persisted_day):
+    row = compute_policy_day_metrics(persisted_day)
     assert set(row.families) == {"queue_wait", "throughput", "system_time", "makespan", "utilization", "stability", "feasibility", "co2"}
     assert row.co2_exploratory is True
     assert all(math.isfinite(value) for value in row.numeric_values())
@@ -442,7 +462,7 @@ def test_a1_adversarial_suite_fail_closed(tmp_path, monkeypatch):
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_dispatch_emulator.py::test_a1_adversarial_suite_fail_closed`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_dispatch_emulator.py::test_a1_adversarial_suite_fail_closed`
 
 Expected: FAIL because persisted validation contexts, disk-only A1 evaluation and metric families are absent.
 
@@ -456,7 +476,7 @@ Expected: FAIL because persisted validation contexts, disk-only A1 evaluation an
 
 - [ ] **Step 4: Run validation and metric checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_a2_structural.py::test_metrics_have_eight_families_and_exploratory_co2 tests/test_dispatch_emulator.py::test_validation_dataset_persisted_and_non_confirmatory tests/test_dispatch_emulator.py::test_validation_dataset_persisted_with_pending_face tests/test_dispatch_emulator.py::test_a1_adversarial_suite_fail_closed`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_a2_structural.py::test_metrics_have_eight_families_and_exploratory_co2 experimento-notebook\\tests\\test_dispatch_emulator.py::test_validation_dataset_persisted_and_non_confirmatory experimento-notebook\\tests\\test_dispatch_emulator.py::test_validation_dataset_persisted_with_pending_face experimento-notebook\\tests\\test_dispatch_emulator.py::test_a1_adversarial_suite_fail_closed`
 
 Expected: PASS for metrics, fifteen persisted validation policy-days with both APPROVED and PENDING face reports, eight disk-backed A1 fixtures, stable scope hash and all eight finite metric families.
 
@@ -503,30 +523,30 @@ def test_validation_runner_always_persists_with_pending_face(tmp_path, validatio
 
 def test_face_or_capacity_block_makes_zero_worker_calls(tmp_path, validation_dataset, pending_face, blocked_capacity, spy_worker):
     with pytest.raises((FaceValidationError, CapacityGateError)):
-        run_policy_days(validation_dataset, CANONICAL_POLICIES, "pilot", tmp_path / "blocked", pending_face, blocked_capacity, worker=spy_worker)
+        run_policy_days(validation_dataset, CANONICAL_POLICIES, "execute-confirmatory", tmp_path / "blocked", pending_face, blocked_capacity, worker=spy_worker)
     assert spy_worker.calls == 0
     assert not (tmp_path / "blocked").exists()
 ```
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_experiment_audit.py::test_capacity_gate_blocks_with_cause`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_experiment_audit.py::test_capacity_gate_blocks_with_cause`
 
 Expected: FAIL because `profiles.py`, explicit face/capacity gates and injected provider/worker seams are not present.
 
 - [ ] **Step 3: Implement one-shot capacity and phase execution.**
 
   - Define `ConfirmatoryWorkload.from_dataset(frozen_dataset, config)` from the actual frozen dataset size and canonical dataset/config/workload hashes; it must not accept a config-only constructor or infer a dataset. Define `profiles.py` with explicit phase/profile fields and pure `plan_policy_days` key construction.
-  - Inspect the complete confirmatory workload, dataset size, free disk/RAM, logical CPU, GPU/driver inventory and competing Python/Jupyter/pytest processes via `inspect_capacity(workload, requirements, run_root, providers=...)`. Register only the current kernel/descendants; block another project process or unproven ownership with an operation/workload/cause error.
-  - Persist TTL-60-second receipt with exact disk/RAM formulas, authorized workers, estimated rows/logs, config/dataset/workload hashes, timestamp, inspection version and decision. Revalidate immediately before creating the confirmatory namespace; do not wait, retry, kill, change precision, or shrink scope.
+  - Inspect the complete confirmatory workload, dataset size, free disk/RAM, logical CPU, GPU/driver inventory and competing Python/Jupyter/pytest processes via `inspect_capacity(workload, requirements, run_root, providers=...)` only for `execute-confirmatory`. Register only the current kernel/descendants; block another project process or unproven ownership with an operation/workload/cause error.
+  - Persist TTL-60-second receipt with exact disk/RAM formulas, authorized workers, estimated rows/logs, config/dataset/workload hashes, timestamp, inspection version and decision. Revalidate immediately before creating the `execute-confirmatory` namespace; do not gate `pilot` or `sensitivity` on this receipt, and do not wait, retry, kill, change precision, or shrink scope.
   - Select the pilot by canonical hash to exactly `ceil(0,20*72)=15` scenarios and define its 3,750-key plan; require the full frozen dataset for confirmation and define its 18,000-key plan. Production `run_policy_days` refuses partial pilot/confirmatory selections, missing/extra/duplicate keys and mixed hashes.
   - Keep permanent tests cheap: plan cardinality is pure; the only runner integration uses the 15-row persisted validation dataset with an injected worker to prove atomicity/hash. A low-disk/process or pending-face receipt is tested with a spied worker and must create zero calls and zero namespaces. No pytest path executes a full DES campaign.
-  - Branch `phase="validation"` before any confirmatory gate: it always writes the reduced persisted package even with `PENDING` face and no/blocked capacity receipt. For `pilot` and `execute-confirmatory`, check the explicit face report first, then revalidate the explicit capacity receipt immediately before namespace creation. Write each row/log progressively into staging and atomically rename only after complete cardinality/hash checks. Every API receives `face_report` and never consults hidden global state.
+  - Branch `phase="validation"` before any confirmatory gate: it always writes the reduced persisted package even with `PENDING` face and no/blocked capacity receipt. For `pilot`, require only the explicit approved face report and existing complete frozen dataset; for `execute-confirmatory`, check face and frozen dataset first, then revalidate the explicit capacity receipt immediately before namespace creation. Sensitivity follows its own approved-face/frozen-dataset namespace without this capacity gate. Write each row/log progressively into staging and atomically rename only after complete cardinality/hash checks. Every API receives `face_report` and never consults hidden global state.
   - Remove `run_experiment_matrix`, old `RUN_PROFILE`/`load-confirmatory` routing, tiny fixtures and old results schemas from `test_experiment_audit.py`; replace them with plans, injected validation runner and gate assertions.
 
 - [ ] **Step 4: Run capacity and execution checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_experiment_audit.py -k "capacity_gate or policy_day_plan or validation_runner or face_or_capacity_block"`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_experiment_audit.py -k "capacity_gate or policy_day_plan or validation_runner or face_or_capacity_block"`
 
 Expected: PASS for causal low-resource blocking, pure exact plans, tiny validation atomicity and zero worker/namespace calls when a gate fails.
 
@@ -576,7 +596,7 @@ def test_a2_sample_rubric_and_kappa_contract(run_bundle, tmp_path):
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_digital_model_replay.py::test_replay_matches_independent_projection`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_digital_model_replay.py::test_replay_matches_independent_projection`
 
 Expected: FAIL because no independent projection, replay or audit layer exists.
 
@@ -590,7 +610,7 @@ Expected: FAIL because no independent projection, replay or audit layer exists.
 
 - [ ] **Step 4: Run replay, A1 and A2 checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_digital_model_replay.py tests/test_experiment_audit.py -k "replay or a2"`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_digital_model_replay.py experimento-notebook\\tests\\test_experiment_audit.py -k "replay or a2"`
 
 Expected: PASS for hash-equal independent replay, zero persisted A1 violations and correct single/two-reviewer A2 pending/kappa semantics.
 
@@ -639,7 +659,7 @@ def test_aggregate_relative_median_false_positive_is_rejected():
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_statistics_export.py::test_aggregate_relative_median_false_positive_is_rejected`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_statistics_export.py::test_aggregate_relative_median_false_positive_is_rejected`
 
 Expected: FAIL because H1 pairing, stratum-level p-value aggregation and the concrete aggregate-relative-median regression are absent.
 
@@ -653,7 +673,7 @@ Expected: FAIL because H1 pairing, stratum-level p-value aggregation and the con
 
 - [ ] **Step 4: Run statistics and invalid-input checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_statistics_export.py -k "aggregate_relative_median_false_positive or iut_holm_and_invalid_pairing"
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_statistics_export.py -k "aggregate_relative_median_false_positive or iut_holm_and_invalid_pairing"`
 
 Expected: PASS for valid paired output and explicit invalid status/error for duplicate, missing or mixed-hash input.
 
@@ -692,7 +712,7 @@ def test_joint_sensitivity_robustness_and_invalid_input():
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_experiment_audit.py::test_joint_sensitivity_robustness_and_invalid_input`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_experiment_audit.py::test_joint_sensitivity_robustness_and_invalid_input`
 
 Expected: FAIL because the separated namespace, synthetic-row summarizer and joint rule are absent.
 
@@ -704,7 +724,7 @@ Expected: FAIL because the separated namespace, synthetic-row summarizer and joi
 
 - [ ] **Step 4: Run sensitivity checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_experiment_audit.py::test_joint_sensitivity_robustness_and_invalid_input`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_experiment_audit.py::test_joint_sensitivity_robustness_and_invalid_input`
 
 Expected: PASS for joint-cell counting, no H1 input, and incomplete-cell invalidation.
 
@@ -748,7 +768,7 @@ def test_exports_require_audit_and_refuse_overwrite(tmp_path, audited_bundle):
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_statistics_export.py::test_exports_require_audit_and_refuse_overwrite`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_statistics_export.py::test_exports_require_audit_and_refuse_overwrite`
 
 Expected: FAIL because no transactional exporter or audit gate exists.
 
@@ -760,7 +780,7 @@ Expected: FAIL because no transactional exporter or audit gate exists.
 
 - [ ] **Step 4: Run export checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_statistics_export.py -k "exports_require_audit_and_refuse_overwrite"
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_statistics_export.py -k "exports_require_audit_and_refuse_overwrite"`
 
 Expected: PASS for audited publication, exact output set and no-overwrite/unaudited rejection.
 
@@ -804,7 +824,7 @@ def test_notebook_actions_and_validation_run(tmp_path):
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_notebook.py::test_notebook_actions_and_validation_run`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_notebook.py::test_notebook_actions_and_validation_run`
 
 Expected: FAIL because the notebook still contains implicit/legacy routing or does not persist validation output.
 
@@ -812,12 +832,12 @@ Expected: FAIL because the notebook still contains implicit/legacy routing or do
 
   - Put the literal, visible first executable cell `ACTION = "validation"` and `ALLOWED_ACTIONS = ("validation", "generate-synthetic", "pilot", "execute-confirmatory", "audit-analyze", "sensitivity")`; validate only that tuple and raise `InvalidAction` for empty/unknown/discovered values. Require explicit `DATASET_RUN_ID`/`RUN_ID` cells where an existing artifact is needed; never read environment variables, prior cell state, latest pointers or hidden defaults.
   - Keep cells in the mandated order: identification/ACTION; manifest/inventory; config; protocol; dataset state; action execution; persisted artifact readback; audit/analysis; export; limits. The default route writes/displays/reads the reduced persisted validation dataset, eight A1 contexts and metrics, with `non_confirmatory=true` and face status/cause.
-  - Route principal actions through face/capacity/freeze gates and existing module APIs only; do not import `random`/`numpy.random` in notebook cells, install dependencies, call `Run All` into a full campaign, or duplicate simulator code.
+  - Route `generate-synthetic` through the approved face gate and full materialization; route `pilot` through approved face + existing frozen dataset without a capacity gate; route `execute-confirmatory` through approved face + existing frozen dataset + the single capacity gate; route `sensitivity` through approved face + existing frozen dataset in its own namespace without a capacity gate. Let `validation` persist its reduced package with APPROVED or PENDING face and let `audit-analyze` inspect an explicit run diagnostically. Use existing module APIs only; do not import `random`/`numpy.random` in notebook cells, install dependencies, call `Run All` into a full campaign, or duplicate simulator code.
   - Document exact setup, six actions, namespace rules, no-fallback/no-retry behavior, approved receipt procedure, capacity block, baseline and one-shot test/notebook commands in `README.md`; state that H1 requires audited complete confirmation and A2 human pending blocks global acceptance only. Remove legacy `RUN_PROFILE`, `load-confirmatory`, environment/latest discovery, aliases and old result-schema examples from both notebook and README.
 
 - [ ] **Step 4: Run notebook validation and static checks.**
 
-Verify: `rtk .\\.venv\\Scripts\\python.exe -m pytest -q tests/test_notebook.py::test_notebook_actions_and_validation_run`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_notebook.py::test_notebook_actions_and_validation_run`
 
 Expected: PASS with `ACTION="validation"` executing top-to-bottom via `nbclient`, displaying and persisting only the reduced non-confirmatory package.
 
@@ -831,7 +851,7 @@ rtk git commit -m "feat(experimento): replace legacy pipeline with literate note
 ## Self-review against the spec
 
 - Coverage check: Tasks 1–3 cover config/face, canonical planning/freeze and `AbortedStaging` resample; Tasks 4–7 cover event semantics, validation/A1, capacity, runner, replay and A2; Tasks 8–10 cover H1, sensitivity and audited exports; Task 11 covers the sole notebook interface.
-- Placeholder/API scan: `DayResult` has no metric field or fabricated value; reduced validation is only `build_validation_dataset`; production generation has no reduced flag; capacity uses `from_dataset`, not a config-only workload; `compute_cohen_kappa` receives explicit label sets.
+- Contract/API scan: `DayResult` has no metric field or fabricated value; reduced validation is only `build_validation_dataset`; production generation has no reduced flag; capacity uses `from_dataset`, not a config-only workload; `compute_cohen_kappa` receives explicit label sets.
 - Test-cost scan: no pytest test materializes production trucks/services or executes the pilot/confirmatory DES counts; pure plans, the three-instance validation package, synthetic sensitivity rows and injected worker/provider gates are the only permanent execution checks.
 - Gate scan: validation persists with either `APPROVED` or `PENDING` face status; only principal generation/pilot/confirmatory/sensitivity routes block before namespace, and `audit-analyze` remains diagnostic. Every mutating API receives `face_report` explicitly.
 - Legacy scan: old `tiny_scenario`, `run_day(scenario, seed, policy)`, `run_experiment_matrix`, `RUN_PROFILE`, `load-confirmatory`, environment/latest discovery, old IDs/aliases and old result schemas are removed from implementation, notebook, README and the named test files.
@@ -839,11 +859,11 @@ rtk git commit -m "feat(experimento): replace legacy pipeline with literate note
 
 ## Final Verification and Handoff
 
-Run the following exactly once in `experimento-notebook/` after all eleven tasks; do not retry a failing command. The canonical pytest run includes the `nbclient` top-to-bottom validation test exactly once; do not execute a separate notebook command or any campaign.
+Run the following exactly once with CWD `C:\\p\\PequiFlux\\TCC` after all eleven tasks; do not retry a failing command. The canonical pytest run includes the `nbclient` top-to-bottom validation test exactly once; do not execute a separate notebook command or any campaign.
 
 ```powershell
-rtk .\\.venv\\Scripts\\python.exe -m pytest -q
-rtk .\\.venv\\Scripts\\python.exe -m compileall -q src tests
+rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q
+rtk experimento-notebook\\.venv\\Scripts\\python.exe -m compileall -q experimento-notebook\\src experimento-notebook\\tests
 ```
 
 After those two commands, inspect the notebook test's receipt/output path from that run and record `FACE_VALIDATION`/`non_confirmatory` values. Run a live capacity preflight only if a real frozen dataset exists, using `ConfirmatoryWorkload.from_dataset(frozen_dataset, config)` and `inspect_capacity(workload, config.capacity, run_root, providers=...)`; record the actual `PASS` or `BLOCKED` decision without requiring either outcome. If no real frozen dataset exists, record `NOT_RUN_NO_FROZEN_DATASET` and rely on the deterministic injected low-disk/process block plus the existing read-only capacity audit. Never fabricate a pass/block and never launch full generation or a campaign during final verification. Preserve any failed staging/run namespace and its causal log; never clean the dirty root or claim confirmatory evidence from validation, pilot or sensitivity. `graphify` is N/A when `graphify-out/` is absent.
