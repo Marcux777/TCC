@@ -425,6 +425,17 @@ def write_manifest(path: str | Path, manifest: Mapping[str, Any]) -> Path:
     return destination
 
 
+def write_canonical_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
+    """Persist an auxiliary JSON receipt using the repository's canonical bytes."""
+
+    if not isinstance(payload, Mapping):
+        raise TypeError("canonical JSON payload must be a mapping")
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(canonical_bytes(dict(payload)))
+    return destination
+
+
 def canonical_checksum_bytes(entries: Mapping[str, str] | list[tuple[str, str]] | tuple[tuple[str, str], ...]) -> bytes:
     """Serialize an ordered payload checksum list exactly once.
 

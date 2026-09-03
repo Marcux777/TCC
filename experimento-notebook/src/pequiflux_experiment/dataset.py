@@ -35,11 +35,18 @@ from .config import (
     _EVENT_RANKS,
 )
 from .domain import (
+    AbortedStaging,
+    CandidateValidation,
     FrozenDataset,
     FrozenInstance,
     FrozenResource,
     FrozenServiceTime,
     FrozenTruck,
+    FreezeReceipt,
+    GenerationProbeReceipt,
+    InstanceHeader,
+    RejectionLogRow,
+    ResamplePlan,
     canonical_allowed_cargo_types,
 )
 from .face_validation import FaceValidationReport, validate_face_validation_receipt
@@ -48,6 +55,7 @@ from .manifest import (
     canonical_file_hash,
     create_run_directory,
     dataset_root_hash,
+    write_canonical_json,
     write_manifest,
 )
 
@@ -62,6 +70,10 @@ class FaceValidationError(DatasetContractError):
 
 class GenerationRejectedError(DatasetContractError):
     """Raised when a candidate is rejected; callers must start a new action."""
+
+    def __init__(self, message: str, *, staging_path: Path | None = None) -> None:
+        super().__init__(message)
+        self.staging_path = staging_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +125,18 @@ class DatasetPlan:
             for scenario in self.scenarios
             for seed in self.seeds
         )
+
+    def next_ordinal_after(self, instance_id: str) -> int:
+        """Return the zero-based ordinal immediately after ``instance_id``."""
+
+        if not isinstance(instance_id, str) or not instance_id.strip():
+            raise ValueError("instance_id must be a non-empty string")
+        try:
+            return self.instance_ids.index(instance_id) + 1
+        except ValueError as exc:
+            raise DatasetContractError(
+                f"instance_id is not present in the canonical plan: {instance_id}"
+            ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +201,7 @@ _REQUIRED_MANIFEST_FIELDS: frozenset[str] = frozenset(
         "scenario_count",
         "seed_count",
         "instance_count",
+        "policy_day_count",
         "cardinalities",
         "crn_version",
         "generator_version",
@@ -193,6 +218,8 @@ _REQUIRED_MANIFEST_FIELDS: frozenset[str] = frozenset(
         "policy_days_executed",
         "resample_provenance",
         "materialization_mode",
+        "instance_headers",
+        "generation_plan_receipt",
     }
 )
 _PARQUET_SCHEMA_NAMES: dict[str, tuple[str, ...]] = {
@@ -239,6 +266,23 @@ _INITIAL_NAMESPACE_FILES: frozenset[str] = frozenset(
 )
 _RESAMPLE_NAMESPACE_FILES: frozenset[str] = frozenset(
     (*_INITIAL_NAMESPACE_FILES, "resample_provenance.json")
+)
+_STAGING_NAMESPACE_FILES: frozenset[str] = frozenset(
+    (*_PAYLOAD_NAMES, "manifest.json", "checksums.sha256", "STAGING.json")
+)
+_STAGING_RESAMPLE_NAMESPACE_FILES: frozenset[str] = frozenset(
+    (*_STAGING_NAMESPACE_FILES, "resample_provenance.json")
+)
+_STAGING_KEYS: frozenset[str] = frozenset(
+    {
+        "status",
+        "manifest_hash",
+        "checksums_hash",
+        "staging_root_hash",
+        "accepted_instance_ids",
+        "rejected_instance_ids",
+        "next_candidate_ordinal",
+    }
 )
 
 
@@ -673,8 +717,10 @@ class _PayloadWriter:
     """Collect deterministic rows for one complete production freeze."""
 
     def __init__(self) -> None:
+        self.scenario_rows: list[dict[str, Any]] = []
         self.instance_rows: list[dict[str, Any]] = []
         self.instance_hashes: list[dict[str, str]] = []
+        self.instance_headers: list[dict[str, Any]] = []
         self.truck_rows: list[dict[str, Any]] = []
         self.service_rows: list[dict[str, Any]] = []
         self.disruption_rows: list[dict[str, Any]] = []
@@ -694,6 +740,17 @@ class _PayloadWriter:
         self.instance_hashes.append(
             {"instance_id": instance.instance_id, "instance_hash": instance.instance_hash or ""}
         )
+        self.instance_headers.append(
+            {
+                "instance_id": instance.instance_id,
+                "scenario_index": instance.scenario_index,
+                "scenario_id": instance.scenario_id,
+                "seed": instance.seed,
+                "generation_attempt": instance.generation_attempt,
+                "canonical_record_hash": instance.canonical_record_hash or "",
+                "instance_hash": instance.instance_hash or "",
+            }
+        )
         self.truck_rows.extend(truck.to_dict() for truck in instance.trucks)
         self.service_rows.extend(service.to_dict() for service in instance.service_times)
         self.disruption_rows.extend(dict(item) for item in instance.disruptions)
@@ -707,12 +764,201 @@ def _materialize_production_header(header: FrozenInstance, writer: _PayloadWrite
     writer.write_instance(header)
 
 
+_ACTIVE_VALIDATOR_CONFIG: ExperimentConfig | None = None
+
+
+def validate_candidate_semantics(
+    config: ExperimentConfig,
+    candidate: FrozenInstance,
+) -> CandidateValidation:
+    """Validate one fully generated candidate before any payload write.
+
+    The priority-shift rule is intentionally checked from the generated
+    disruption realization: a priority-shift scenario must contain exactly
+    ``ceil(fraction * N)`` eligible trucks.  A shortage is a semantic
+    rejection, not an invitation to retry inside the same action.
+    """
+
+    if not isinstance(config, ExperimentConfig):
+        raise TypeError("config must be an ExperimentConfig")
+    if not isinstance(candidate, FrozenInstance):
+        raise TypeError("candidate must be a FrozenInstance")
+    attempt = candidate.generation_attempt
+    if candidate.scenario_id.endswith("-priority_shift"):
+        try:
+            scenario = next(
+                item
+                for item in factorial_scenarios(config)
+                if item.scenario_index == candidate.scenario_index
+                and item.scenario_id == candidate.scenario_id
+            )
+        except StopIteration as exc:
+            raise DatasetContractError(
+                f"candidate scenario is not in the canonical factorial: {candidate.scenario_id}"
+            ) from exc
+        expected = math.ceil(config.priority_shift_fraction * scenario.N)
+        observed = sum(
+            1
+            for event in candidate.disruptions
+            if isinstance(event, Mapping)
+            and event.get("event_type") == "priority_change"
+        )
+        if observed < expected:
+            return CandidateValidation(
+                instance_id=candidate.instance_id,
+                generation_attempt=attempt,
+                accepted=False,
+                reason_code="PRIORITY_SHIFT_ELIGIBLE_SHORTAGE",
+                observed=observed,
+                expected=expected,
+            )
+        if observed != expected:
+            return CandidateValidation(
+                instance_id=candidate.instance_id,
+                generation_attempt=attempt,
+                accepted=False,
+                reason_code="PRIORITY_SHIFT_CARDINALITY",
+                observed=observed,
+                expected=expected,
+            )
+    return CandidateValidation(
+        instance_id=candidate.instance_id,
+        generation_attempt=attempt,
+        accepted=True,
+    )
+
+
 def _validate_candidate(candidate: FrozenInstance) -> bool:
-    """Private deterministic seam reserved for Task 3 rejection tests."""
+    """Private seam delegating to the canonical validator.
+
+    Tests may monkeypatch this boolean seam to model a new attempt-1
+    rejection; public generation APIs expose no injector parameter.
+    """
 
     if not isinstance(candidate, FrozenInstance):
         raise TypeError("candidate must be a FrozenInstance")
-    return True
+    config = _ACTIVE_VALIDATOR_CONFIG
+    if config is None:
+        config = _canonical_confirmatory_config()
+    return validate_candidate_semantics(config, candidate).accepted
+
+
+_TINY_FIXTURE_REJECTIONS: frozenset[str] = frozenset({"s11-seed119", "s23-seed141"})
+_TINY_FIXTURE_ACTIVE = False
+
+
+def _tiny_fixture_instance(
+    config: ExperimentConfig,
+    scenario: ScenarioConfig,
+    seed: int,
+    generation_attempt: int = 0,
+) -> FrozenInstance:
+    """Build a tiny deterministic candidate for the persisted Task 3 checks.
+
+    This helper is installed only by ``_install_tiny_generation_fixture``.  It
+    retains the real Frozen* domain/hash/CRN constructors while replacing the
+    expensive production payload cardinality with one truck and one compact
+    disruption trace.  The canonical validator still runs on every candidate.
+    """
+
+    instance_id = _instance_id(scenario.scenario_index, seed)
+    truck = FrozenTruck(
+        instance_id=instance_id,
+        scenario_index=scenario.scenario_index,
+        scenario_id=scenario.scenario_id,
+        seed=seed,
+        truck_id="T-001",
+        arrival_minute=1.0,
+        cargo_type="soy",
+        priority=0,
+        document_status="CLEAR",
+        stage="gate",
+        eligible_resources=("gate-1",),
+        generation_attempt=generation_attempt,
+    )
+    service_times = tuple(
+        FrozenServiceTime(
+            instance_id=instance_id,
+            scenario_index=scenario.scenario_index,
+            scenario_id=scenario.scenario_id,
+            seed=seed,
+            truck_id="T-001",
+            operation=operation,
+            duration_min=float(config.service_distributions[operation][1]),
+            source_a=float(config.service_distributions[operation][0]),
+            source_mode=float(config.service_distributions[operation][1]),
+            source_b=float(config.service_distributions[operation][2]),
+            draw_key=crn_digest(
+                config.crn_version,
+                scenario.scenario_index,
+                seed,
+                generation_attempt,
+                "T-001",
+                operation,
+            ),
+            crn_version=config.crn_version,
+            generation_attempt=generation_attempt,
+        )
+        for operation in _OPERATIONS
+    )
+    disruptions: list[dict[str, Any]] = []
+    if scenario.regime == "priority_shift":
+        expected = math.ceil(config.priority_shift_fraction * scenario.N)
+        count = expected
+        if generation_attempt == 0 and instance_id in _TINY_FIXTURE_REJECTIONS:
+            count -= 1
+        for sequence in range(1, count + 1):
+            payload: dict[str, Any] = {
+                "instance_id": instance_id,
+                "scenario_index": scenario.scenario_index,
+                "scenario_id": scenario.scenario_id,
+                "seed": seed,
+                "time": 300.0,
+                "event_rank": config.event_ranks["priority_change"],
+                "resource_id": "",
+                "truck_id": "T-001",
+                "sequence": sequence,
+                "event_type": "priority_change",
+                "cause": "priority_shift",
+                "operation": "",
+                "duration_min": 0.0,
+                "return_time": 0.0,
+            }
+            payload["payload_hash"] = _digest_value(payload)
+            disruptions.append(payload)
+    return FrozenInstance(
+        instance_id=instance_id,
+        scenario_index=scenario.scenario_index,
+        scenario_id=scenario.scenario_id,
+        seed=seed,
+        generation_attempt=generation_attempt,
+        trucks=(truck,),
+        resources=_resource_records(scenario),
+        service_times=service_times,
+        disruptions=tuple(disruptions),
+    )
+
+
+def _install_tiny_generation_fixture(monkeypatch: Any, fixture_path: str | Path) -> Path:
+    """Install a private tiny materialization seam for persisted integration tests."""
+
+    if monkeypatch is None or not hasattr(monkeypatch, "setattr"):
+        raise TypeError("monkeypatch fixture is required")
+    path = Path(fixture_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(canonical_bytes({"fixture": "task3", "mode": "tiny"}))
+    monkeypatch.setattr(
+        "pequiflux_experiment.dataset._build_instance",
+        _tiny_fixture_instance,
+    )
+    monkeypatch.setattr("pequiflux_experiment.dataset._TINY_FIXTURE_ACTIVE", True)
+    # The pytest fixture uses a deliberately minimal approved marker.  Real
+    # callers still traverse _validate_approved_face and its receipt/hash gate.
+    monkeypatch.setattr(
+        "pequiflux_experiment.dataset._validate_approved_face",
+        lambda face_report, config: face_report,
+    )
+    return path
 
 
 
@@ -884,7 +1130,10 @@ def _build_manifest(
     rejection_count: int,
     *,
     instance_hashes: list[Mapping[str, Any]],
+    instance_headers: list[Mapping[str, Any]] | None = None,
     cardinalities: Mapping[str, int] | None = None,
+    freeze_status: str = "FROZEN",
+    resample_provenance: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     commit, checkout_clean = _git_inventory()
     payload_rows = [{"path": name, "sha256": digest} for name, digest in payload_hashes]
@@ -916,6 +1165,16 @@ def _build_manifest(
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise DatasetContractError(f"manifest cardinality {name} must be a non-negative integer")
             counts[name] = value
+    if instance_headers is None:
+        instance_headers = []
+    if not isinstance(instance_headers, list):
+        raise TypeError("instance_headers must be a list")
+    generation_plan_receipt = {
+        "scenario_count": plan.scenario_count,
+        "instance_count": plan.instance_count,
+        "policy_day_count": plan.policy_day_count,
+        "ordered_instance_ids": list(plan.instance_ids),
+    }
     manifest: dict[str, Any] = {
         "dataset_id": destination.name,
         "phase": "synthetic",
@@ -925,6 +1184,7 @@ def _build_manifest(
         "scenario_count": plan.scenario_count,
         "seed_count": plan.seed_count,
         "instance_count": plan.instance_count,
+        "policy_day_count": plan.policy_day_count,
         "cardinalities": counts,
         "crn_version": config.crn_version,
         "generator_version": generator_version,
@@ -932,7 +1192,7 @@ def _build_manifest(
         # Persist the complete validated protocol, not a self-described subset.
         # The loader anchors this object byte-for-byte to the canonical config.
         "frozen_parameters": config_as_dict(config),
-        "freeze_status": "FROZEN",
+        "freeze_status": freeze_status,
         "created_at_utc": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "git_commit": commit,
         "checkout_clean": checkout_clean,
@@ -940,9 +1200,11 @@ def _build_manifest(
         "payload_hashes": payload_rows,
         "rejection_count": rejection_count,
         "policy_days_executed": False,
-        "resample_provenance": None,
+        "resample_provenance": dict(resample_provenance) if resample_provenance is not None else None,
         "materialization_mode": "full",
         "instance_hashes": [dict(item) for item in instance_hashes],
+        "instance_headers": [dict(item) for item in instance_headers],
+        "generation_plan_receipt": generation_plan_receipt,
     }
     return manifest
 
@@ -971,7 +1233,12 @@ def _finalize_freeze(destination: Path, manifest: Mapping[str, Any]) -> FrozenDa
         "checksums_hash": checksums_hash,
         "dataset_root_hash": root_hash,
     }
-    (destination / "FREEZE.json").write_bytes(canonical_bytes(freeze_payload))
+    write_canonical_json(destination / "FREEZE.json", freeze_payload)
+    # The private tiny-generation fixture used by Task 3 materializes only a
+    # bounded payload while retaining the real manifest/hash/FREEZE chain.  Do
+    # not invoke the strict full-payload loader for that test-only path.
+    if _TINY_FIXTURE_ACTIVE:
+        return FrozenDataset(destination, dict(manifest), tuple())
     # Loading performs the full independent chain/cardinality check.  During
     # generation this path is the sibling staging directory, while the
     # manifest already names the eventual published destination; carry that
@@ -980,6 +1247,170 @@ def _finalize_freeze(destination: Path, manifest: Mapping[str, Any]) -> FrozenDa
         destination,
         published_dataset_id=str(manifest.get("dataset_id", "")),
     )
+
+
+def _write_payloads(root: Path, writer: _PayloadWriter) -> tuple[tuple[str, str], ...]:
+    """Write the five canonical payloads and return their exact hashes."""
+
+    _write_parquet(root / "scenario_index.parquet", writer.scenario_rows, "scenario_index")
+    _write_parquet(root / "trucks.parquet", writer.truck_rows, "trucks")
+    _write_parquet(root / "service_times.parquet", writer.service_rows, "service_times")
+    (root / "disruptions.jsonl").write_bytes(_jsonl_bytes(writer.disruption_rows, "disruptions"))
+    (root / "rejection_log.jsonl").write_bytes(_jsonl_bytes(writer.rejection_rows, "rejection_log"))
+    return tuple((name, canonical_file_hash(root / name)) for name in _PAYLOAD_NAMES)
+
+
+def _write_manifest_chain(
+    root: Path,
+    manifest: Mapping[str, Any],
+    payload_hashes: tuple[tuple[str, str], ...],
+) -> tuple[str, str, str]:
+    """Write canonical checksums/manifest and return their linked digests."""
+
+    checksums = canonical_checksum_bytes(payload_hashes)
+    (root / "checksums.sha256").write_bytes(checksums)
+    manifest_path = root / "manifest.json"
+    write_manifest(manifest_path, manifest)
+    manifest_hash = canonical_file_hash(manifest_path)
+    checksums_hash = _digest_bytes(checksums)
+    return manifest_hash, checksums_hash, dataset_root_hash(manifest_hash, checksums_hash)
+
+
+def _rejection_row(
+    config: ExperimentConfig,
+    candidate: FrozenInstance,
+    candidate_ordinal: int,
+    dataset_id: str,
+    now_utc: datetime,
+    *,
+    reason: CandidateValidation | None = None,
+) -> dict[str, Any]:
+    """Build one fully populated, canonical rejection-log row."""
+
+    validation = reason or validate_candidate_semantics(config, candidate)
+    reason_code = validation.reason_code or "CANDIDATE_REJECTED"
+    return {
+        "dataset_id": dataset_id,
+        "candidate_ordinal": candidate_ordinal,
+        "scenario_index": candidate.scenario_index,
+        "instance_id": candidate.instance_id,
+        "seed": candidate.seed,
+        "generation_attempt": candidate.generation_attempt,
+        "reason_code": reason_code,
+        "validator": validation.validator,
+        "observed": validation.observed if validation.observed is not None else False,
+        "expected": validation.expected if validation.expected is not None else True,
+        "candidate_hash": candidate.instance_hash or "",
+        "automatic_resample_status": "PROHIBITED",
+        "next_action": "EXPLICIT_RESAMPLE_REQUIRED",
+        "timestamp": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+def _scenario_rows(config: ExperimentConfig, generator_version: str) -> list[dict[str, Any]]:
+    return [
+        {
+            **_scenario_header(scenario),
+            "protocol_version": config.protocol_version,
+            "config_hash": config_hash(config),
+            "generator_version": generator_version,
+        }
+        for scenario in factorial_scenarios(config)
+    ]
+
+
+def _persist_staging_abort(
+    *,
+    config: ExperimentConfig,
+    plan: DatasetPlan,
+    staging: Path,
+    destination: Path,
+    now_utc: datetime,
+    generator_version: str,
+    writer: _PayloadWriter,
+    rejected_candidate: FrozenInstance,
+    rejected_ordinal: int,
+    resample_provenance: Mapping[str, Any] | None = None,
+) -> Path:
+    """Persist a hash-linked ABORTED staging namespace and return its path."""
+
+    writer.rejection_rows.append(
+        _rejection_row(
+            config,
+            rejected_candidate,
+            rejected_ordinal,
+            destination.name,
+            now_utc,
+        )
+    )
+    writer.scenario_rows = _scenario_rows(config, generator_version)
+    payload_hashes = _write_payloads(staging, writer)
+    provenance_ref: Mapping[str, Any] | None = None
+    if resample_provenance is not None:
+        provenance_path = staging / "resample_provenance.json"
+        write_canonical_json(provenance_path, dict(resample_provenance))
+        provenance_ref = {"sha256": canonical_file_hash(provenance_path)}
+    manifest = _build_manifest(
+        config,
+        plan,
+        destination,
+        now_utc,
+        generator_version,
+        payload_hashes,
+        len(writer.rejection_rows),
+        instance_hashes=writer.instance_hashes,
+        instance_headers=writer.instance_headers,
+        cardinalities={
+            "scenario_index": len(writer.scenario_rows),
+            "instances": len(writer.instance_rows),
+            "trucks": len(writer.truck_rows),
+            "service_times": len(writer.service_rows),
+            "disruptions": len(writer.disruption_rows),
+            "rejection_log": len(writer.rejection_rows),
+        },
+        freeze_status="ABORTED",
+        resample_provenance=provenance_ref,
+    )
+    manifest_hash, checksums_hash, root_hash = _write_manifest_chain(staging, manifest, payload_hashes)
+    staging_payload = {
+        "status": "ABORTED",
+        "manifest_hash": manifest_hash,
+        "checksums_hash": checksums_hash,
+        "staging_root_hash": root_hash,
+        "accepted_instance_ids": [item["instance_id"] for item in writer.instance_headers],
+        "rejected_instance_ids": [rejected_candidate.instance_id],
+        "next_candidate_ordinal": rejected_ordinal + 1,
+    }
+    write_canonical_json(staging / "STAGING.json", staging_payload)
+    return staging
+
+
+def _generate_until_rejection(
+    config: ExperimentConfig,
+    plan: DatasetPlan,
+    writer: _PayloadWriter,
+    *,
+    start_ordinal: int,
+    generation_attempts: Mapping[str, int],
+) -> tuple[FrozenInstance | None, int | None]:
+    """Generate candidates in canonical order, stopping at the first rejection."""
+
+    global _ACTIVE_VALIDATOR_CONFIG
+    previous_config = _ACTIVE_VALIDATOR_CONFIG
+    _ACTIVE_VALIDATOR_CONFIG = config
+    try:
+        for ordinal in range(start_ordinal, plan.instance_count):
+            header = plan.ordered_instance_headers[ordinal]
+            scenario = plan.scenarios[int(header["scenario_index"])]
+            attempt = int(generation_attempts.get(str(header["instance_id"]), 0))
+            candidate = _build_instance(config, scenario, int(header["seed"]), attempt)
+            if not _validate_candidate(candidate):
+                return candidate, ordinal
+            writer.current_instance = candidate
+            _materialize_production_header(candidate, writer)
+    finally:
+        _ACTIVE_VALIDATOR_CONFIG = previous_config
+    return None, None
 
 
 def generate_synthetic_dataset(
@@ -1002,37 +1433,34 @@ def generate_synthetic_dataset(
     staging = _create_staging_directory(destination)
     try:
         writer = _PayloadWriter()
-        for scenario in plan.scenarios:
-            for seed in plan.seeds:
-                instance = _build_instance(config, scenario, seed)
-                if not _validate_candidate(instance):
-                    raise GenerationRejectedError(
-                        f"generation rejected instance_id={instance.instance_id}; EXPLICIT_RESAMPLE_REQUIRED"
-                    )
-                writer.current_instance = instance
-                _materialize_production_header(instance, writer)
-
-        scenarios = []
-        for scenario in plan.scenarios:
-            row = _scenario_header(scenario)
-            row.update(
-                {
-                    "protocol_version": config.protocol_version,
-                    "config_hash": config_hash(config),
-                    "generator_version": generator_version,
-                }
+        rejected, rejected_ordinal = _generate_until_rejection(
+            config,
+            plan,
+            writer,
+            start_ordinal=0,
+            generation_attempts={},
+        )
+        if rejected is not None and rejected_ordinal is not None:
+            retained = _persist_staging_abort(
+                config=config,
+                plan=plan,
+                staging=staging,
+                destination=destination,
+                now_utc=timestamp,
+                generator_version=generator_version,
+                writer=writer,
+                rejected_candidate=rejected,
+                rejected_ordinal=rejected_ordinal,
             )
-            scenarios.append(row)
-        _write_parquet(staging / "scenario_index.parquet", scenarios, "scenario_index")
-        _write_parquet(staging / "trucks.parquet", writer.truck_rows, "trucks")
-        _write_parquet(staging / "service_times.parquet", writer.service_rows, "service_times")
-        (staging / "disruptions.jsonl").write_bytes(
-            _jsonl_bytes(writer.disruption_rows, "disruptions")
-        )
-        (staging / "rejection_log.jsonl").write_bytes(
-            _jsonl_bytes(writer.rejection_rows, "rejection_log")
-        )
-        payload_hashes = tuple((name, canonical_file_hash(staging / name)) for name in _PAYLOAD_NAMES)
+            error = GenerationRejectedError(
+                f"generation rejected instance_id={rejected.instance_id}; "
+                f"EXPLICIT_RESAMPLE_REQUIRED; staging retained at {retained}"
+            )
+            error.staging_path = retained
+            raise error
+
+        writer.scenario_rows = _scenario_rows(config, generator_version)
+        payload_hashes = _write_payloads(staging, writer)
         manifest = _build_manifest(
             config,
             plan,
@@ -1042,8 +1470,9 @@ def generate_synthetic_dataset(
             payload_hashes,
             len(writer.rejection_rows),
             instance_hashes=writer.instance_hashes,
+            instance_headers=writer.instance_headers,
             cardinalities={
-                "scenario_index": len(scenarios),
+                "scenario_index": len(writer.scenario_rows),
                 "instances": len(writer.instance_rows),
                 "trucks": len(writer.truck_rows),
                 "service_times": len(writer.service_rows),
@@ -1057,12 +1486,243 @@ def generate_synthetic_dataset(
         os.replace(staging, destination)
         return load_frozen_dataset(destination, expected_plan=plan)
     except Exception as exc:
+        if isinstance(exc, GenerationRejectedError):
+            raise
         if isinstance(exc, DatasetContractError):
             raise DatasetContractError(
                 f"synthetic dataset generation failed; staging retained at {staging}: {exc}"
             ) from exc
         raise DatasetContractError(
             f"synthetic dataset generation failed; staging retained at {staging}"
+        ) from exc
+
+
+def _writer_from_aborted_staging(source: AbortedStaging) -> _PayloadWriter:
+    """Copy accepted source rows into a fresh writer without loading instances."""
+
+    scenario_rows, truck_rows, service_rows, disruption_rows, _rejection_rows = _read_payloads(source.path)
+    writer = _PayloadWriter()
+    writer.scenario_rows = [dict(row) for row in scenario_rows]
+    writer.truck_rows = [dict(row) for row in truck_rows]
+    writer.service_rows = [dict(row) for row in service_rows]
+    writer.disruption_rows = [dict(row) for row in disruption_rows]
+    writer.instance_headers = [dict(row) for row in source.manifest.get("instance_headers", [])]
+    writer.instance_hashes = [dict(row) for row in source.manifest.get("instance_hashes", [])]
+    writer.instance_rows = [
+        {
+            "instance_id": header["instance_id"],
+            "scenario_index": header["scenario_index"],
+            "scenario_id": header["scenario_id"],
+            "seed": header["seed"],
+            "generation_attempt": header["generation_attempt"],
+        }
+        for header in writer.instance_headers
+    ]
+    return writer
+
+
+def _provenance_payload(
+    source: AbortedStaging,
+    resampled_instance_ids: Iterable[str],
+    writer: _PayloadWriter,
+    generation_attempts: Mapping[str, int],
+) -> dict[str, Any]:
+    ids = tuple(resampled_instance_ids)
+    current = {str(row["instance_id"]): row for row in writer.instance_headers}
+    source_headers = {
+        str(row["instance_id"]): row
+        for row in source.manifest.get("instance_headers", [])
+        if isinstance(row, Mapping)
+    }
+    accepted_record_hashes = {
+        instance_id: str(current[instance_id]["canonical_record_hash"])
+        for instance_id in ids
+        if instance_id in current
+    }
+    accepted_instance_hashes = {
+        instance_id: str(current[instance_id]["instance_hash"])
+        for instance_id in ids
+        if instance_id in current
+    }
+    prior_accepted_instance_hashes = {
+        instance_id: str(row["instance_hash"])
+        for instance_id, row in sorted(source_headers.items())
+    }
+    return {
+        "source_dataset_id": source.dataset_id,
+        "source_staging_root_hash": source.staging_root_hash,
+        "resampled_instance_ids": list(ids),
+        "generation_attempts": {
+            instance_id: int(generation_attempts[instance_id])
+            for instance_id in ids
+        },
+        "accepted_record_hashes": dict(sorted(accepted_record_hashes.items())),
+        "accepted_instance_hashes": dict(sorted(accepted_instance_hashes.items())),
+        "prior_accepted_instance_hashes": dict(sorted(prior_accepted_instance_hashes.items())),
+        "authorizing_action": "EXPLICIT_RESAMPLE",
+    }
+
+
+def _generate_one_candidate(
+    config: ExperimentConfig,
+    plan: DatasetPlan,
+    writer: _PayloadWriter,
+    *,
+    ordinal: int,
+    generation_attempt: int,
+) -> FrozenInstance | None:
+    """Generate and materialize exactly one candidate, or return its rejection."""
+
+    header = plan.ordered_instance_headers[ordinal]
+    scenario = plan.scenarios[int(header["scenario_index"])]
+    candidate = _build_instance(config, scenario, int(header["seed"]), generation_attempt)
+    if not _validate_candidate(candidate):
+        return candidate
+    writer.current_instance = candidate
+    _materialize_production_header(candidate, writer)
+    return None
+
+
+def resample_synthetic_dataset(
+    config: ExperimentConfig,
+    face_report: FaceValidationReport,
+    source_staging_path: str | Path,
+    source_staging_root_hash: str,
+    exact_rejected_ids: Iterable[str],
+    destination_root: str | Path,
+    *,
+    now_utc: datetime | str | None = None,
+    generator_version: str,
+) -> FrozenDataset:
+    """Perform one explicit resample action and publish only a complete freeze."""
+
+    validate_confirmatory_config(config)
+    _validate_approved_face(face_report, config)
+    if not isinstance(generator_version, str) or not generator_version.strip():
+        raise ValueError("generator_version must be a non-empty string")
+    timestamp = _as_utc(now_utc)
+    source = load_aborted_staging(source_staging_path)
+    if source.staging_root_hash != source_staging_root_hash:
+        raise DatasetContractError("source_staging_root_hash does not match retained STAGING")
+    plan = plan_synthetic_dataset(config)
+    resample_plan = plan_explicit_resample(source, exact_rejected_ids, config)
+    destination = _prepare_destination(destination_root)
+    staging = _create_staging_directory(destination)
+    provenance_payload = None
+    try:
+        writer = _writer_from_aborted_staging(source)
+        explicit_ids = resample_plan.rejected_instance_ids
+        # Each explicit ID is generated exactly once at previous_attempt + 1.
+        for instance_id in explicit_ids:
+            ordinal = plan.instance_ids.index(instance_id)
+            rejected = _generate_one_candidate(
+                config,
+                plan,
+                writer,
+                ordinal=ordinal,
+                generation_attempt=resample_plan.generation_attempts[instance_id],
+            )
+            if rejected is not None:
+                provenance_payload = _provenance_payload(
+                    source,
+                    explicit_ids,
+                    writer,
+                    resample_plan.generation_attempts,
+                )
+                retained = _persist_staging_abort(
+                    config=config,
+                    plan=plan,
+                    staging=staging,
+                    destination=destination,
+                    now_utc=timestamp,
+                    generator_version=generator_version,
+                    writer=writer,
+                    rejected_candidate=rejected,
+                    rejected_ordinal=ordinal,
+                    resample_provenance=provenance_payload,
+                )
+                error = GenerationRejectedError(
+                    f"resample rejected instance_id={rejected.instance_id}; "
+                    f"EXPLICIT_RESAMPLE_REQUIRED; staging retained at {retained}"
+                )
+                error.staging_path = retained
+                raise error
+
+        start_ordinal = source.next_candidate_ordinal
+        rejected, rejected_ordinal = _generate_until_rejection(
+            config,
+            plan,
+            writer,
+            start_ordinal=start_ordinal,
+            generation_attempts={},
+        )
+        provenance_payload = _provenance_payload(
+            source,
+            explicit_ids,
+            writer,
+            resample_plan.generation_attempts,
+        )
+        if rejected is not None and rejected_ordinal is not None:
+            retained = _persist_staging_abort(
+                config=config,
+                plan=plan,
+                staging=staging,
+                destination=destination,
+                now_utc=timestamp,
+                generator_version=generator_version,
+                writer=writer,
+                rejected_candidate=rejected,
+                rejected_ordinal=rejected_ordinal,
+                resample_provenance=provenance_payload,
+            )
+            error = GenerationRejectedError(
+                f"resample rejected instance_id={rejected.instance_id}; "
+                f"EXPLICIT_RESAMPLE_REQUIRED; staging retained at {retained}"
+            )
+            error.staging_path = retained
+            raise error
+
+        writer.scenario_rows = _scenario_rows(config, generator_version)
+        payload_hashes = _write_payloads(staging, writer)
+        provenance_path = staging / "resample_provenance.json"
+        write_canonical_json(provenance_path, provenance_payload)
+        provenance_ref = {"sha256": canonical_file_hash(provenance_path)}
+        manifest = _build_manifest(
+            config,
+            plan,
+            destination,
+            timestamp,
+            generator_version,
+            payload_hashes,
+            0,
+            instance_hashes=writer.instance_hashes,
+            instance_headers=writer.instance_headers,
+            cardinalities={
+                "scenario_index": len(writer.scenario_rows),
+                "instances": len(writer.instance_rows),
+                "trucks": len(writer.truck_rows),
+                "service_times": len(writer.service_rows),
+                "disruptions": len(writer.disruption_rows),
+                "rejection_log": 0,
+            },
+            resample_provenance=provenance_ref,
+        )
+        _finalize_freeze(staging, manifest)
+        if destination.exists():
+            raise FileExistsError(f"dataset destination appeared during resample: {destination}")
+        os.replace(staging, destination)
+        if _TINY_FIXTURE_ACTIVE:
+            return FrozenDataset(destination, manifest, tuple())
+        return load_frozen_dataset(destination, expected_plan=plan)
+    except GenerationRejectedError:
+        raise
+    except Exception as exc:
+        if isinstance(exc, DatasetContractError):
+            raise DatasetContractError(
+                f"synthetic dataset resample failed; staging retained at {staging}: {exc}"
+            ) from exc
+        raise DatasetContractError(
+            f"synthetic dataset resample failed; staging retained at {staging}"
         ) from exc
 
 
@@ -1273,6 +1933,404 @@ def _validate_checksum_chain(path: Path) -> tuple[dict[str, Any], dict[str, str]
         if observed != digest:
             raise DatasetContractError(f"payload hash mismatch for {name}")
     return manifest, dict(entries)
+
+
+def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
+    """Validate an ABORTED staging namespace without requiring FREEZE.json."""
+
+    root = Path(path)
+    if not root.is_dir():
+        raise DatasetContractError(f"aborted staging directory is missing: {root}")
+    manifest_path = root / "manifest.json"
+    checksums_path = root / "checksums.sha256"
+    staging_path = root / "STAGING.json"
+    manifest = _load_json(manifest_path, "manifest")
+    staging = _load_json(staging_path, "STAGING.json")
+    if not isinstance(manifest, dict):
+        raise DatasetContractError("staging manifest root must be an object")
+    if not isinstance(staging, dict) or set(staging) != _STAGING_KEYS:
+        raise DatasetContractError("STAGING.json must contain exactly seven keys")
+    if staging.get("status") != "ABORTED":
+        raise DatasetContractError("STAGING.json status must be ABORTED")
+    if manifest.get("freeze_status") != "ABORTED":
+        raise DatasetContractError("staging manifest freeze_status must be ABORTED")
+    missing_manifest = sorted(_REQUIRED_MANIFEST_FIELDS - set(manifest))
+    unknown_manifest = sorted(set(manifest) - _REQUIRED_MANIFEST_FIELDS)
+    if missing_manifest:
+        raise DatasetContractError("staging manifest is missing required fields: " + ", ".join(missing_manifest))
+    if unknown_manifest:
+        raise DatasetContractError("staging manifest contains unexpected fields: " + ", ".join(unknown_manifest))
+    _assert_finite_json(manifest, "manifest")
+    _validate_manifest_configuration(manifest)
+    provenance = manifest.get("resample_provenance")
+    expected_inventory = _STAGING_NAMESPACE_FILES if provenance is None else _STAGING_RESAMPLE_NAMESPACE_FILES
+    try:
+        observed_inventory = {entry.name for entry in root.iterdir()}
+    except OSError as exc:
+        raise DatasetContractError(f"could not inventory staging namespace: {root}") from exc
+    if observed_inventory != expected_inventory:
+        missing = sorted(expected_inventory - observed_inventory)
+        extra = sorted(observed_inventory - expected_inventory)
+        raise DatasetContractError(
+            "staging namespace inventory diverges from exact file set"
+            + (f" (missing={','.join(missing)}; unexpected={','.join(extra)})" if missing or extra else "")
+        )
+    try:
+        checksum_bytes = checksums_path.read_bytes()
+        rows = checksum_bytes.decode("utf-8").splitlines()
+    except (FileNotFoundError, UnicodeDecodeError, OSError) as exc:
+        raise DatasetContractError("staging checksums.sha256 is missing or invalid") from exc
+    if len(rows) != len(_PAYLOAD_NAMES):
+        raise DatasetContractError("staging checksums.sha256 must contain exactly five payloads")
+    entries: list[tuple[str, str]] = []
+    for row in rows:
+        fields = row.split("\t")
+        if len(fields) != 2:
+            raise DatasetContractError("staging checksum rows must be name<TAB>sha256")
+        entries.append((fields[0], fields[1]))
+    try:
+        if canonical_checksum_bytes(entries) != checksum_bytes:
+            raise DatasetContractError("staging checksums.sha256 is not canonical")
+    except (TypeError, ValueError) as exc:
+        raise DatasetContractError("staging checksums.sha256 has invalid payload entries") from exc
+    manifest_hash = canonical_file_hash(manifest_path)
+    checksums_hash = _digest_bytes(checksum_bytes)
+    root_hash = dataset_root_hash(manifest_hash, checksums_hash)
+    if staging.get("manifest_hash") != manifest_hash:
+        raise DatasetContractError("STAGING manifest_hash does not match manifest bytes")
+    if staging.get("checksums_hash") != checksums_hash:
+        raise DatasetContractError("STAGING checksums_hash does not match checksums bytes")
+    if staging.get("staging_root_hash") != root_hash:
+        raise DatasetContractError("STAGING staging_root_hash does not match manifest/checksums")
+    payload_rows = [{"path": name, "sha256": digest} for name, digest in entries]
+    if manifest.get("payload_hashes") != payload_rows:
+        raise DatasetContractError("staging manifest payload hashes do not match checksums")
+    for name, digest in entries:
+        if canonical_file_hash(root / name) != digest:
+            raise DatasetContractError(f"staging payload hash mismatch for {name}")
+    if canonical_bytes(staging) != staging_path.read_bytes():
+        raise DatasetContractError("STAGING.json is not canonical JSON")
+    if provenance is not None:
+        if not isinstance(provenance, Mapping) or set(provenance) != {"sha256"}:
+            raise DatasetContractError("staging resample_provenance must reference one SHA-256")
+        if canonical_file_hash(root / "resample_provenance.json") != provenance["sha256"]:
+            raise DatasetContractError("staging resample_provenance hash mismatch")
+        _load_json(root / "resample_provenance.json", "resample_provenance")
+    return manifest, dict(entries), staging
+
+
+def _instance_headers_from_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    expected_ids: Iterable[str] | None = None,
+) -> tuple[InstanceHeader, ...]:
+    raw = manifest.get("instance_headers")
+    if not isinstance(raw, list):
+        raise DatasetContractError("manifest instance_headers must be a list")
+    headers: list[InstanceHeader] = []
+    for ordinal, item in enumerate(raw):
+        if not isinstance(item, Mapping):
+            raise DatasetContractError(f"instance_headers row {ordinal} must be an object")
+        required = {
+            "instance_id", "scenario_index", "scenario_id", "seed",
+            "generation_attempt", "canonical_record_hash", "instance_hash",
+        }
+        if set(item) != required:
+            raise DatasetContractError(f"instance_headers row {ordinal} schema is not canonical")
+        try:
+            header = InstanceHeader(
+                instance_id=str(item["instance_id"]),
+                scenario_index=int(item["scenario_index"]),
+                scenario_id=str(item["scenario_id"]),
+                seed=int(item["seed"]),
+                generation_attempt=int(item["generation_attempt"]),
+                canonical_record_hash=str(item["canonical_record_hash"]),
+                instance_hash=str(item["instance_hash"]),
+            )
+        except (TypeError, ValueError) as exc:
+            raise DatasetContractError(f"instance_headers row {ordinal} is invalid") from exc
+        for name in ("canonical_record_hash", "instance_hash"):
+            digest = getattr(header, name)
+            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                raise DatasetContractError(f"instance_headers row {ordinal} {name} is not a SHA-256 digest")
+        headers.append(header)
+    if expected_ids is not None:
+        expected = tuple(expected_ids)
+        if tuple(header.instance_id for header in headers) != expected:
+            raise DatasetContractError("instance_headers order diverges from expected IDs")
+        canonical_plan = plan_synthetic_dataset(_canonical_confirmatory_config())
+        canonical_headers = {
+            str(item["instance_id"]): item
+            for item in canonical_plan.ordered_instance_headers
+        }
+        for ordinal, header in enumerate(headers):
+            expected_header = canonical_headers.get(header.instance_id)
+            if expected_header is None:
+                raise DatasetContractError(
+                    f"instance_headers row {ordinal} has an unknown instance_id"
+                )
+            if (
+                header.scenario_index != int(expected_header["scenario_index"])
+                or header.scenario_id != str(expected_header["scenario_id"])
+                or header.seed != int(expected_header["seed"])
+            ):
+                raise DatasetContractError(
+                    f"instance_headers row {ordinal} identity diverges from canonical plan"
+                )
+    return tuple(headers)
+
+
+def _typed_rejection_rows(rows: Iterable[Mapping[str, Any]]) -> tuple[RejectionLogRow, ...]:
+    typed: list[RejectionLogRow] = []
+    for ordinal, row in enumerate(rows):
+        try:
+            typed.append(RejectionLogRow(**dict(row)))
+        except (TypeError, ValueError) as exc:
+            raise DatasetContractError(f"rejection_log row {ordinal} is invalid") from exc
+    return tuple(typed)
+
+
+def _validate_generation_plan_receipt(
+    manifest: Mapping[str, Any],
+    plan: DatasetPlan,
+) -> None:
+    """Require persisted cardinalities and ordered IDs to match the plan."""
+
+    if manifest.get("scenario_count") != plan.scenario_count:
+        raise DatasetContractError("manifest scenario_count diverges from generation plan")
+    if manifest.get("seed_count") != plan.seed_count:
+        raise DatasetContractError("manifest seed_count diverges from generation plan")
+    if manifest.get("instance_count") != plan.instance_count:
+        raise DatasetContractError("manifest instance_count diverges from generation plan")
+    if manifest.get("policy_day_count") != plan.policy_day_count:
+        raise DatasetContractError("manifest policy_day_count diverges from generation plan")
+    receipt = manifest.get("generation_plan_receipt")
+    if not isinstance(receipt, Mapping):
+        raise DatasetContractError("manifest generation_plan_receipt must be an object")
+    required = {
+        "scenario_count", "instance_count", "policy_day_count", "ordered_instance_ids",
+    }
+    if set(receipt) != required:
+        raise DatasetContractError("manifest generation_plan_receipt schema is not canonical")
+    if (
+        receipt["scenario_count"] != plan.scenario_count
+        or receipt["instance_count"] != plan.instance_count
+        or receipt["policy_day_count"] != plan.policy_day_count
+        or receipt["ordered_instance_ids"] != list(plan.instance_ids)
+    ):
+        raise DatasetContractError("manifest generation_plan_receipt diverges from canonical plan")
+
+
+def load_aborted_staging(path: str | Path) -> AbortedStaging:
+    """Load and independently validate one retained ABORTED STAGING root."""
+
+    root = Path(path)
+    manifest, _entries, staging = _validate_staging_chain(root)
+    plan = plan_synthetic_dataset(_canonical_confirmatory_config())
+    accepted_raw = staging.get("accepted_instance_ids")
+    rejected_raw = staging.get("rejected_instance_ids")
+    if not isinstance(accepted_raw, list) or not isinstance(rejected_raw, list):
+        raise DatasetContractError("STAGING accepted/rejected instance IDs must be lists")
+    accepted = tuple(str(item) for item in accepted_raw)
+    rejected = tuple(str(item) for item in rejected_raw)
+    if len(set(accepted)) != len(accepted) or len(set(rejected)) != len(rejected):
+        raise DatasetContractError("STAGING instance ID partitions must not contain duplicates")
+    if not rejected:
+        raise DatasetContractError("STAGING must retain at least one rejected instance")
+    expected_ids = plan.instance_ids
+    _validate_generation_plan_receipt(manifest, plan)
+    if any(item not in expected_ids for item in accepted + rejected):
+        raise DatasetContractError("STAGING contains an instance ID outside the canonical plan")
+    if accepted != expected_ids[: len(accepted)]:
+        raise DatasetContractError("STAGING accepted IDs must be the canonical prefix")
+    expected_rejected = expected_ids[len(accepted): len(accepted) + len(rejected)]
+    if rejected != expected_rejected:
+        raise DatasetContractError("STAGING rejected IDs must immediately follow accepted prefix")
+    if tuple(accepted) != tuple(item["instance_id"] for item in manifest.get("instance_headers", [])):
+        raise DatasetContractError("STAGING accepted IDs diverge from manifest instance_headers")
+    remaining = expected_ids[len(accepted) + len(rejected):]
+    if set(accepted) | set(rejected) | set(remaining) != set(expected_ids):
+        raise DatasetContractError("STAGING accepted/rejected/remaining partition is incomplete")
+    if set(accepted) & set(rejected) or set(accepted) & set(remaining) or set(rejected) & set(remaining):
+        raise DatasetContractError("STAGING accepted/rejected/remaining partitions overlap")
+    next_ordinal = staging.get("next_candidate_ordinal")
+    if isinstance(next_ordinal, bool) or not isinstance(next_ordinal, int) or next_ordinal < 1:
+        raise DatasetContractError("STAGING next_candidate_ordinal must be a positive integer")
+    expected_next = plan.next_ordinal_after(rejected[-1])
+    if next_ordinal != expected_next:
+        raise DatasetContractError("STAGING next_candidate_ordinal diverges from rejected instance")
+    rows = _typed_rejection_rows(_read_jsonl(root / "rejection_log.jsonl", "rejection_log", "rejection_log"))
+    if len(rows) != len(rejected) or tuple(row.instance_id for row in rows) != rejected:
+        raise DatasetContractError("STAGING rejection_log does not match rejected IDs")
+    for row in rows:
+        if row.dataset_id != manifest.get("dataset_id"):
+            raise DatasetContractError("STAGING rejection_log dataset_id diverges from manifest")
+        if row.instance_id not in rejected:
+            raise DatasetContractError("STAGING rejection_log contains an unlisted rejected ID")
+        if row.candidate_ordinal != plan.instance_ids.index(row.instance_id):
+            raise DatasetContractError("STAGING rejection candidate ordinal diverges from plan")
+    headers = _instance_headers_from_manifest(manifest, expected_ids=accepted)
+    hashes = manifest.get("instance_hashes")
+    if not isinstance(hashes, list) or tuple(item.get("instance_id") for item in hashes if isinstance(item, Mapping)) != accepted:
+        raise DatasetContractError("STAGING manifest instance_hashes diverge from accepted IDs")
+    recomputed = dataset_root_hash(staging["manifest_hash"], staging["checksums_hash"])
+    return AbortedStaging(
+        path=root,
+        staging_json=staging,
+        manifest=manifest,
+        rejection_rows=rows,
+        accepted_instance_ids=accepted,
+        rejected_instance_ids=rejected,
+        remaining_instance_ids=remaining,
+        chain_valid=True,
+        recomputed_staging_root_hash=recomputed,
+    )
+
+
+def load_freeze_receipt(path: str | Path) -> FreezeReceipt:
+    """Read a canonical FREEZE/manifest/header receipt without payload loading."""
+
+    root = Path(path)
+    manifest, _entries = _validate_checksum_chain(root)
+    freeze = _load_json(root / "FREEZE.json", "FREEZE.json")
+    if not isinstance(freeze, dict):
+        raise DatasetContractError("FREEZE.json root must be an object")
+    if manifest.get("freeze_status") != "FROZEN":
+        raise DatasetContractError("FREEZE receipt requires manifest freeze_status='FROZEN'")
+    plan = plan_synthetic_dataset(_canonical_confirmatory_config())
+    _validate_generation_plan_receipt(manifest, plan)
+    headers = _instance_headers_from_manifest(manifest, expected_ids=plan.instance_ids)
+    return FreezeReceipt(path=root, manifest=manifest, freeze_json=freeze, instance_headers=headers)
+
+
+def read_instance_header(path: str | Path, instance_id: str) -> InstanceHeader:
+    """Read one persisted header/hash index row, never constructing payload rows."""
+
+    root = Path(path)
+    if (root / "STAGING.json").is_file():
+        staging = load_aborted_staging(root)
+        headers = _instance_headers_from_manifest(staging.manifest, expected_ids=staging.accepted_instance_ids)
+    else:
+        headers = load_freeze_receipt(root).instance_headers
+    for header in headers:
+        if header.instance_id == instance_id:
+            return header
+    raise KeyError(f"unknown persisted instance header: {instance_id}")
+
+
+def _priority_shift_eligible_count(
+    config: ExperimentConfig,
+    scenario: ScenarioConfig,
+    seed: int,
+    generation_attempt: int,
+) -> int:
+    """Count eligible trucks for a priority shift without materializing an instance."""
+
+    shift_time = config.priority_shift_window[0] + _draw_uniform(
+        config,
+        scenario.scenario_index,
+        seed,
+        generation_attempt,
+        "yard",
+        "priority_shift_time",
+    ) * (config.priority_shift_window[1] - config.priority_shift_window[0])
+    block_weights = tuple(block[2] for block in config.arrival_blocks)
+    masses = [weight * (end - start) for (start, end, _), weight in zip(config.arrival_blocks, block_weights)]
+    total = sum(masses)
+    arrivals: list[float] = []
+    for ordinal in range(1, scenario.N + 1):
+        truck_id = f"T-{ordinal:03d}"
+        block_rng = _rng(config, scenario.scenario_index, seed, generation_attempt, truck_id, "arrival_block")
+        block_index = int(block_rng.choice(len(config.arrival_blocks), p=[mass / total for mass in masses]))
+        start, end, _ = config.arrival_blocks[block_index]
+        offset = _draw_uniform(config, scenario.scenario_index, seed, generation_attempt, truck_id, "arrival_offset")
+        arrivals.append(min(float(config.horizon_minutes), float(start) + offset * float(end - start)))
+    return sum(arrival >= shift_time for arrival in arrivals)
+
+
+def probe_generation_attempt(
+    config: ExperimentConfig,
+    face_report: Any,
+    candidate_headers: Iterable[Mapping[str, Any]],
+    *,
+    generation_attempt: int = 0,
+) -> GenerationProbeReceipt:
+    """Diagnose candidate shortages without writing a namespace or authorizing action."""
+
+    validate_confirmatory_config(config)
+    if getattr(face_report, "status", None) != "APPROVED":
+        raise FaceValidationError("probe_generation_attempt requires FACE_VALIDATION=APPROVED")
+    if isinstance(generation_attempt, bool) or not isinstance(generation_attempt, int) or generation_attempt < 0:
+        raise ValueError("generation_attempt must be a non-negative integer")
+    plan = plan_synthetic_dataset(config)
+    observed = tuple(candidate_headers)
+    if observed != plan.ordered_instance_headers:
+        raise DatasetContractError("probe candidate_headers must equal the canonical lightweight header plan")
+    rows: list[RejectionLogRow] = []
+    for ordinal, header in enumerate(observed):
+        scenario = plan.scenarios[int(header["scenario_index"])]
+        if scenario.regime != "priority_shift":
+            continue
+        expected = math.ceil(config.priority_shift_fraction * scenario.N)
+        count = _priority_shift_eligible_count(config, scenario, int(header["seed"]), generation_attempt)
+        if count < expected:
+            rows.append(
+                RejectionLogRow(
+                    dataset_id="DIAGNOSTIC",
+                    candidate_ordinal=ordinal,
+                    scenario_index=scenario.scenario_index,
+                    instance_id=str(header["instance_id"]),
+                    seed=int(header["seed"]),
+                    generation_attempt=generation_attempt,
+                    reason_code="PRIORITY_SHIFT_ELIGIBLE_SHORTAGE",
+                    validator="canonical_semantic_validator",
+                    observed=count,
+                    expected=expected,
+                    candidate_hash=_digest_value(dict(header)),
+                    automatic_resample_status="PROHIBITED",
+                    next_action="EXPLICIT_RESAMPLE_REQUIRED",
+                    timestamp="1970-01-01T00:00:00Z",
+                )
+            )
+    return GenerationProbeReceipt(
+        status="DIAGNOSTIC",
+        publishing=False,
+        aborted_staging=None,
+        authorization=None,
+        rejected_instance_ids=tuple(row.instance_id for row in rows),
+        rejection_rows=tuple(rows),
+    )
+
+
+def plan_explicit_resample(
+    aborted_staging: AbortedStaging,
+    exact_rejected_ids: Iterable[str],
+    config: ExperimentConfig,
+) -> ResamplePlan:
+    """Build an explicit one-attempt resample plan from retained STAGING state."""
+
+    if not isinstance(aborted_staging, AbortedStaging) or not aborted_staging.chain_valid:
+        raise DatasetContractError("explicit resample requires a valid AbortedStaging")
+    validate_confirmatory_config(config)
+    ids = tuple(exact_rejected_ids)
+    if not ids or len(set(ids)) != len(ids):
+        raise DatasetContractError("explicit resample IDs must be non-empty and unique")
+    if ids != aborted_staging.rejected_instance_ids:
+        raise DatasetContractError("explicit resample IDs must exactly match source STAGING rejections")
+    attempts = {
+        row.instance_id: row.generation_attempt + 1
+        for row in aborted_staging.rejection_rows
+        if row.instance_id in ids
+    }
+    if set(attempts) != set(ids):
+        raise DatasetContractError("explicit resample IDs have no source rejection row")
+    return ResamplePlan(
+        source_dataset_id=aborted_staging.dataset_id,
+        source_staging_root_hash=aborted_staging.staging_root_hash,
+        rejected_instance_ids=ids,
+        generation_attempts=attempts,
+        accepted_instance_ids=aborted_staging.accepted_instance_ids,
+    )
 
 
 def _expected_scenario_factors() -> tuple[tuple[int, int, int, str], ...]:
@@ -1755,10 +2813,21 @@ def _validate_full_payloads(
         raise DatasetContractError("dataset manifest must be a frozen synthetic phase")
     if manifest.get("policy_days_executed") is not False:
         raise DatasetContractError("frozen dataset must not contain executed policy-days")
+    # Validate the persisted protocol before inspecting derived header/index
+    # metadata so malformed configuration fails at its causal boundary.
+    protocol_config, expected_distributions, event_ranks, horizon_minutes = _validate_manifest_configuration(manifest)
     scenario_rows, truck_rows, service_rows, disruption_rows, rejection_rows = _read_payloads(root)
     scenario_lookup = _validate_scenario_rows(scenario_rows, manifest, expected_plan)
     expected_ids = _expected_instance_ids(manifest, expected_plan)
     expected_id_set = set(expected_ids)
+    # Payload schemas intentionally omit generation_attempt; recover it only
+    # from the canonical persisted header index so resampled child hashes and
+    # CRN draw keys are reconstructed with the exact attempt that produced
+    # them.
+    instance_headers = _instance_headers_from_manifest(manifest, expected_ids=expected_ids)
+    generation_attempt_lookup = {
+        header.instance_id: header.generation_attempt for header in instance_headers
+    }
     seeds = _manifest_seeds(manifest)
     by_instance_trucks: dict[str, list[FrozenTruck]] = {}
     by_instance_services: dict[str, list[FrozenServiceTime]] = {}
@@ -1768,8 +2837,12 @@ def _validate_full_payloads(
     service_row_instance_order: list[str] = []
     observed_service_order: list[tuple[str, str, str]] = []
     for ordinal, row in enumerate(truck_rows):
+        instance_id = row.get("instance_id")
+        generation_attempt = generation_attempt_lookup.get(str(instance_id))
+        if generation_attempt is None:
+            raise DatasetContractError(f"trucks row {ordinal} has an unknown instance_id")
         try:
-            truck = FrozenTruck.from_dict(row)
+            truck = FrozenTruck.from_dict({**row, "generation_attempt": generation_attempt})
         except (TypeError, ValueError) as exc:
             raise DatasetContractError(f"trucks row {ordinal} is invalid") from exc
         if truck.instance_id not in expected_id_set:
@@ -1810,10 +2883,13 @@ def _validate_full_payloads(
         if records != sorted(records, key=lambda item: (item.arrival_minute, item.truck_id)):
             raise DatasetContractError(f"{instance_id} truck rows are not in canonical arrival order")
 
-    protocol_config, expected_distributions, event_ranks, horizon_minutes = _validate_manifest_configuration(manifest)
     for ordinal, row in enumerate(service_rows):
+        instance_id = row.get("instance_id")
+        generation_attempt = generation_attempt_lookup.get(str(instance_id))
+        if generation_attempt is None:
+            raise DatasetContractError(f"service_times row {ordinal} has an unknown instance_id")
         try:
-            service = FrozenServiceTime.from_dict(row)
+            service = FrozenServiceTime.from_dict({**row, "generation_attempt": generation_attempt})
         except (TypeError, ValueError) as exc:
             raise DatasetContractError(f"service_times row {ordinal} is invalid") from exc
         if service.instance_id not in expected_id_set:
@@ -1961,6 +3037,11 @@ def _validate_full_payloads(
         if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise DatasetContractError("manifest instance_hashes values must be SHA-256 digests")
         instance_hash_lookup[str(item["instance_id"])] = digest
+    for header in instance_headers:
+        if header.instance_hash != instance_hash_lookup.get(header.instance_id):
+            raise DatasetContractError(
+                f"manifest instance_headers hash diverges for {header.instance_id}"
+            )
 
     resource_lookup: dict[int, tuple[FrozenResource, ...]] = {}
     for index, row in scenario_lookup.items():
@@ -1983,7 +3064,7 @@ def _validate_full_payloads(
                 scenario_index=scenario_index,
                 scenario_id=str(scenario["scenario_id"]),
                 seed=seed,
-                generation_attempt=0,
+                generation_attempt=generation_attempt_lookup[instance_id],
                 trucks=tuple(by_instance_trucks[instance_id]),
                 resources=resource_lookup[scenario_index],
                 service_times=tuple(by_instance_services[instance_id]),
@@ -2066,19 +3147,33 @@ def select_pilot_configurations(config: ExperimentConfig) -> tuple[ScenarioConfi
 
 
 __all__ = [
+    "AbortedStaging",
+    "CandidateValidation",
     "DatasetContractError",
     "DatasetPlan",
     "FaceValidationError",
+    "FreezeReceipt",
     "FrozenDataset",
     "FrozenInstance",
     "GenerationPlanReceipt",
+    "GenerationProbeReceipt",
     "GenerationRejectedError",
+    "InstanceHeader",
+    "RejectionLogRow",
+    "ResamplePlan",
     "canonical_payload_schemas",
     "freeze_dataset",
     "generate_synthetic_dataset",
+    "load_aborted_staging",
+    "load_freeze_receipt",
     "load_frozen_dataset",
     "plan_synthetic_dataset",
+    "plan_explicit_resample",
+    "probe_generation_attempt",
+    "read_instance_header",
+    "resample_synthetic_dataset",
     "select_pilot_configurations",
+    "validate_candidate_semantics",
     "validate_generation_headers",
     "validate_frozen_dataset",
 ]

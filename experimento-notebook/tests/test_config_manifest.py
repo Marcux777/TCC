@@ -20,9 +20,17 @@ from pequiflux_experiment.dataset import (
     DatasetContractError,
     FaceValidationError,
     GenerationPlanReceipt,
+    GenerationRejectedError,
+    _install_tiny_generation_fixture,
     canonical_payload_schemas,
+    generate_synthetic_dataset,
+    load_aborted_staging,
+    load_freeze_receipt,
     load_frozen_dataset,
     plan_synthetic_dataset,
+    probe_generation_attempt,
+    read_instance_header,
+    resample_synthetic_dataset,
     validate_generation_headers,
     _prepare_destination,
     _read_jsonl,
@@ -473,6 +481,170 @@ def test_face_validation_receipt_gate():
 
     assert report.status == "PENDING"
     assert "APPROVED" in report.cause
+
+
+KNOWN_SHORTAGES = (
+    ("n60-m2-b1-priority_shift", 119, "s11-seed119", "PRIORITY_SHIFT_ELIGIBLE_SHORTAGE"),
+    ("n60-m3-b2-priority_shift", 141, "s23-seed141", "PRIORITY_SHIFT_ELIGIBLE_SHORTAGE"),
+)
+FIXED_NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+STAGING_KEYS = {
+    "status", "manifest_hash", "checksums_hash", "staging_root_hash",
+    "accepted_instance_ids", "rejected_instance_ids", "next_candidate_ordinal",
+}
+
+
+def test_probe_diagnoses_both_without_publishing(approved_face):
+    config = load_config(CONFIG_PATH)
+    plan = plan_synthetic_dataset(config)
+    probe = probe_generation_attempt(
+        config,
+        approved_face,
+        plan.ordered_instance_headers,
+        generation_attempt=0,
+    )
+    assert probe.status == "DIAGNOSTIC"
+    assert probe.publishing is False
+    assert probe.aborted_staging is None
+    assert probe.authorization is None
+    assert probe.rejected_instance_ids == tuple(item[2] for item in KNOWN_SHORTAGES)
+    assert [
+        (row.instance_id, row.generation_attempt, row.reason_code, row.validator)
+        for row in probe.rejection_rows
+    ] == [
+        (item[2], 0, item[3], "canonical_semantic_validator")
+        for item in KNOWN_SHORTAGES
+    ]
+
+
+def test_fail_fast_persisted_resample_sequence(tmp_path, approved_face, monkeypatch):
+    config = load_config(CONFIG_PATH)
+    plan = plan_synthetic_dataset(config)
+    fixture_path = tmp_path / "tiny-generation-fixture.jsonl"
+    _install_tiny_generation_fixture(monkeypatch, fixture_path)
+
+    with pytest.raises(GenerationRejectedError, match="s11-seed119") as first_error:
+        generate_synthetic_dataset(
+            config, approved_face, tmp_path / "published-1",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    staging1 = load_aborted_staging(first_error.value.staging_path)
+    assert not (tmp_path / "published-1").exists()
+    assert set(staging1.staging_json) == STAGING_KEYS
+    assert staging1.staging_json["status"] == "ABORTED"
+    assert not (staging1.path / "FREEZE.json").exists()
+    assert staging1.chain_valid is True
+    assert staging1.recomputed_staging_root_hash == staging1.staging_root_hash
+    assert staging1.rejected_instance_ids == ("s11-seed119",)
+    assert staging1.next_candidate_ordinal == plan.next_ordinal_after("s11-seed119")
+    assert set(staging1.accepted_instance_ids).isdisjoint(staging1.rejected_instance_ids)
+    assert set(staging1.accepted_instance_ids) | set(staging1.rejected_instance_ids) | set(staging1.remaining_instance_ids) == set(plan.instance_ids)
+    assert [
+        (row.instance_id, row.generation_attempt, row.reason_code, row.automatic_resample_status, row.next_action)
+        for row in staging1.rejection_rows
+    ] == [
+        ("s11-seed119", 0, "PRIORITY_SHIFT_ELIGIBLE_SHORTAGE", "PROHIBITED", "EXPLICIT_RESAMPLE_REQUIRED")
+    ]
+    accepted_hash = read_instance_header(staging1.path, "s00-seed101").canonical_record_hash
+
+    with pytest.raises(GenerationRejectedError, match="s23-seed141") as second_error:
+        resample_synthetic_dataset(
+            config, approved_face, staging1.path, staging1.staging_root_hash,
+            ["s11-seed119"], tmp_path / "published-2",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    staging2 = load_aborted_staging(second_error.value.staging_path)
+    assert not (tmp_path / "published-2").exists()
+    assert set(staging2.staging_json) == STAGING_KEYS
+    assert staging2.staging_json["status"] == "ABORTED"
+    assert not (staging2.path / "FREEZE.json").exists()
+    assert staging2.rejected_instance_ids == ("s23-seed141",)
+    assert staging2.next_candidate_ordinal == plan.next_ordinal_after("s23-seed141")
+    assert staging2.chain_valid is True
+    assert staging2.recomputed_staging_root_hash == staging2.staging_root_hash
+    assert set(staging2.accepted_instance_ids).isdisjoint(staging2.rejected_instance_ids)
+    assert set(staging2.accepted_instance_ids) | set(staging2.rejected_instance_ids) | set(staging2.remaining_instance_ids) == set(plan.instance_ids)
+    assert read_instance_header(staging2.path, "s00-seed101").canonical_record_hash == accepted_hash
+    assert read_instance_header(staging2.path, "s11-seed119").generation_attempt == 1
+    assert staging2.rejection_rows[0].generation_attempt == 0
+    assert staging2.rejection_rows[0].next_action == "EXPLICIT_RESAMPLE_REQUIRED"
+    provenance1_path = staging2.path / "resample_provenance.json"
+    provenance1_raw = provenance1_path.read_bytes()
+    provenance1 = json.loads(provenance1_raw)
+    assert provenance1_raw == canonical_bytes(provenance1)
+    assert provenance1["source_dataset_id"] == staging1.dataset_id
+    assert provenance1["source_staging_root_hash"] == staging1.staging_root_hash
+    assert provenance1["resampled_instance_ids"] == ["s11-seed119"]
+    assert provenance1["generation_attempts"] == {"s11-seed119": 1}
+    assert read_instance_header(staging2.path, "s11-seed119").canonical_record_hash == provenance1["accepted_instance_hashes"]["s11-seed119"]
+    assert staging2.manifest["resample_provenance"]["sha256"] == dataset_module.canonical_file_hash(provenance1_path)
+
+    resample_synthetic_dataset(
+        config, approved_face, staging2.path, staging2.staging_root_hash,
+        ["s23-seed141"], tmp_path / "published-3",
+        now_utc=FIXED_NOW, generator_version="generator.v1",
+    )
+    freeze_receipt = load_freeze_receipt(tmp_path / "published-3")
+    assert freeze_receipt.manifest["freeze_status"] == "FROZEN"
+    assert freeze_receipt.manifest["instance_count"] == 3_600
+    assert freeze_receipt.manifest["policy_day_count"] == 18_000
+    assert freeze_receipt.manifest["generation_plan_receipt"]["instance_count"] == 3_600
+    assert freeze_receipt.manifest["generation_plan_receipt"]["policy_day_count"] == 18_000
+    s00_header = read_instance_header(tmp_path / "published-3", "s00-seed101")
+    s11_header = read_instance_header(tmp_path / "published-3", "s11-seed119")
+    s23_header = read_instance_header(tmp_path / "published-3", "s23-seed141")
+    assert s11_header.generation_attempt == 1
+    assert s23_header.generation_attempt == 1
+    assert s00_header.canonical_record_hash == accepted_hash
+    provenance2_path = tmp_path / "published-3" / "resample_provenance.json"
+    provenance2_raw = provenance2_path.read_bytes()
+    provenance2 = json.loads(provenance2_raw)
+    assert provenance2_raw == canonical_bytes(provenance2)
+    assert provenance2["source_dataset_id"] == staging2.dataset_id
+    assert provenance2["source_staging_root_hash"] == staging2.staging_root_hash
+    assert provenance2["resampled_instance_ids"] == ["s23-seed141"]
+    assert provenance2["generation_attempts"] == {"s23-seed141": 1}
+    assert s23_header.canonical_record_hash == provenance2["accepted_instance_hashes"]["s23-seed141"]
+    assert s00_header.canonical_record_hash == provenance2["prior_accepted_instance_hashes"]["s00-seed101"]
+    assert freeze_receipt.manifest["resample_provenance"]["sha256"] == dataset_module.canonical_file_hash(provenance2_path)
+    assert (tmp_path / "published-3" / "FREEZE.json").exists()
+    assert not (tmp_path / "published-3" / "STAGING.json").exists()
+
+
+def test_new_rejection_aborts_without_retry(tmp_path, approved_face, monkeypatch):
+    fixture_path = tmp_path / "tiny-generation-fixture-new-rejection.jsonl"
+    _install_tiny_generation_fixture(monkeypatch, fixture_path)
+
+    with pytest.raises(GenerationRejectedError, match="s11-seed119") as first_error:
+        generate_synthetic_dataset(
+            load_config(CONFIG_PATH), approved_face, tmp_path / "source-published",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    source = load_aborted_staging(first_error.value.staging_path)
+    assert source.rejected_instance_ids == ("s11-seed119",)
+
+    monkeypatch.setattr(
+        "pequiflux_experiment.dataset._validate_candidate",
+        lambda candidate: candidate.instance_id != "s11-seed119",
+    )
+    with pytest.raises(GenerationRejectedError, match="s11-seed119") as second_error:
+        resample_synthetic_dataset(
+            load_config(CONFIG_PATH), approved_face, source.path, source.staging_root_hash,
+            ["s11-seed119"], tmp_path / "retry-published",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    retained = load_aborted_staging(second_error.value.staging_path)
+    assert retained.path != source.path
+    assert set(retained.staging_json) == STAGING_KEYS
+    assert retained.staging_json["status"] == "ABORTED"
+    assert not (retained.path / "FREEZE.json").exists()
+    assert not (tmp_path / "retry-published").exists()
+    assert retained.rejected_instance_ids == ("s11-seed119",)
+    assert retained.chain_valid is True
+    assert retained.recomputed_staging_root_hash == retained.staging_root_hash
+    assert retained.rejection_rows[0].generation_attempt == 1
+    assert retained.rejection_rows[0].automatic_resample_status == "PROHIBITED"
+    assert retained.rejection_rows[0].next_action == "EXPLICIT_RESAMPLE_REQUIRED"
 
 
 def test_face_validation_rejects_noncanonical_rubric_bytes(tmp_path, monkeypatch):

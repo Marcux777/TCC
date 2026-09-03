@@ -934,3 +934,161 @@ class FrozenDataset:
 
     def __len__(self) -> int:
         return len(self.instances)
+
+
+# ---------------------------------------------------------------------------
+# Dataset-generation control and lightweight receipts
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateValidation:
+    """Result of the canonical semantic check applied before materialization."""
+
+    instance_id: str
+    generation_attempt: int
+    accepted: bool
+    reason_code: str | None = None
+    validator: str = "canonical_semantic_validator"
+    observed: Any = None
+    expected: Any = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.instance_id, str) or not self.instance_id.strip():
+            raise ValueError("instance_id must be a non-empty string")
+        if (
+            isinstance(self.generation_attempt, bool)
+            or not isinstance(self.generation_attempt, int)
+            or self.generation_attempt < 0
+        ):
+            raise ValueError("generation_attempt must be a non-negative integer")
+        if not isinstance(self.accepted, bool):
+            raise TypeError("accepted must be bool")
+        if not isinstance(self.validator, str) or not self.validator.strip():
+            raise ValueError("validator must be a non-empty string")
+        if self.accepted and self.reason_code is not None:
+            raise ValueError("accepted candidate cannot carry a rejection reason")
+        if not self.accepted and (not isinstance(self.reason_code, str) or not self.reason_code.strip()):
+            raise ValueError("rejected candidate must carry a reason_code")
+
+
+@dataclass(frozen=True, slots=True)
+class RejectionLogRow:
+    """Typed view of one persisted rejection-log row."""
+
+    dataset_id: str
+    candidate_ordinal: int
+    scenario_index: int
+    instance_id: str
+    seed: int
+    generation_attempt: int
+    reason_code: str
+    validator: str
+    observed: Any
+    expected: Any
+    candidate_hash: str
+    automatic_resample_status: str
+    next_action: str
+    timestamp: str
+
+    def __post_init__(self) -> None:
+        for name in ("dataset_id", "instance_id", "reason_code", "validator", "candidate_hash", "automatic_resample_status", "next_action", "timestamp"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be non-empty text")
+        for name in ("candidate_ordinal", "scenario_index", "seed", "generation_attempt"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if (
+            len(self.candidate_hash) != 64
+            or any(character not in "0123456789abcdefABCDEF" for character in self.candidate_hash)
+        ):
+            raise ValueError("candidate_hash must be a SHA-256 digest")
+        if self.automatic_resample_status != "PROHIBITED":
+            raise ValueError("automatic_resample_status must be PROHIBITED")
+        if self.next_action != "EXPLICIT_RESAMPLE_REQUIRED":
+            raise ValueError("next_action must be EXPLICIT_RESAMPLE_REQUIRED")
+
+
+# A short alias keeps call sites readable while retaining the persisted-row name.
+RejectionRow = RejectionLogRow
+
+
+@dataclass(frozen=True, slots=True)
+class InstanceHeader:
+    """Lightweight instance/hash index; never contains payload rows."""
+
+    instance_id: str
+    scenario_index: int
+    scenario_id: str
+    seed: int
+    generation_attempt: int
+    canonical_record_hash: str
+    instance_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class FreezeReceipt:
+    """Canonical FREEZE/manifest receipt loaded without materializing instances."""
+
+    path: Path
+    manifest: Mapping[str, Any]
+    freeze_json: Mapping[str, Any]
+    instance_headers: tuple[InstanceHeader, ...] = ()
+
+    @property
+    def dataset_root_hash(self) -> str:
+        return str(self.freeze_json["dataset_root_hash"])
+
+
+@dataclass(frozen=True, slots=True)
+class AbortedStaging:
+    """Retained, hash-linked staging state after a fail-fast rejection."""
+
+    path: Path
+    staging_json: Mapping[str, Any]
+    manifest: Mapping[str, Any]
+    rejection_rows: tuple[RejectionLogRow, ...]
+    accepted_instance_ids: tuple[str, ...]
+    rejected_instance_ids: tuple[str, ...]
+    remaining_instance_ids: tuple[str, ...]
+    chain_valid: bool
+    recomputed_staging_root_hash: str
+
+    @property
+    def dataset_id(self) -> str:
+        return str(self.manifest.get("dataset_id", self.path.name))
+
+    @property
+    def staging_root_hash(self) -> str:
+        return str(self.staging_json["staging_root_hash"])
+
+    @property
+    def next_candidate_ordinal(self) -> int:
+        """Ordinal of the next candidate to be attempted after rejection."""
+
+        return int(self.staging_json["next_candidate_ordinal"])
+
+
+@dataclass(frozen=True, slots=True)
+class ResamplePlan:
+    """Pure authorization plan for one explicit resample action."""
+
+    source_dataset_id: str
+    source_staging_root_hash: str
+    rejected_instance_ids: tuple[str, ...]
+    generation_attempts: Mapping[str, int]
+    accepted_instance_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationProbeReceipt:
+    """Non-publishing diagnostic receipt for candidate semantics."""
+
+    status: str
+    publishing: bool
+    aborted_staging: AbortedStaging | None
+    authorization: ResamplePlan | None
+    rejected_instance_ids: tuple[str, ...]
+    rejection_rows: tuple[RejectionLogRow, ...]
