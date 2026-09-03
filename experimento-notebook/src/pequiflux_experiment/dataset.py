@@ -273,6 +273,21 @@ _STAGING_NAMESPACE_FILES: frozenset[str] = frozenset(
 _STAGING_RESAMPLE_NAMESPACE_FILES: frozenset[str] = frozenset(
     (*_STAGING_NAMESPACE_FILES, "resample_provenance.json")
 )
+_PROVENANCE_CONTENT_KEYS: frozenset[str] = frozenset(
+    {
+        "source_dataset_id",
+        "source_staging_root_hash",
+        "resampled_instance_ids",
+        "generation_attempts",
+        "accepted_record_hashes",
+        "accepted_instance_hashes",
+        "prior_accepted_instance_hashes",
+        "authorizing_action",
+    }
+)
+_PROVENANCE_REFERENCE_KEYS: frozenset[str] = frozenset(
+    {"path", "sha256", *_PROVENANCE_CONTENT_KEYS}
+)
 _STAGING_KEYS: frozenset[str] = frozenset(
     {
         "status",
@@ -843,99 +858,44 @@ def _validate_candidate(candidate: FrozenInstance) -> bool:
     return validate_candidate_semantics(config, candidate).accepted
 
 
-_TINY_FIXTURE_REJECTIONS: frozenset[str] = frozenset({"s11-seed119", "s23-seed141"})
 _TINY_FIXTURE_ACTIVE = False
 
 
-def _tiny_fixture_instance(
-    config: ExperimentConfig,
-    scenario: ScenarioConfig,
-    seed: int,
-    generation_attempt: int = 0,
-) -> FrozenInstance:
-    """Build a tiny deterministic candidate for the persisted Task 3 checks.
+def _tiny_materialize_production_header(
+    header: FrozenInstance,
+    writer: _PayloadWriter,
+) -> None:
+    """Record only the immutable header while skipping heavy payload rows.
 
-    This helper is installed only by ``_install_tiny_generation_fixture``.  It
-    retains the real Frozen* domain/hash/CRN constructors while replacing the
-    expensive production payload cardinality with one truck and one compact
-    disruption trace.  The canonical validator still runs on every candidate.
+    Candidate generation and canonical semantic validation remain production
+    paths; this private seam is limited to the expensive row materialization
+    performed by the persisted integration test.
     """
 
-    instance_id = _instance_id(scenario.scenario_index, seed)
-    truck = FrozenTruck(
-        instance_id=instance_id,
-        scenario_index=scenario.scenario_index,
-        scenario_id=scenario.scenario_id,
-        seed=seed,
-        truck_id="T-001",
-        arrival_minute=1.0,
-        cargo_type="soy",
-        priority=0,
-        document_status="CLEAR",
-        stage="gate",
-        eligible_resources=("gate-1",),
-        generation_attempt=generation_attempt,
+    if writer.current_instance is not header:
+        raise DatasetContractError("materializer received a different instance header")
+    writer.instance_rows.append(
+        {
+            "instance_id": header.instance_id,
+            "scenario_index": header.scenario_index,
+            "scenario_id": header.scenario_id,
+            "seed": header.seed,
+            "generation_attempt": header.generation_attempt,
+        }
     )
-    service_times = tuple(
-        FrozenServiceTime(
-            instance_id=instance_id,
-            scenario_index=scenario.scenario_index,
-            scenario_id=scenario.scenario_id,
-            seed=seed,
-            truck_id="T-001",
-            operation=operation,
-            duration_min=float(config.service_distributions[operation][1]),
-            source_a=float(config.service_distributions[operation][0]),
-            source_mode=float(config.service_distributions[operation][1]),
-            source_b=float(config.service_distributions[operation][2]),
-            draw_key=crn_digest(
-                config.crn_version,
-                scenario.scenario_index,
-                seed,
-                generation_attempt,
-                "T-001",
-                operation,
-            ),
-            crn_version=config.crn_version,
-            generation_attempt=generation_attempt,
-        )
-        for operation in _OPERATIONS
+    writer.instance_hashes.append(
+        {"instance_id": header.instance_id, "instance_hash": header.instance_hash or ""}
     )
-    disruptions: list[dict[str, Any]] = []
-    if scenario.regime == "priority_shift":
-        expected = math.ceil(config.priority_shift_fraction * scenario.N)
-        count = expected
-        if generation_attempt == 0 and instance_id in _TINY_FIXTURE_REJECTIONS:
-            count -= 1
-        for sequence in range(1, count + 1):
-            payload: dict[str, Any] = {
-                "instance_id": instance_id,
-                "scenario_index": scenario.scenario_index,
-                "scenario_id": scenario.scenario_id,
-                "seed": seed,
-                "time": 300.0,
-                "event_rank": config.event_ranks["priority_change"],
-                "resource_id": "",
-                "truck_id": "T-001",
-                "sequence": sequence,
-                "event_type": "priority_change",
-                "cause": "priority_shift",
-                "operation": "",
-                "duration_min": 0.0,
-                "return_time": 0.0,
-            }
-            payload["payload_hash"] = _digest_value(payload)
-            disruptions.append(payload)
-    return FrozenInstance(
-        instance_id=instance_id,
-        scenario_index=scenario.scenario_index,
-        scenario_id=scenario.scenario_id,
-        seed=seed,
-        generation_attempt=generation_attempt,
-        trucks=(truck,),
-        resources=_resource_records(scenario),
-        service_times=service_times,
-        disruptions=tuple(disruptions),
+    writer.instance_headers.append(
+        {
+            "instance_id": header.instance_id,
+            "scenario_index": header.scenario_index,
+            "scenario_id": header.scenario_id,
+            "seed": header.seed,
+            "generation_attempt": header.generation_attempt,
+            "canonical_record_hash": header.canonical_record_hash or "",
+            "instance_hash": header.instance_hash or "",
+        }
     )
 
 
@@ -948,16 +908,10 @@ def _install_tiny_generation_fixture(monkeypatch: Any, fixture_path: str | Path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical_bytes({"fixture": "task3", "mode": "tiny"}))
     monkeypatch.setattr(
-        "pequiflux_experiment.dataset._build_instance",
-        _tiny_fixture_instance,
+        "pequiflux_experiment.dataset._materialize_production_header",
+        _tiny_materialize_production_header,
     )
     monkeypatch.setattr("pequiflux_experiment.dataset._TINY_FIXTURE_ACTIVE", True)
-    # The pytest fixture uses a deliberately minimal approved marker.  Real
-    # callers still traverse _validate_approved_face and its receipt/hash gate.
-    monkeypatch.setattr(
-        "pequiflux_experiment.dataset._validate_approved_face",
-        lambda face_report, config: face_report,
-    )
     return path
 
 
@@ -1347,9 +1301,7 @@ def _persist_staging_abort(
     payload_hashes = _write_payloads(staging, writer)
     provenance_ref: Mapping[str, Any] | None = None
     if resample_provenance is not None:
-        provenance_path = staging / "resample_provenance.json"
-        write_canonical_json(provenance_path, dict(resample_provenance))
-        provenance_ref = {"sha256": canonical_file_hash(provenance_path)}
+        provenance_ref = _provenance_reference(staging, resample_provenance)
     manifest = _build_manifest(
         config,
         plan,
@@ -1563,6 +1515,21 @@ def _provenance_payload(
     }
 
 
+def _provenance_reference(root: Path, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Write canonical provenance content and return its manifest reference."""
+
+    if not isinstance(payload, Mapping) or set(payload) != _PROVENANCE_CONTENT_KEYS:
+        raise DatasetContractError("resample provenance content schema is not canonical")
+    path = root / "resample_provenance.json"
+    write_canonical_json(path, payload)
+    digest = canonical_file_hash(path)
+    return {
+        "path": path.name,
+        "sha256": digest,
+        **dict(payload),
+    }
+
+
 def _generate_one_candidate(
     config: ExperimentConfig,
     plan: DatasetPlan,
@@ -1684,9 +1651,7 @@ def resample_synthetic_dataset(
 
         writer.scenario_rows = _scenario_rows(config, generator_version)
         payload_hashes = _write_payloads(staging, writer)
-        provenance_path = staging / "resample_provenance.json"
-        write_canonical_json(provenance_path, provenance_payload)
-        provenance_ref = {"sha256": canonical_file_hash(provenance_path)}
+        provenance_ref = _provenance_reference(staging, provenance_payload)
         manifest = _build_manifest(
             config,
             plan,
@@ -2010,12 +1975,14 @@ def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str],
             raise DatasetContractError(f"staging payload hash mismatch for {name}")
     if canonical_bytes(staging) != staging_path.read_bytes():
         raise DatasetContractError("STAGING.json is not canonical JSON")
-    if provenance is not None:
-        if not isinstance(provenance, Mapping) or set(provenance) != {"sha256"}:
-            raise DatasetContractError("staging resample_provenance must reference one SHA-256")
-        if canonical_file_hash(root / "resample_provenance.json") != provenance["sha256"]:
-            raise DatasetContractError("staging resample_provenance hash mismatch")
-        _load_json(root / "resample_provenance.json", "resample_provenance")
+    # The detailed reference/content/schema and hash checks are shared by all
+    # staging and frozen loaders below; this boundary only verifies that the
+    # optional file is represented by the exact namespace inventory.
+    _validate_resample_provenance(
+        root,
+        manifest,
+        plan=plan_synthetic_dataset(_canonical_confirmatory_config()),
+    )
     return manifest, dict(entries), staging
 
 
@@ -2088,6 +2055,205 @@ def _typed_rejection_rows(rows: Iterable[Mapping[str, Any]]) -> tuple[RejectionL
         except (TypeError, ValueError) as exc:
             raise DatasetContractError(f"rejection_log row {ordinal} is invalid") from exc
     return tuple(typed)
+
+
+def _require_provenance_sha(value: Any, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise DatasetContractError(f"{label} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _validate_provenance_hash_map(
+    value: Any,
+    *,
+    label: str,
+    expected_ids: set[str] | None = None,
+) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise DatasetContractError(f"resample provenance {label} must be an object")
+    result: dict[str, str] = {}
+    for key, digest in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise DatasetContractError(f"resample provenance {label} keys must be non-empty IDs")
+        if expected_ids is not None and key not in expected_ids:
+            raise DatasetContractError(f"resample provenance {label} contains an unexpected ID")
+        result[key] = _require_provenance_sha(digest, f"resample provenance {label}.{key}")
+    return result
+
+
+def _validate_resample_provenance(
+    root: Path,
+    manifest: Mapping[str, Any],
+    *,
+    plan: DatasetPlan,
+    current_headers: Iterable[InstanceHeader] | None = None,
+    staging: Mapping[str, Any] | None = None,
+    rejection_rows: Iterable[RejectionLogRow] | None = None,
+) -> None:
+    """Validate provenance reference, content bytes, and header reconciliation.
+
+    This is intentionally shared by STAGING, lightweight FREEZE receipts and
+    the strict full-payload loader.  The initial dataset has no provenance
+    reference or file; every resampled namespace must carry both a canonical
+    content file and an exact manifest reference to it.
+    """
+
+    provenance = manifest.get("resample_provenance")
+    provenance_path = root / "resample_provenance.json"
+    if provenance is None:
+        if provenance_path.exists():
+            raise DatasetContractError(
+                "initial dataset must not contain resample_provenance.json"
+            )
+        return
+    if not isinstance(provenance, Mapping) or set(provenance) != _PROVENANCE_REFERENCE_KEYS:
+        raise DatasetContractError(
+            "resample provenance manifest reference schema is not canonical"
+        )
+    path_value = provenance["path"]
+    if not isinstance(path_value, str) or path_value != "resample_provenance.json":
+        raise DatasetContractError(
+            "resample provenance path must be the relative resample_provenance.json"
+        )
+    resolved_root = root.resolve()
+    resolved_path = (root / path_value).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise DatasetContractError("resample provenance path escapes the namespace") from exc
+    digest = _require_provenance_sha(provenance["sha256"], "resample provenance sha256")
+    if not provenance_path.is_file():
+        raise DatasetContractError("resample provenance file is missing")
+    try:
+        raw = provenance_path.read_bytes()
+    except OSError as exc:
+        raise DatasetContractError("resample provenance file cannot be read") from exc
+    try:
+        content = _load_json(provenance_path, "resample_provenance")
+    except DatasetContractError:
+        raise
+    if not isinstance(content, dict) or set(content) != _PROVENANCE_CONTENT_KEYS:
+        raise DatasetContractError("resample provenance content schema is not canonical")
+    if raw != canonical_bytes(content):
+        raise DatasetContractError("resample provenance bytes are not canonical")
+    actual_digest = canonical_file_hash(provenance_path)
+    if actual_digest != digest:
+        raise DatasetContractError("resample provenance sha256 does not match canonical bytes")
+    for key in _PROVENANCE_CONTENT_KEYS:
+        if provenance[key] != content[key]:
+            raise DatasetContractError(
+                f"resample provenance manifest/content mismatch for {key}"
+            )
+
+    source_dataset_id = content["source_dataset_id"]
+    if (
+        not isinstance(source_dataset_id, str)
+        or not source_dataset_id.strip()
+        or source_dataset_id in {".", ".."}
+        or "/" in source_dataset_id
+        or "\\" in source_dataset_id
+        or ":" in source_dataset_id
+    ):
+        raise DatasetContractError("resample provenance source_dataset_id is not path-safe")
+    _require_provenance_sha(
+        content["source_staging_root_hash"],
+        "resample provenance source_staging_root_hash",
+    )
+    raw_ids = content["resampled_instance_ids"]
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise DatasetContractError("resample provenance resampled_instance_ids must be a non-empty list")
+    if any(not isinstance(item, str) or not item.strip() for item in raw_ids):
+        raise DatasetContractError("resample provenance IDs must be non-empty strings")
+    if len(set(raw_ids)) != len(raw_ids):
+        raise DatasetContractError("resample provenance IDs must not contain duplicates")
+    canonical_ids = set(plan.instance_ids)
+    if any(item not in canonical_ids for item in raw_ids):
+        raise DatasetContractError("resample provenance contains an ID outside the canonical plan")
+    id_positions = [plan.instance_ids.index(item) for item in raw_ids]
+    if id_positions != sorted(id_positions):
+        raise DatasetContractError("resample provenance IDs are not in canonical order")
+    resampled_ids = set(raw_ids)
+
+    attempts = content["generation_attempts"]
+    if not isinstance(attempts, Mapping) or set(attempts) != resampled_ids:
+        raise DatasetContractError("resample provenance generation_attempts keys diverge from IDs")
+    generation_attempts: dict[str, int] = {}
+    for instance_id in raw_ids:
+        attempt = attempts[instance_id]
+        if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
+            raise DatasetContractError(
+                f"resample provenance generation_attempts.{instance_id} must be positive"
+            )
+        generation_attempts[instance_id] = attempt
+    accepted_record_hashes = _validate_provenance_hash_map(
+        content["accepted_record_hashes"],
+        label="accepted_record_hashes",
+        expected_ids=resampled_ids,
+    )
+    accepted_instance_hashes = _validate_provenance_hash_map(
+        content["accepted_instance_hashes"],
+        label="accepted_instance_hashes",
+        expected_ids=resampled_ids,
+    )
+    prior_hashes = _validate_provenance_hash_map(
+        content["prior_accepted_instance_hashes"],
+        label="prior_accepted_instance_hashes",
+        expected_ids=canonical_ids,
+    )
+    if set(accepted_record_hashes) != set(accepted_instance_hashes):
+        raise DatasetContractError("resample provenance accepted hash maps must have identical IDs")
+    if content["authorizing_action"] != "EXPLICIT_RESAMPLE":
+        raise DatasetContractError("resample provenance authorizing_action is invalid")
+
+    if current_headers is None:
+        return
+    headers = tuple(current_headers)
+    header_by_id = {header.instance_id: header for header in headers}
+    for instance_id in raw_ids:
+        header = header_by_id.get(instance_id)
+        if header is None:
+            # An explicit attempt can itself be rejected; in that ABORTED
+            # action it is recorded in rejection_log but has no accepted
+            # header/hash map yet.
+            if staging is None or staging.get("status") != "ABORTED":
+                raise DatasetContractError(
+                    f"resample provenance accepted ID is absent from persisted headers: {instance_id}"
+                )
+            if instance_id in accepted_record_hashes or instance_id in accepted_instance_hashes:
+                raise DatasetContractError(
+                    f"resample provenance accepted maps contain an absent ID: {instance_id}"
+                )
+            if rejection_rows is None or not any(
+                row.instance_id == instance_id
+                and row.generation_attempt == generation_attempts[instance_id]
+                for row in rejection_rows
+            ):
+                raise DatasetContractError(
+                    f"resample provenance absent ID lacks matching rejection row: {instance_id}"
+                )
+            continue
+        if (
+            generation_attempts[instance_id] != header.generation_attempt
+            or accepted_record_hashes.get(instance_id) != header.canonical_record_hash
+            or accepted_instance_hashes.get(instance_id) != header.instance_hash
+        ):
+            raise DatasetContractError(
+                f"resample provenance hashes/attempt diverge for {instance_id}"
+            )
+    header_ids = [header.instance_id for header in headers]
+    present_resampled = [instance_id for instance_id in raw_ids if instance_id in header_by_id]
+    if set(prior_hashes) != set(header_ids[: (plan.instance_ids.index(present_resampled[0]) if present_resampled else len(header_ids))]):
+        raise DatasetContractError("resample provenance prior hash IDs diverge from inherited prefix")
+    for instance_id, digest_value in prior_hashes.items():
+        header = header_by_id.get(instance_id)
+        if header is None or header.instance_hash != digest_value:
+            raise DatasetContractError(
+                f"resample provenance prior hash diverges for {instance_id}"
+            )
 
 
 def _validate_generation_plan_receipt(
@@ -2170,6 +2336,14 @@ def load_aborted_staging(path: str | Path) -> AbortedStaging:
         if row.candidate_ordinal != plan.instance_ids.index(row.instance_id):
             raise DatasetContractError("STAGING rejection candidate ordinal diverges from plan")
     headers = _instance_headers_from_manifest(manifest, expected_ids=accepted)
+    _validate_resample_provenance(
+        root,
+        manifest,
+        plan=plan,
+        current_headers=headers,
+        staging=staging,
+        rejection_rows=rows,
+    )
     hashes = manifest.get("instance_hashes")
     if not isinstance(hashes, list) or tuple(item.get("instance_id") for item in hashes if isinstance(item, Mapping)) != accepted:
         raise DatasetContractError("STAGING manifest instance_hashes diverge from accepted IDs")
@@ -2200,6 +2374,7 @@ def load_freeze_receipt(path: str | Path) -> FreezeReceipt:
     plan = plan_synthetic_dataset(_canonical_confirmatory_config())
     _validate_generation_plan_receipt(manifest, plan)
     headers = _instance_headers_from_manifest(manifest, expected_ids=plan.instance_ids)
+    _validate_resample_provenance(root, manifest, plan=plan, current_headers=headers)
     return FreezeReceipt(path=root, manifest=manifest, freeze_json=freeze, instance_headers=headers)
 
 
@@ -2828,6 +3003,12 @@ def _validate_full_payloads(
     generation_attempt_lookup = {
         header.instance_id: header.generation_attempt for header in instance_headers
     }
+    _validate_resample_provenance(
+        root,
+        manifest,
+        plan=plan_synthetic_dataset(_canonical_confirmatory_config()),
+        current_headers=instance_headers,
+    )
     seeds = _manifest_seeds(manifest)
     by_instance_trucks: dict[str, list[FrozenTruck]] = {}
     by_instance_services: dict[str, list[FrozenServiceTime]] = {}

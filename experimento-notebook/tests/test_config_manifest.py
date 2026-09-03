@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 import os
+import shutil
 
 import pytest
 
@@ -46,6 +47,7 @@ from pequiflux_experiment.domain import (
 )
 import pequiflux_experiment.face_validation as face_validation
 from pequiflux_experiment.face_validation import FaceValidationReport, validate_face_validation_receipt
+from pequiflux_experiment.manifest import canonical_file_hash, dataset_root_hash
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -86,8 +88,38 @@ def _tiny_payload_manifest(root: Path, dataset_id: str) -> tuple[dict, list[tupl
 
 
 @pytest.fixture
-def approved_face():
-    return type("ApprovedFace", (), {"status": "APPROVED"})()
+def approved_face(tmp_path):
+    """Build and validate a real APPROVED Task-1 receipt for current bytes."""
+
+    cfg = load_config(CONFIG_PATH)
+    pdf_path = PROJECT_ROOT.parent / "main.pdf"
+    rubric_path = PROJECT_ROOT / "inputs" / "face_validation_rubric.v1.json"
+    receipt = {
+        "status": "APPROVED",
+        "protocol_version": cfg.protocol_version,
+        "config_hash": config_hash(cfg),
+        "source_document": "main.pdf",
+        "source_sha256": canonical_file_hash(pdf_path),
+        "round_id": "task3-approved-fixture",
+        "completed_at": "2026-09-03T12:00:00+00:00",
+        "blind": True,
+        "reviewer_ids": [
+            {"id": "reviewer-a", "independent": True},
+            {"id": "reviewer-b", "independent": True},
+        ],
+        "rubric_path": "inputs/face_validation_rubric.v1.json",
+        "rubric_version": "face_validation_rubric.v1",
+        "rubric_sha256": canonical_file_hash(rubric_path),
+        "discrepancies": [
+            {"item": "format", "decision": "MAINTAINED", "rationale": "unchanged"}
+        ],
+        "final_decision": "APPROVED",
+    }
+    receipt_path = tmp_path / "face-validation-approved.json"
+    receipt_path.write_bytes(canonical_bytes(receipt))
+    report = validate_face_validation_receipt(receipt_path, cfg, pdf_path)
+    assert report.status == "APPROVED"
+    return report
 
 
 def test_synthetic_plan_contract():
@@ -492,6 +524,93 @@ STAGING_KEYS = {
     "status", "manifest_hash", "checksums_hash", "staging_root_hash",
     "accepted_instance_ids", "rejected_instance_ids", "next_candidate_ordinal",
 }
+
+
+def _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch):
+    """Materialize the real hash chain using only the private tiny fixture."""
+
+    _install_tiny_generation_fixture(monkeypatch, tmp_path / "tiny-provenance-fixture.jsonl")
+    with pytest.raises(GenerationRejectedError) as first_error:
+        generate_synthetic_dataset(
+            load_config(CONFIG_PATH), approved_face, tmp_path / "provenance-published-1",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    staging1 = load_aborted_staging(first_error.value.staging_path)
+    with pytest.raises(GenerationRejectedError) as second_error:
+        resample_synthetic_dataset(
+            load_config(CONFIG_PATH), approved_face, staging1.path, staging1.staging_root_hash,
+            ["s11-seed119"], tmp_path / "provenance-published-2",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    staging2 = load_aborted_staging(second_error.value.staging_path)
+    resample_synthetic_dataset(
+        load_config(CONFIG_PATH), approved_face, staging2.path, staging2.staging_root_hash,
+        ["s23-seed141"], tmp_path / "provenance-published-3",
+        now_utc=FIXED_NOW, generator_version="generator.v1",
+    )
+    return tmp_path / "provenance-published-3"
+
+
+def _rewrite_manifest_root(root: Path, mutator) -> None:
+    """Apply a manifest tamper while preserving its outer FREEZE hash chain."""
+
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    mutator(manifest)
+    manifest_path.write_bytes(canonical_bytes(manifest))
+    freeze_path = root / "FREEZE.json"
+    freeze = json.loads(freeze_path.read_bytes())
+    manifest_hash = canonical_file_hash(manifest_path)
+    freeze["manifest_hash"] = manifest_hash
+    freeze["dataset_root_hash"] = dataset_root_hash(manifest_hash, freeze["checksums_hash"])
+    freeze_path.write_bytes(canonical_bytes(freeze))
+
+
+def test_final_freeze_rejects_tampered_resample_provenance(tmp_path, approved_face, monkeypatch):
+    final_root = _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch)
+    mutations = {
+        "bytes": lambda root: (root / "resample_provenance.json").write_bytes(
+            (root / "resample_provenance.json").read_bytes() + b" "
+        ),
+        "path": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"path": "wrong.json"}),
+        ),
+        "source_dataset_id": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"source_dataset_id": "tampered"}),
+        ),
+        "source_staging_root_hash": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"source_staging_root_hash": "0" * 64}),
+        ),
+        "resampled_instance_ids": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"resampled_instance_ids": ["s99-seed999"]}),
+        ),
+        "generation_attempts": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"generation_attempts": {"s23-seed141": 2}}),
+        ),
+        "accepted_record_hashes": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"accepted_record_hashes": {"s23-seed141": "0" * 64}}),
+        ),
+        "accepted_instance_hashes": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"accepted_instance_hashes": {"s23-seed141": "0" * 64}}),
+        ),
+        "prior_accepted_instance_hashes": lambda root: _rewrite_manifest_root(
+            root,
+            lambda manifest: manifest["resample_provenance"].update({"prior_accepted_instance_hashes": {"s00-seed101": "0" * 64}}),
+        ),
+    }
+    for label, mutate in mutations.items():
+        tampered_root = tmp_path / f"tampered-{label}"
+        shutil.copytree(final_root, tampered_root)
+        mutate(tampered_root)
+        with pytest.raises(DatasetContractError, match="provenance"):
+            load_freeze_receipt(tampered_root)
 
 
 def test_probe_diagnoses_both_without_publishing(approved_face):
