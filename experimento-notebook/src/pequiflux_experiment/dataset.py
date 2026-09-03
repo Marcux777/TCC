@@ -1659,7 +1659,11 @@ def _validate_disruption_semantics(
             if duration != 0 or return_time != 0:
                 raise DatasetContractError(f"disruptions row {ordinal} non-recovery return_time must be zero")
         elif event_type == "resource_failure":
-            if cause not in {"critical_failure", "base_failure"} or duration <= 0 or return_time < event_time + duration:
+            if (
+                cause not in {"critical_failure", "base_failure"}
+                or duration <= 0
+                or not math.isclose(return_time, event_time + duration, rel_tol=0.0, abs_tol=1e-9)
+            ):
                 raise DatasetContractError(f"disruptions row {ordinal} failure semantics are invalid")
             if not protocol.failure_start_window[0] <= event_time <= protocol.failure_start_window[1]:
                 raise DatasetContractError(f"disruptions row {ordinal} failure time is outside the protocol")
@@ -1692,6 +1696,25 @@ def _validate_disruption_semantics(
     expected_priority_count = math.ceil(protocol.priority_shift_fraction * truck_count)
     if len(priority_rows) != (expected_priority_count if regime == "priority_shift" else 0):
         raise DatasetContractError("priority_change event count is incompatible with scenario regime")
+    if priority_rows:
+        shift_times = {float(row["time"]) for row in priority_rows}
+        if len(shift_times) != 1:
+            raise DatasetContractError("priority_change events must share one canonical shift time")
+        priority_ids = [str(row["truck_id"]) for row in priority_rows]
+        if len(priority_ids) != len(set(priority_ids)):
+            raise DatasetContractError("priority_change events must select distinct trucks")
+        shift_time = next(iter(shift_times))
+        expected_priority_ids = [
+            truck.truck_id
+            for truck in sorted(truck_lookup.values(), key=lambda truck: (truck.arrival_minute, truck.truck_id))
+            if truck.arrival_minute >= shift_time
+        ][:expected_priority_count]
+        selected_in_arrival_order = sorted(
+            priority_ids,
+            key=lambda truck_id: (truck_lookup[truck_id].arrival_minute, truck_id),
+        )
+        if selected_in_arrival_order != expected_priority_ids:
+            raise DatasetContractError("priority_change trucks are not the canonical selected arrival/id order")
     blocked_ids = {truck.truck_id for truck in truck_lookup.values() if truck.document_status == "BLOCKED"}
     observed_document_ids = [str(row["truck_id"]) for row in document_rows]
     if len(observed_document_ids) != len(set(observed_document_ids)) or set(observed_document_ids) != blocked_ids:
@@ -1700,9 +1723,20 @@ def _validate_disruption_semantics(
         raise DatasetContractError("rain events must form start/end pairs")
     starts = sorted(rain_starts, key=lambda row: (float(row["time"]), int(row["sequence"])))
     ends = sorted(rain_ends, key=lambda row: (float(row["time"]), int(row["sequence"])))
+    previous_end: float | None = None
     for ordinal, (start, end) in enumerate(zip(starts, ends)):
-        if float(end["time"]) != float(start["return_time"]) or float(end["time"]) <= float(start["time"]):
+        start_time = float(start["time"])
+        end_time = float(end["time"])
+        if (
+            end.get("resource_id") != start.get("resource_id")
+            or not math.isclose(end_time, float(start["return_time"]), rel_tol=0.0, abs_tol=1e-9)
+            or not math.isclose(float(start["duration_min"]), end_time - start_time, rel_tol=0.0, abs_tol=1e-9)
+            or end_time <= start_time
+            or previous_end is not None
+            and start_time <= previous_end
+        ):
             raise DatasetContractError(f"rain event pair {ordinal} is not coherent")
+        previous_end = end_time
 
 
 def _validate_full_payloads(

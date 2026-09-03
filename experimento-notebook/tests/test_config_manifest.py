@@ -673,3 +673,159 @@ def test_disruption_return_time_must_remain_within_horizon():
             horizon_minutes=config.horizon_minutes,
             config=config,
         )
+
+
+def _priority_fixture_rows(*, wrong_selection: bool = False, split_time: bool = False):
+    config = load_config(CONFIG_PATH)
+    scenario = {
+        "scenario_id": "n60-m1-b1-priority_shift",
+        "N": 60,
+        "hopper_count": 1,
+        "scale_count": 1,
+        "regime": "priority_shift",
+    }
+    trucks = tuple(
+        FrozenTruck(
+            instance_id="s00-seed101",
+            scenario_index=0,
+            scenario_id=scenario["scenario_id"],
+            seed=101,
+            truck_id=f"T-{index:03d}",
+            arrival_minute=250.0 + index,
+            cargo_type="soy",
+            priority=1,
+            document_status="CLEAR",
+            eligible_resources=("gate-1", "hopper-1"),
+        )
+        for index in range(1, 8)
+    )
+    selected = list(trucks)
+    if wrong_selection:
+        selected[5] = trucks[6]
+    rows = []
+    for sequence, truck in enumerate(selected, start=1):
+        rows.append(
+            {
+                "instance_id": "s00-seed101",
+                "scenario_index": 0,
+                "scenario_id": scenario["scenario_id"],
+                "seed": 101,
+                "time": 240.0 + (1.0 if split_time and sequence == 1 else 0.0),
+                "event_rank": 21,
+                "resource_id": "",
+                "truck_id": truck.truck_id,
+                "sequence": sequence,
+                "event_type": "priority_change",
+                "cause": "priority_shift",
+                "operation": "",
+                "duration_min": 0.0,
+                "return_time": 0.0,
+                "payload_hash": "0" * 64,
+            }
+        )
+    return config, scenario, trucks, tuple(rows)
+
+
+@pytest.mark.parametrize("kwargs", [{"split_time": True}, {"wrong_selection": True}])
+def test_priority_changes_require_one_shift_time_and_canonical_truck_order(kwargs):
+    from pequiflux_experiment.dataset import _validate_disruption_semantics
+
+    config, scenario, trucks, rows = _priority_fixture_rows(**kwargs)
+    with pytest.raises(DatasetContractError, match="priority"):
+        _validate_disruption_semantics(
+            rows,
+            scenario=scenario,
+            trucks=trucks,
+            event_ranks=config.event_ranks,
+            horizon_minutes=config.horizon_minutes,
+            config=config,
+        )
+
+
+def test_failure_return_time_must_equal_time_plus_duration():
+    from pequiflux_experiment.dataset import _validate_disruption_semantics
+
+    config = load_config(CONFIG_PATH)
+    row = {
+        "instance_id": "s00-seed101",
+        "scenario_index": 0,
+        "scenario_id": "n60-m1-b1-critical_failure",
+        "seed": 101,
+        "sequence": 1,
+        "event_type": "resource_failure",
+        "event_rank": 12,
+        "resource_id": "hopper-1",
+        "truck_id": "",
+        "cause": "critical_failure",
+        "operation": "",
+        "time": 240.0,
+        "duration_min": 20.0,
+        "return_time": 261.0,
+        "payload_hash": "0" * 64,
+    }
+    with pytest.raises(DatasetContractError, match="failure"):
+        _validate_disruption_semantics(
+            (row,),
+            scenario={
+                "scenario_id": "n60-m1-b1-critical_failure",
+                "N": 60,
+                "hopper_count": 1,
+                "scale_count": 1,
+                "regime": "critical_failure",
+            },
+            trucks=(),
+            event_ranks=config.event_ranks,
+            horizon_minutes=config.horizon_minutes,
+            config=config,
+        )
+
+
+def test_rain_pairs_must_not_overlap_or_be_adjacent():
+    from pequiflux_experiment.dataset import _validate_disruption_semantics
+
+    config = load_config(CONFIG_PATH)
+    scenario = {
+        "scenario_id": "n60-m2-b1-nominal",
+        "N": 60,
+        "hopper_count": 2,
+        "scale_count": 1,
+        "regime": "nominal",
+    }
+    rows = []
+    for sequence, (event_type, time, duration, return_time, rank) in enumerate(
+        (
+            ("rain_start", 0.0, 30.0, 30.0, 13),
+            ("rain_end", 30.0, 0.0, 0.0, 11),
+            ("rain_start", 30.0, 30.0, 60.0, 13),
+            ("rain_end", 60.0, 0.0, 0.0, 11),
+        ),
+        start=1,
+    ):
+        rows.append(
+            {
+                "instance_id": "s00-seed101",
+                "scenario_index": 0,
+                "scenario_id": scenario["scenario_id"],
+                "seed": 101,
+                "time": time,
+                "event_rank": rank,
+                "resource_id": "hopper-1",
+                "truck_id": "",
+                "sequence": sequence,
+                "event_type": event_type,
+                "cause": "rain",
+                "operation": "",
+                "duration_min": duration,
+                "return_time": return_time,
+                "payload_hash": "0" * 64,
+            }
+        )
+    with pytest.raises(DatasetContractError, match="rain"):
+        _validate_disruption_semantics(
+            tuple(rows),
+            scenario=scenario,
+            trucks=(),
+            event_ranks=config.event_ranks,
+            horizon_minutes=config.horizon_minutes,
+            config=config,
+        )
