@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import copy
+import hashlib
+import json
 import math
+from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 
@@ -387,3 +391,444 @@ class YardSnapshot:
             decisions=value.get("decisions", []),
             scenario_id=value.get("scenario_id"),
         )
+
+
+# ---------------------------------------------------------------------------
+# Frozen dataset-domain values
+# ---------------------------------------------------------------------------
+
+
+def _freeze_dataset_value(value: Any) -> Any:
+    """Detach a JSON-compatible value into immutable containers."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze_dataset_value(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_dataset_value(item) for item in value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("dataset values must be finite")
+        return value
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    raise TypeError(f"dataset value is not JSON-compatible: {type(value).__name__}")
+
+
+def _thaw_dataset_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _thaw_dataset_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_dataset_value(item) for item in value]
+    return value
+
+
+def _dataset_canonical_bytes(value: Any) -> bytes:
+    return (
+        json.dumps(
+            _thaw_dataset_value(value),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _dataset_digest(value: Any) -> str:
+    return hashlib.sha256(_dataset_canonical_bytes(value)).hexdigest()
+
+
+_FROZEN_DOCUMENT_STATUSES = frozenset({"CLEAR", "BLOCKED"})
+_FROZEN_STAGES = frozenset({"gate", "scale_in", "unload", "scale_out", "done"})
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenTruck:
+    """Immutable truck record persisted in ``trucks.parquet``."""
+
+    instance_id: str
+    scenario_index: int
+    scenario_id: str
+    seed: int
+    truck_id: str
+    arrival_minute: float
+    cargo_type: str
+    priority: int
+    document_status: str
+    stage: str = "gate"
+    eligible_resources: tuple[str, ...] = ()
+    truck_record_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("instance_id", "scenario_id", "truck_id", "cargo_type"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        for name in ("scenario_index", "seed", "priority"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if not isinstance(self.arrival_minute, (int, float)) or isinstance(self.arrival_minute, bool):
+            raise TypeError("arrival_minute must be numeric")
+        arrival = float(self.arrival_minute)
+        if not math.isfinite(arrival) or arrival < 0:
+            raise ValueError("arrival_minute must be finite and non-negative")
+        object.__setattr__(self, "arrival_minute", arrival)
+        if self.document_status not in _FROZEN_DOCUMENT_STATUSES:
+            raise ValueError("document_status must be CLEAR or BLOCKED")
+        if self.stage not in _FROZEN_STAGES:
+            raise ValueError(f"stage must be one of {sorted(_FROZEN_STAGES)!r}")
+        resources = tuple(self.eligible_resources)
+        if any(not isinstance(item, str) or not item.strip() for item in resources):
+            raise ValueError("eligible_resources must contain non-empty strings")
+        if len(set(resources)) != len(resources):
+            raise ValueError("eligible_resources must not contain duplicates")
+        object.__setattr__(self, "eligible_resources", resources)
+        expected = _dataset_digest(self._record_without_hash())
+        if self.truck_record_hash is None:
+            object.__setattr__(self, "truck_record_hash", expected)
+        elif self.truck_record_hash != expected:
+            raise ValueError("truck_record_hash does not match canonical truck record")
+
+    @property
+    def arrival_time(self) -> float:
+        return self.arrival_minute
+
+    @property
+    def document_ok(self) -> bool:
+        return self.document_status == "CLEAR"
+
+    def _record_without_hash(self) -> dict[str, Any]:
+        return {
+            "instance_id": self.instance_id,
+            "scenario_index": self.scenario_index,
+            "scenario_id": self.scenario_id,
+            "seed": self.seed,
+            "truck_id": self.truck_id,
+            "arrival_minute": self.arrival_minute,
+            "cargo_type": self.cargo_type,
+            "priority": self.priority,
+            "document_status": self.document_status,
+            "stage": self.stage,
+            "eligible_resources": list(self.eligible_resources),
+        }
+
+    @property
+    def canonical_record_hash(self) -> str:
+        return self.truck_record_hash or _dataset_digest(self._record_without_hash())
+
+    def to_dict(self) -> dict[str, Any]:
+        record = self._record_without_hash()
+        record["truck_record_hash"] = self.canonical_record_hash
+        return record
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "FrozenTruck":
+        if not isinstance(value, Mapping):
+            raise TypeError("frozen truck must be a mapping")
+        required = {
+            "instance_id", "scenario_index", "scenario_id", "seed", "truck_id",
+            "arrival_minute", "cargo_type", "priority", "document_status",
+        }
+        missing = sorted(required - set(value))
+        if missing:
+            raise ValueError(f"frozen truck missing required fields: {', '.join(missing)}")
+        return cls(
+            instance_id=value["instance_id"],
+            scenario_index=value["scenario_index"],
+            scenario_id=value["scenario_id"],
+            seed=value["seed"],
+            truck_id=value["truck_id"],
+            arrival_minute=value["arrival_minute"],
+            cargo_type=value["cargo_type"],
+            priority=value["priority"],
+            document_status=value["document_status"],
+            stage=value.get("stage", "gate"),
+            eligible_resources=value.get("eligible_resources", ()),
+            truck_record_hash=value.get("truck_record_hash"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenResource:
+    """Immutable resource record used by a frozen instance."""
+
+    resource_id: str
+    kind: str
+    allowed_cargo_types: tuple[str, ...]
+    status: str = "available"
+
+    def __post_init__(self) -> None:
+        for name in ("resource_id", "kind", "status"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if self.status not in VALID_RESOURCE_STATUSES:
+            raise ValueError(f"status must be one of {sorted(VALID_RESOURCE_STATUSES)!r}")
+        cargo = tuple(self.allowed_cargo_types)
+        if not cargo or any(not isinstance(item, str) or not item.strip() for item in cargo):
+            raise ValueError("allowed_cargo_types must contain non-empty strings")
+        if len(set(cargo)) != len(cargo):
+            raise ValueError("allowed_cargo_types must not contain duplicates")
+        object.__setattr__(self, "allowed_cargo_types", cargo)
+
+    @property
+    def id(self) -> str:
+        return self.resource_id
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "resource_id": self.resource_id,
+            "kind": self.kind,
+            "allowed_cargo_types": list(self.allowed_cargo_types),
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenServiceTime:
+    """One pre-generated service duration and its CRN provenance."""
+
+    instance_id: str
+    scenario_index: int
+    seed: int
+    truck_id: str
+    operation: str
+    duration_min: float
+    distribution: tuple[float, float, float]
+    draw_key: str
+    crn_version: str
+    service_record_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.operation, str) or not self.operation.strip():
+            raise ValueError("operation must be a non-empty string")
+        if not isinstance(self.duration_min, (int, float)) or isinstance(self.duration_min, bool):
+            raise TypeError("duration_min must be numeric")
+        duration = float(self.duration_min)
+        if not math.isfinite(duration) or duration < 0:
+            raise ValueError("duration_min must be finite and non-negative")
+        object.__setattr__(self, "duration_min", duration)
+        distribution = tuple(float(item) for item in self.distribution)
+        if len(distribution) != 3 or any(not math.isfinite(item) or item < 0 for item in distribution):
+            raise ValueError("distribution must contain three finite non-negative values")
+        if not distribution[0] <= distribution[1] <= distribution[2]:
+            raise ValueError("distribution must be ordered")
+        object.__setattr__(self, "distribution", distribution)
+        for name in ("draw_key", "crn_version"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or len(value) < 1:
+                raise ValueError(f"{name} must be a non-empty string")
+        expected = _dataset_digest(self._record_without_hash())
+        if self.service_record_hash is None:
+            object.__setattr__(self, "service_record_hash", expected)
+        elif self.service_record_hash != expected:
+            raise ValueError("service_record_hash does not match canonical service record")
+
+    def _record_without_hash(self) -> dict[str, Any]:
+        return {
+            "instance_id": self.instance_id,
+            "scenario_index": self.scenario_index,
+            "seed": self.seed,
+            "truck_id": self.truck_id,
+            "operation": self.operation,
+            "duration_min": self.duration_min,
+            "distribution": list(self.distribution),
+            "draw_key": self.draw_key,
+            "crn_version": self.crn_version,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        result = self._record_without_hash()
+        result["service_record_hash"] = self.service_record_hash
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenInstance:
+    """Immutable, fully materialized stochastic input for one day."""
+
+    instance_id: str
+    scenario_index: int
+    scenario_id: str
+    seed: int
+    generation_attempt: int
+    trucks: tuple[FrozenTruck, ...]
+    resources: tuple[FrozenResource, ...]
+    service_times: tuple[FrozenServiceTime, ...]
+    disruptions: tuple[Mapping[str, Any], ...] = ()
+    canonical_record_hash: str | None = None
+    instance_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("instance_id", "scenario_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        for name in ("scenario_index", "seed", "generation_attempt"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        trucks = tuple(self.trucks)
+        resources = tuple(self.resources)
+        service_times = tuple(self.service_times)
+        if any(not isinstance(item, FrozenTruck) for item in trucks):
+            raise TypeError("trucks must contain FrozenTruck values")
+        if any(not isinstance(item, FrozenResource) for item in resources):
+            raise TypeError("resources must contain FrozenResource values")
+        if any(not isinstance(item, FrozenServiceTime) for item in service_times):
+            raise TypeError("service_times must contain FrozenServiceTime values")
+        if any(item.instance_id != self.instance_id for item in trucks + service_times):
+            raise ValueError("instance records must use the same instance_id")
+        object.__setattr__(self, "trucks", trucks)
+        object.__setattr__(self, "resources", resources)
+        object.__setattr__(self, "service_times", service_times)
+        disruptions = tuple(_freeze_dataset_value(item) for item in self.disruptions)
+        if any(not isinstance(item, Mapping) for item in disruptions):
+            raise TypeError("disruptions must contain mappings")
+        object.__setattr__(self, "disruptions", disruptions)
+        expected = _dataset_digest(self._record_without_hash())
+        if self.canonical_record_hash is None:
+            object.__setattr__(self, "canonical_record_hash", expected)
+        elif self.canonical_record_hash != expected:
+            raise ValueError("canonical_record_hash does not match instance records")
+        if self.instance_hash is None:
+            object.__setattr__(self, "instance_hash", expected)
+        elif self.instance_hash != expected:
+            raise ValueError("instance_hash does not match canonical instance records")
+
+    @property
+    def scenario(self) -> Any:
+        """Expose a lightweight scenario-like object for downstream consumers."""
+
+        return self.scenario_id
+
+    @property
+    def truck_count(self) -> int:
+        return len(self.trucks)
+
+    def _record_without_hash(self) -> dict[str, Any]:
+        return {
+            "instance_id": self.instance_id,
+            "scenario_index": self.scenario_index,
+            "scenario_id": self.scenario_id,
+            "seed": self.seed,
+            "generation_attempt": self.generation_attempt,
+            "trucks": [item.to_dict() for item in self.trucks],
+            "resources": [item.to_dict() for item in self.resources],
+            "service_times": [item.to_dict() for item in self.service_times],
+            "disruptions": [_thaw_dataset_value(item) for item in self.disruptions],
+        }
+
+    def canonical_dict(self) -> dict[str, Any]:
+        result = self._record_without_hash()
+        result["canonical_record_hash"] = self.canonical_record_hash
+        result["instance_hash"] = self.instance_hash
+        return result
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.canonical_dict()
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "FrozenInstance":
+        if not isinstance(value, Mapping):
+            raise TypeError("frozen instance must be a mapping")
+        required = {
+            "instance_id", "scenario_index", "scenario_id", "seed", "generation_attempt",
+            "trucks", "resources", "service_times", "disruptions",
+        }
+        missing = sorted(required - set(value))
+        if missing:
+            raise ValueError(f"frozen instance missing required fields: {', '.join(missing)}")
+        return cls(
+            instance_id=value["instance_id"],
+            scenario_index=value["scenario_index"],
+            scenario_id=value["scenario_id"],
+            seed=value["seed"],
+            generation_attempt=value["generation_attempt"],
+            trucks=tuple(FrozenTruck.from_dict(item) for item in value["trucks"]),
+            resources=tuple(
+                FrozenResource(
+                    resource_id=item["resource_id"],
+                    kind=item["kind"],
+                    allowed_cargo_types=item["allowed_cargo_types"],
+                    status=item.get("status", "available"),
+                )
+                for item in value["resources"]
+            ),
+            service_times=tuple(
+                FrozenServiceTime(
+                    instance_id=item["instance_id"],
+                    scenario_index=item["scenario_index"],
+                    seed=item["seed"],
+                    truck_id=item["truck_id"],
+                    operation=item["operation"],
+                    duration_min=item["duration_min"],
+                    distribution=item["distribution"],
+                    draw_key=item["draw_key"],
+                    crn_version=item["crn_version"],
+                    service_record_hash=item.get("service_record_hash"),
+                )
+                for item in value["service_times"]
+            ),
+            disruptions=tuple(value["disruptions"]),
+            canonical_record_hash=value.get("canonical_record_hash"),
+            instance_hash=value.get("instance_hash"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenDataset:
+    """Immutable view of a validated, persisted frozen dataset."""
+
+    path: Path
+    manifest: Mapping[str, Any]
+    instances: tuple[FrozenInstance, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.path, Path):
+            object.__setattr__(self, "path", Path(self.path))
+        object.__setattr__(self, "manifest", _freeze_dataset_value(self.manifest))
+        instances = tuple(self.instances)
+        if any(not isinstance(item, FrozenInstance) for item in instances):
+            raise TypeError("instances must contain FrozenInstance values")
+        ids = [item.instance_id for item in instances]
+        if len(set(ids)) != len(ids):
+            raise ValueError("dataset instance IDs must be unique")
+        object.__setattr__(self, "instances", instances)
+
+    @property
+    def dataset_id(self) -> str:
+        return str(self.manifest.get("dataset_id", self.path.name))
+
+    @property
+    def dataset_hash(self) -> str:
+        # The root hash lives in FREEZE.json rather than manifest.json: adding
+        # it to the manifest would make the manifest hash self-referential.
+        freeze_path = self.path / "FREEZE.json"
+        try:
+            freeze = json.loads(freeze_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, UnicodeError) as exc:
+            raise ValueError(f"frozen dataset FREEZE.json is unavailable: {freeze_path}") from exc
+        value = freeze.get("dataset_root_hash") if isinstance(freeze, Mapping) else None
+        if not isinstance(value, str) or len(value) != 64:
+            raise ValueError("frozen dataset FREEZE.json lacks dataset_root_hash")
+        return value
+
+    @property
+    def frozen(self) -> bool:
+        return self.manifest.get("freeze_status") == "FROZEN"
+
+    @property
+    def instance_ids(self) -> tuple[str, ...]:
+        return tuple(item.instance_id for item in self.instances)
+
+    def instance(self, instance_id: str) -> FrozenInstance:
+        for item in self.instances:
+            if item.instance_id == instance_id:
+                return item
+        raise KeyError(f"unknown frozen instance: {instance_id}")
+
+    def __len__(self) -> int:
+        return len(self.instances)

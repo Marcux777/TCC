@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from importlib import metadata as importlib_metadata
+import hashlib
 import os
 from pathlib import Path
 import platform
@@ -13,7 +14,7 @@ import subprocess
 import tomllib
 from typing import Any, Mapping
 
-from .config import ExperimentConfig, config_as_dict, config_hash
+from .config import ExperimentConfig, canonical_bytes, config_as_dict, config_hash
 
 
 _DEPENDENCY_NAME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*)")
@@ -393,3 +394,87 @@ def build_manifest(
         manifest["run_directory"] = str(run_path)
         manifest["run_id"] = run_path.name
     return manifest
+
+
+def canonical_file_hash(path: str | Path) -> str:
+    """Hash the exact bytes of a persisted artifact.
+
+    Hashing is intentionally byte based: callers must serialize JSON/JSONL or
+    Parquet deterministically before invoking this helper.  Missing paths and
+    directories are hard errors rather than implicit empty payloads.
+    """
+
+    artifact = Path(path)
+    if not artifact.is_file():
+        raise FileNotFoundError(f"artifact is not a regular file: {artifact}")
+    digest = hashlib.sha256()
+    with artifact.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_manifest(path: str | Path, manifest: Mapping[str, Any]) -> Path:
+    """Write one canonical JSON manifest with a single LF terminator."""
+
+    if not isinstance(manifest, Mapping):
+        raise TypeError("manifest must be a mapping")
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(canonical_bytes(dict(manifest)))
+    return destination
+
+
+def canonical_checksum_bytes(entries: Mapping[str, str] | list[tuple[str, str]] | tuple[tuple[str, str], ...]) -> bytes:
+    """Serialize an ordered payload checksum list exactly once.
+
+    ``entries`` must contain the five scientific payloads in canonical order;
+    the function rejects duplicates, unknown names and order changes so that a
+    checksum file cannot silently grow a self-referential or auxiliary entry.
+    """
+
+    expected = (
+        "scenario_index.parquet",
+        "trucks.parquet",
+        "service_times.parquet",
+        "disruptions.jsonl",
+        "rejection_log.jsonl",
+    )
+    if isinstance(entries, Mapping):
+        rows = list(entries.items())
+    else:
+        rows = list(entries)
+    names = tuple(name for name, _ in rows)
+    if names != expected:
+        raise ValueError(f"checksum payload order must be exactly {expected!r}")
+    lines: list[str] = []
+    for name, digest in rows:
+        if not isinstance(name, str) or not isinstance(digest, str):
+            raise TypeError("checksum entries must be string pairs")
+        if len(digest) != 64:
+            raise ValueError(f"checksum for {name} must be a SHA-256 digest")
+        try:
+            int(digest, 16)
+        except ValueError as exc:
+            raise ValueError(f"checksum for {name} must be hexadecimal") from exc
+        lines.append(f"{name}\t{digest.lower()}")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def write_checksums(path: str | Path, entries: Mapping[str, str] | list[tuple[str, str]] | tuple[tuple[str, str], ...]) -> Path:
+    """Persist the canonical five-payload checksum list."""
+
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(canonical_checksum_bytes(entries))
+    return destination
+
+
+def dataset_root_hash(manifest_hash: str, checksums_hash: str) -> str:
+    """Compute the cycle-free root digest from manifest/checksum hashes."""
+
+    if not isinstance(manifest_hash, str) or len(manifest_hash) != 64:
+        raise ValueError("manifest_hash must be a SHA-256 digest")
+    if not isinstance(checksums_hash, str) or len(checksums_hash) != 64:
+        raise ValueError("checksums_hash must be a SHA-256 digest")
+    return hashlib.sha256(f"{manifest_hash}:{checksums_hash}".encode("ascii")).hexdigest()

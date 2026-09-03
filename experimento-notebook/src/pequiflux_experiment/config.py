@@ -642,6 +642,88 @@ def canonical_bytes(value: Any) -> bytes:
     )
 
 
+def crn_key(
+    crn_version: str,
+    scenario_index: int,
+    seed: int,
+    generation_attempt: int,
+    entity_id: str,
+    operation_or_event: str,
+) -> tuple[str, int, int, int, str, str]:
+    """Validate and return the complete policy-independent CRN key.
+
+    The key deliberately has no policy component.  Every stochastic draw is
+    therefore derived from the same tuple for all policies consuming one
+    frozen instance.  ``generation_attempt`` is part of the identity so an
+    explicit resample can change only the rejected instance's substreams.
+    """
+
+    if not isinstance(crn_version, str) or not crn_version.strip():
+        raise ValueError("crn_version must be a non-empty string")
+    for name, value in (
+        ("scenario_index", scenario_index),
+        ("seed", seed),
+        ("generation_attempt", generation_attempt),
+    ):
+        if not _is_integer(value) or value < 0:
+            raise ValueError(f"{name} must be a non-negative integer")
+    for name, value in (("entity_id", entity_id), ("operation_or_event", operation_or_event)):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{name} must be a non-empty string")
+    return (
+        crn_version,
+        int(scenario_index),
+        int(seed),
+        int(generation_attempt),
+        entity_id,
+        operation_or_event,
+    )
+
+
+def crn_digest(
+    crn_version: str,
+    scenario_index: int,
+    seed: int,
+    generation_attempt: int,
+    entity_id: str,
+    operation_or_event: str,
+) -> str:
+    """Return the SHA-256 digest for one canonical CRN substream key."""
+
+    key = crn_key(
+        crn_version,
+        scenario_index,
+        seed,
+        generation_attempt,
+        entity_id,
+        operation_or_event,
+    )
+    return hashlib.sha256(canonical_bytes(list(key))).hexdigest()
+
+
+def crn_seed(
+    crn_version: str,
+    scenario_index: int,
+    seed: int,
+    generation_attempt: int,
+    entity_id: str,
+    operation_or_event: str,
+) -> int:
+    """Map a CRN key to a stable non-negative integer seed."""
+
+    return int(
+        crn_digest(
+            crn_version,
+            scenario_index,
+            seed,
+            generation_attempt,
+            entity_id,
+            operation_or_event,
+        )[:16],
+        16,
+    )
+
+
 def config_hash(config: ExperimentConfig) -> str:
     """Return the SHA-256 digest of the canonical UTF-8 configuration JSON."""
 

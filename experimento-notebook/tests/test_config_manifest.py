@@ -2,6 +2,8 @@ from pathlib import Path
 import hashlib
 import json
 
+import pytest
+
 from pequiflux_experiment.config import (
     CapacityRequirements,
     canonical_bytes,
@@ -9,12 +11,71 @@ from pequiflux_experiment.config import (
     factorial_scenarios,
     load_config,
 )
+from pequiflux_experiment.dataset import (
+    DatasetContractError,
+    generate_synthetic_dataset,
+    plan_synthetic_dataset,
+    validate_frozen_dataset,
+)
 import pequiflux_experiment.face_validation as face_validation
 from pequiflux_experiment.face_validation import validate_face_validation_receipt
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "confirmatory.json"
+
+
+@pytest.fixture
+def approved_face():
+    return type("ApprovedFace", (), {"status": "APPROVED"})()
+
+
+def test_synthetic_plan_contract():
+    plan = plan_synthetic_dataset(load_config(CONFIG_PATH))
+
+    assert plan.scenario_indices == tuple(range(72))
+    assert plan.instance_count == 3_600
+    assert plan.policy_day_count == 18_000
+    assert plan.instance_ids[0] == "s00-seed101"
+    assert plan.instance_ids[-1] == "s71-seed150"
+
+
+def test_generate_freezes_complete_dataset(tmp_path, approved_face, monkeypatch):
+    plan = plan_synthetic_dataset(load_config(CONFIG_PATH))
+
+    class HeaderMaterializerSpy:
+        count = 0
+
+        def __call__(self, header, writer):
+            self.count += 1
+            writer.write_header(
+                {"instance_id": header.instance_id, "generation_attempt": 0}
+            )
+
+    writer = HeaderMaterializerSpy()
+    monkeypatch.setattr(
+        "pequiflux_experiment.dataset._materialize_production_header", writer
+    )
+    generate_synthetic_dataset(
+        load_config(CONFIG_PATH),
+        approved_face,
+        tmp_path,
+        now_utc="2026-09-03T12:00:00+00:00",
+        generator_version="generator.v1",
+    )
+
+    assert writer.count == 3_600
+    validate_frozen_dataset(tmp_path, expected_plan=plan, strict_production=True)
+
+
+def test_production_refuses_incomplete_freeze(tmp_path, approved_face):
+    del approved_face
+    with pytest.raises(DatasetContractError, match="3,600"):
+        validate_frozen_dataset(
+            tmp_path,
+            expected_plan=plan_synthetic_dataset(load_config(CONFIG_PATH)),
+            strict_production=True,
+        )
 
 
 def test_config_contract_and_hash():
