@@ -58,7 +58,7 @@ FrozenInstance ──> run_day(instance, policy) ──> complete event JSONL + 
 | `face_validation.py` | `validate_face_validation_receipt(path, config, pdf_path) -> FaceValidationReport`; `materialize_face_validation_template(path)` | Real PDF/rubric hashes, approved gate or `PENDING` with cause. |
 | `domain.py`/`events.py` | `FrozenInstance`, `Truck`, `Resource`, `Event`, `FrozenValidationDataset`; `write_jsonl`, `read_jsonl` | Serializable immutable payloads and deterministic event order. |
 | `manifest.py` | `canonical_bytes`, `canonical_file_hash`, `create_run_directory`, `build_manifest`, `write_manifest` | Canonical JSON/checksum bytes, collision refusal and dirty-root/environment receipts; never mutates Git. |
-| `dataset.py` | `generate_synthetic_dataset(config, face_report, dataset_root, ...)`, `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination, ...)`, `load_aborted_staging`, `plan_synthetic_dataset`, `validate_generation_headers`, `canonical_payload_schemas`, `load_frozen_dataset`, `validate_frozen_dataset`, `freeze_dataset`, `select_pilot_configurations` | Complete 3,600-instance freeze, pure non-publishing header receipt, exact payload schemas, explicit one-attempt resample and canonical hash chain; face report is always explicit. |
+| `dataset.py` | `generate_synthetic_dataset(config, face_report, dataset_root, ...)`, `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination, ...)`, `load_aborted_staging`, `load_freeze_receipt`, `read_instance_header`, `plan_synthetic_dataset`, `validate_generation_headers`, `canonical_payload_schemas`, `load_frozen_dataset`, `validate_frozen_dataset`, `freeze_dataset`, `select_pilot_configurations` | Complete 3,600-instance freeze, lightweight persisted freeze/header receipts (no `FrozenInstance` construction), pure non-publishing header receipt, exact payload schemas, explicit one-attempt resample and canonical hash chain; face report is always explicit. |
 | `validation.py` | `build_validation_dataset(config, validation_config, run_root, face_report)`, `run_validation_checks`, `run_a1_adversarial_suite(fixtures_path)` | Persisted indices `[20,12,24]`, seed `101`, five policies, 15 policy-days and eight A1 contexts from disk. |
 | `dispatch.py`/`policies.py` | `DispatchContext`, `Candidate`, `make_policy`, `filter_admissible`, `select_candidate` | Shared hard constraints and five policy-only ranking rules. |
 | `emulator.py` | `run_day(instance: FrozenInstance, policy: DispatchPolicy | str) -> DayResult` | Terminant DES with no sampling, no lazy defaults and complete event/hash output. |
@@ -82,7 +82,7 @@ FrozenInstance ──> run_day(instance, policy) ──> complete event JSONL + 
 | Pure 72/3,600/18,000 generation plan/header receipt, exact payload schemas and strict loader rejection of test artifacts | `test_config_manifest.py::test_synthetic_plan_contract`, `::test_generation_headers_receipt_is_non_publishing`, `::test_canonical_payload_schemas_are_exact`, and `::test_strict_loader_rejects_header_only_artifact` | 2 |
 | Validation package persists three selected instances for approved and pending face reports | `test_dispatch_emulator.py::test_validation_dataset_persisted_and_non_confirmatory` | 5 |
 | Validation action ignores confirmatory face/capacity gates while pilot/confirmatory enforce them before namespace | `test_experiment_audit.py::test_validation_runner_always_persists_with_pending_face` plus `::test_face_or_capacity_block_makes_zero_worker_calls` | 6 |
-| Explicit resample preserves canonical accepted records, increments attempt once and aborts on new rejection | `test_config_manifest.py::test_explicit_resample_provenance_and_abort` | 3 |
+| Explicit fail-fast resample preserves canonical accepted records, increments attempt once per explicit action and aborts on the next natural rejection | `test_config_manifest.py::test_fail_fast_persisted_resample_sequence` | 3 |
 | `run_day` requires a complete frozen instance and has no hidden generation | `test_dispatch_emulator.py::test_run_day_requires_frozen_instance` | 4 |
 | CRN inputs are identical across five policies | `test_dispatch_emulator.py::test_crn_is_policy_independent` | 4 |
 | Eight A1 contexts fail closed and are consumed from disk | `test_dispatch_emulator.py::test_a1_adversarial_suite_fail_closed` | 5 |
@@ -114,6 +114,7 @@ FrozenInstance ──> run_day(instance, policy) ──> complete event JSONL + 
 - [ ] **Step 1: Write the failing test (RED).**
 
 ```python
+from datetime import datetime, timezone
 from pathlib import Path
 import pytest
 
@@ -288,7 +289,7 @@ rtk git commit -m "feat(experimento): generate and freeze canonical dataset"
 
 **Interfaces:**
 - Consumes: an `AbortedStaging` path, explicit approved `FaceValidationReport`, the declared `source_staging_root_hash`, and the exact rejected `instance_id` list.
-- Produces: `generate_synthetic_dataset(config, face_report, dataset_root, *, now_utc, generator_version)`; `load_aborted_staging(path) -> AbortedStaging`; `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination_root, *, now_utc, generator_version)`; `resample_provenance.json`; `generation_attempt` in every derived CRN key. The private `_validate_candidate(candidate) -> bool` seam is monkeypatched only by deterministic tests; neither public API accepts an injector or fallback.
+- Produces: `validate_candidate_semantics(config, candidate) -> CandidateValidation` (the canonical production validator used before materialization); pure `probe_generation_attempt(config, face_report, candidate_headers, *, generation_attempt=0) -> GenerationProbeReceipt` for a lightweight, nonpublishing diagnostic that can report both known shortages but is never an `AbortedStaging`, authorization or `FREEZE` (its `status`, `publishing`, `aborted_staging`, `authorization` and rejection-row fields make that boundary explicit); pure `plan_explicit_resample(aborted_staging, exact_rejected_ids, config) -> ResamplePlan`; `generate_synthetic_dataset(config, face_report, dataset_root, *, now_utc, generator_version)`; `load_aborted_staging(path) -> AbortedStaging` exposing `staging_json`, `manifest`, `rejection_rows`, `accepted_instance_ids`, `rejected_instance_ids`, `remaining_instance_ids`, `chain_valid` and `recomputed_staging_root_hash`; `load_freeze_receipt(path) -> FreezeReceipt` reading only canonical `FREEZE.json`/manifest/header-index receipts; `read_instance_header(path, instance_id) -> InstanceHeader` reading only `scenario_index` and the persisted instance/hash index from either STAGING or frozen roots, never constructing `FrozenInstance`, trucks or service rows; `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination_root, *, now_utc, generator_version)`; `resample_provenance.json`; `generation_attempt` in every derived CRN key. `GenerationRejectedError` carries the retained `staging_path`; `DatasetPlan.next_ordinal_after(instance_id)` gives the exact post-rejection ordinal; the private `_validate_candidate(candidate) -> bool` seam delegates to `validate_candidate_semantics` and is monkeypatched only for the new-rejection regression. `_install_tiny_generation_fixture(monkeypatch, fixture_path)` is a private file/materialization seam used only by the persisted integration test: it may stub heavy candidate payload materialization only, while the public generator/resampler execute the real artifact writes, canonical bytes/hashes, manifest/checksum chain, atomic rename and STAGING/FREEZE state transitions; neither public API accepts an injector or fallback.
 
 - [ ] **Step 1: Write the failing test (RED).**
 
@@ -301,86 +302,193 @@ import pytest
 from pequiflux_experiment.config import load_config
 from pequiflux_experiment.dataset import (
     GenerationRejectedError,
+    _install_tiny_generation_fixture,
     generate_synthetic_dataset,
     load_aborted_staging,
+    load_freeze_receipt,
+    plan_synthetic_dataset,
+    probe_generation_attempt,
+    read_instance_header,
     resample_synthetic_dataset,
 )
-from pequiflux_experiment.manifest import canonical_file_hash
+from pequiflux_experiment.manifest import canonical_bytes, canonical_file_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = load_config(ROOT / "config" / "confirmatory.json")
 FIXED_NOW = datetime(2026, 9, 3, 12, tzinfo=timezone.utc)
+KNOWN_SHORTAGES = (
+    ("n60-m2-b1-priority_shift", 119, "s11-seed119", "PRIORITY_SHIFT_ELIGIBLE_SHORTAGE"),
+    ("n60-m3-b2-priority_shift", 141, "s23-seed141", "PRIORITY_SHIFT_ELIGIBLE_SHORTAGE"),
+)
+STAGING_KEYS = {
+    "status", "manifest_hash", "checksums_hash", "staging_root_hash",
+    "accepted_instance_ids", "rejected_instance_ids", "next_candidate_ordinal",
+}
 
-def test_explicit_resample_provenance_and_abort(tmp_path, approved_face, monkeypatch):
-    rejected = ["s20-seed101"]
-    # Test-only deterministic seam: reject this ID only on its first attempt;
-    # the explicit resample at generation_attempt=1 must be accepted.
-    monkeypatch.setattr(
-        "pequiflux_experiment.dataset._validate_candidate",
-        lambda candidate: not (
-            candidate.instance_id in rejected and candidate.generation_attempt == 0
-        ),
+def test_probe_diagnoses_both_without_publishing(approved_face):
+    plan = plan_synthetic_dataset(CONFIG)
+    probe = probe_generation_attempt(
+        CONFIG,
+        approved_face,
+        plan.ordered_instance_headers,
+        generation_attempt=0,
     )
-    with pytest.raises(GenerationRejectedError, match="EXPLICIT_RESAMPLE_REQUIRED"):
+    assert probe.status == "DIAGNOSTIC"
+    assert probe.publishing is False
+    assert probe.aborted_staging is None
+    assert probe.authorization is None
+    assert probe.rejected_instance_ids == tuple(item[2] for item in KNOWN_SHORTAGES)
+    assert [(row.instance_id, row.generation_attempt, row.reason_code, row.validator) for row in probe.rejection_rows] == [
+        (item[2], 0, item[3], "canonical_semantic_validator") for item in KNOWN_SHORTAGES
+    ]
+
+def test_fail_fast_persisted_resample_sequence(tmp_path, approved_face, monkeypatch):
+    plan = plan_synthetic_dataset(CONFIG)
+    fixture_path = tmp_path / "tiny-generation-fixture.jsonl"
+    _install_tiny_generation_fixture(monkeypatch, fixture_path)
+
+    with pytest.raises(GenerationRejectedError, match="s11-seed119") as first_error:
         generate_synthetic_dataset(
-            CONFIG, approved_face, tmp_path / "staging", now_utc=FIXED_NOW,
-            generator_version="generator.v1",
+            CONFIG, approved_face, tmp_path / "published-1",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
         )
-    staging = load_aborted_staging(tmp_path / "staging")
-    aborted = json.loads((tmp_path / "staging" / "STAGING.json").read_text())
-    assert aborted["status"] == "ABORTED"
-    assert not (tmp_path / "staging" / "FREEZE.json").exists()
-    source_root = aborted["staging_root_hash"]
-    out = resample_synthetic_dataset(
-        CONFIG, approved_face, tmp_path / "staging", source_root, rejected,
-        tmp_path / "resampled", now_utc=FIXED_NOW, generator_version="generator.v1"
+    staging1 = load_aborted_staging(first_error.value.staging_path)
+    assert not (tmp_path / "published-1").exists()
+    assert set(staging1.staging_json) == STAGING_KEYS
+    assert staging1.staging_json["status"] == "ABORTED"
+    assert not (staging1.path / "FREEZE.json").exists()
+    assert staging1.chain_valid is True
+    assert staging1.recomputed_staging_root_hash == staging1.staging_root_hash
+    assert staging1.rejected_instance_ids == ("s11-seed119",)
+    assert staging1.next_candidate_ordinal == plan.next_ordinal_after("s11-seed119")
+    assert set(staging1.accepted_instance_ids).isdisjoint(staging1.rejected_instance_ids)
+    assert set(staging1.accepted_instance_ids) | set(staging1.rejected_instance_ids) | set(staging1.remaining_instance_ids) == set(plan.instance_ids)
+    assert [(row.instance_id, row.generation_attempt, row.reason_code, row.automatic_resample_status, row.next_action) for row in staging1.rejection_rows] == [
+        ("s11-seed119", 0, "PRIORITY_SHIFT_ELIGIBLE_SHORTAGE", "PROHIBITED", "EXPLICIT_RESAMPLE_REQUIRED")
+    ]
+    accepted_hash = read_instance_header(staging1.path, "s00-seed101").canonical_record_hash
+
+    with pytest.raises(GenerationRejectedError, match="s23-seed141") as second_error:
+        resample_synthetic_dataset(
+            CONFIG, approved_face, staging1.path, staging1.staging_root_hash,
+            ["s11-seed119"], tmp_path / "published-2",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    staging2 = load_aborted_staging(second_error.value.staging_path)
+    assert not (tmp_path / "published-2").exists()
+    assert set(staging2.staging_json) == STAGING_KEYS
+    assert staging2.staging_json["status"] == "ABORTED"
+    assert not (staging2.path / "FREEZE.json").exists()
+    assert staging2.rejected_instance_ids == ("s23-seed141",)
+    assert staging2.next_candidate_ordinal == plan.next_ordinal_after("s23-seed141")
+    assert staging2.chain_valid is True
+    assert staging2.recomputed_staging_root_hash == staging2.staging_root_hash
+    assert set(staging2.accepted_instance_ids).isdisjoint(staging2.rejected_instance_ids)
+    assert set(staging2.accepted_instance_ids) | set(staging2.rejected_instance_ids) | set(staging2.remaining_instance_ids) == set(plan.instance_ids)
+    assert read_instance_header(staging2.path, "s00-seed101").canonical_record_hash == accepted_hash
+    assert read_instance_header(staging2.path, "s11-seed119").generation_attempt == 1
+    assert staging2.rejection_rows[0].generation_attempt == 0
+    assert staging2.rejection_rows[0].next_action == "EXPLICIT_RESAMPLE_REQUIRED"
+    provenance1_path = staging2.path / "resample_provenance.json"
+    provenance1_raw = provenance1_path.read_bytes()
+    provenance1 = json.loads(provenance1_raw)
+    assert provenance1_raw == canonical_bytes(provenance1)
+    assert provenance1["source_dataset_id"] == staging1.dataset_id
+    assert provenance1["source_staging_root_hash"] == staging1.staging_root_hash
+    assert provenance1["resampled_instance_ids"] == ["s11-seed119"]
+    assert provenance1["generation_attempts"] == {"s11-seed119": 1}
+    assert read_instance_header(staging2.path, "s11-seed119").canonical_record_hash == provenance1["accepted_instance_hashes"]["s11-seed119"]
+    assert staging2.manifest["resample_provenance"]["sha256"] == canonical_file_hash(provenance1_path)
+
+    resample_synthetic_dataset(
+        CONFIG, approved_face, staging2.path, staging2.staging_root_hash,
+        ["s23-seed141"], tmp_path / "published-3",
+        now_utc=FIXED_NOW, generator_version="generator.v1",
     )
-    prov = json.loads((tmp_path / "resampled" / "resample_provenance.json").read_text())
-    assert prov["source_staging_root_hash"] == source_root
-    assert prov["generation_attempts"] == {"s20-seed101": 1}
-    assert out.instance("s12-seed101").canonical_record_hash == staging.instance("s12-seed101").canonical_record_hash
-    assert out.instance("s20-seed101").generation_attempt == 1
-    assert out.manifest["resample_provenance"]["sha256"] == canonical_file_hash(tmp_path / "resampled" / "resample_provenance.json")
+    freeze_receipt = load_freeze_receipt(tmp_path / "published-3")
+    assert freeze_receipt.manifest["freeze_status"] == "FROZEN"
+    assert freeze_receipt.manifest["instance_count"] == 3_600
+    assert freeze_receipt.manifest["policy_day_count"] == 18_000
+    assert freeze_receipt.manifest["generation_plan_receipt"]["instance_count"] == 3_600
+    assert freeze_receipt.manifest["generation_plan_receipt"]["policy_day_count"] == 18_000
+    s00_header = read_instance_header(tmp_path / "published-3", "s00-seed101")
+    s11_header = read_instance_header(tmp_path / "published-3", "s11-seed119")
+    s23_header = read_instance_header(tmp_path / "published-3", "s23-seed141")
+    assert s11_header.generation_attempt == 1
+    assert s23_header.generation_attempt == 1
+    assert s00_header.canonical_record_hash == accepted_hash
+    provenance2_path = tmp_path / "published-3" / "resample_provenance.json"
+    provenance2_raw = provenance2_path.read_bytes()
+    provenance2 = json.loads(provenance2_raw)
+    assert provenance2_raw == canonical_bytes(provenance2)
+    assert provenance2["source_dataset_id"] == staging2.dataset_id
+    assert provenance2["source_staging_root_hash"] == staging2.staging_root_hash
+    assert provenance2["resampled_instance_ids"] == ["s23-seed141"]
+    assert provenance2["generation_attempts"] == {"s23-seed141": 1}
+    assert s23_header.canonical_record_hash == provenance2["accepted_instance_hashes"]["s23-seed141"]
+    assert s00_header.canonical_record_hash == provenance2["prior_accepted_instance_hashes"]["s00-seed101"]
+    assert freeze_receipt.manifest["resample_provenance"]["sha256"] == canonical_file_hash(provenance2_path)
+    assert (tmp_path / "published-3" / "FREEZE.json").exists()
+    assert not (tmp_path / "published-3" / "STAGING.json").exists()
 
 def test_new_rejection_aborts_without_retry(tmp_path, approved_face, monkeypatch):
-    rejected = ["s20-seed101"]
-    # Always reject this ID, including attempt 1, to prove fail-closed abort.
+    fixture_path = tmp_path / "tiny-generation-fixture-new-rejection.jsonl"
+    _install_tiny_generation_fixture(monkeypatch, fixture_path)
+
+    # The source action naturally persists the known attempt-0 rejection; the
+    # private validator seam is then made always-rejecting for attempt 1.
+    with pytest.raises(GenerationRejectedError, match="s11-seed119") as first_error:
+        generate_synthetic_dataset(
+            CONFIG, approved_face, tmp_path / "source-published",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
+        )
+    source = load_aborted_staging(first_error.value.staging_path)
+    assert source.rejected_instance_ids == ("s11-seed119",)
+
     monkeypatch.setattr(
         "pequiflux_experiment.dataset._validate_candidate",
-        lambda candidate: candidate.instance_id not in rejected,
+        lambda candidate: candidate.instance_id != "s11-seed119",
     )
-    with pytest.raises(GenerationRejectedError):
-        generate_synthetic_dataset(
-            CONFIG, approved_face, tmp_path / "source", now_utc=FIXED_NOW,
-            generator_version="generator.v1",
-        )
-    source = load_aborted_staging(tmp_path / "source")
-    with pytest.raises(GenerationRejectedError, match="EXPLICIT_RESAMPLE_REQUIRED"):
+    with pytest.raises(GenerationRejectedError, match="s11-seed119") as second_error:
         resample_synthetic_dataset(
-            CONFIG, approved_face, source.path, source.staging_root_hash, ["s20-seed101"],
-            tmp_path / "again", now_utc=FIXED_NOW, generator_version="generator.v1",
+            CONFIG, approved_face, source.path, source.staging_root_hash,
+            ["s11-seed119"], tmp_path / "retry-published",
+            now_utc=FIXED_NOW, generator_version="generator.v1",
         )
+    retained = load_aborted_staging(second_error.value.staging_path)
+    assert retained.path != source.path
+    assert set(retained.staging_json) == STAGING_KEYS
+    assert retained.staging_json["status"] == "ABORTED"
+    assert not (retained.path / "FREEZE.json").exists()
+    assert not (tmp_path / "retry-published").exists()
+    assert retained.rejected_instance_ids == ("s11-seed119",)
+    assert retained.chain_valid is True
+    assert retained.recomputed_staging_root_hash == retained.staging_root_hash
+    assert retained.rejection_rows[0].generation_attempt == 1
+    assert retained.rejection_rows[0].automatic_resample_status == "PROHIBITED"
+    assert retained.rejection_rows[0].next_action == "EXPLICIT_RESAMPLE_REQUIRED"
 ```
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py::test_explicit_resample_provenance_and_abort`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py::test_probe_diagnoses_both_without_publishing`
 
-Expected: FAIL because `AbortedStaging`, explicit face/report/source-root validation and one-attempt provenance are not implemented.
+Expected: FAIL because the canonical semantic validator and nonpublishing natural-rejection probe are not implemented.
 
 - [ ] **Step 3: Implement the fail-fast STAGING flow.**
 
-  - Keep both public dataset signatures free of test controls: accept the explicit face report and use only the private `_validate_candidate(candidate)` seam under `monkeypatch` in tests. On rejection, atomically finish payloads, manifest and checksums, then write `STAGING.json` exactly with `status='ABORTED'`, `manifest_hash`, `checksums_hash`, `staging_root_hash=sha256(manifest_hash+':'+checksums_hash)`, `accepted_instance_ids`, `rejected_instance_ids`, and `next_candidate_ordinal`; never write `FREEZE.json` or retry.
-  - Require `resample_synthetic_dataset(config, approved_face, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination, ...)`. Validate the full STAGING/manifest/checksum chain, partition and source root before creating a destination namespace.
-  - Preserve accepted canonical records and `instance_hash` values (not physical Parquet bytes); resample each rejected ID exactly once at `generation_attempt=previous+1`, leave not-yet-generated candidates at attempt 0, and stop on a new rejection.
-  - Persist canonical `resample_provenance.json` with `source_dataset_id`, source root hash, ordered IDs, generation attempts, accepted record/instance hashes and authorizing action. Reference its real canonical SHA in the new manifest. Reject IDs missing/extra/duplicated, root/hash mismatches, destination collisions, or a `PENDING` face report before any namespace.
+  - Use the canonical semantic validator for every production candidate before materialization, one candidate at a time and never as a batch. A nonpublishing `probe_generation_attempt` may diagnose both known attempt-0 shortages, but it is never an `AbortedStaging`, authorization or `FREEZE` and cannot authorize resample. The persisted action is fail-fast: action 1 stops at the first canonical rejection `n60-m2-b1-priority_shift`/seed `119` (`s11-seed119`), writes exactly one rejection row and `STAGING.json` with `rejected_instance_ids=["s11-seed119"]` and the exact next ordinal; it must not continue to `s23` in that action.
+  - Keep both public dataset signatures free of test controls: accept the explicit face report and use only the private `_validate_candidate(candidate)` seam under `monkeypatch` for the new-attempt-1 regression. On rejection, atomically finish payloads, manifest and checksums, then write `STAGING.json` with exactly the seven keys `status`, `manifest_hash`, `checksums_hash`, `staging_root_hash`, `accepted_instance_ids`, `rejected_instance_ids`, and `next_candidate_ordinal`; rejection rows carry `automatic_resample_status='PROHIBITED'` and `next_action='EXPLICIT_RESAMPLE_REQUIRED'`; never write `FREEZE.json` or retry.
+  - Require `resample_synthetic_dataset(config, approved_face, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination, ...)` to validate the full STAGING/manifest/checksum chain, partition and source root before creating a destination namespace. The implementation is generic over the exact IDs declared by the source STAGING (known IDs are not hardcoded conditionals). Resample 1 accepts only the exact source ID `["s11-seed119"]` at attempt 1, preserves all canonical records/hashes already accepted, continues canonical generation, then stops at the next natural rejection `n60-m3-b2-priority_shift`/seed `141` (`s23-seed141`) and writes a new STAGING with only `["s23-seed141"]` at attempt 0.
+  - Resample 2 accepts only `["s23-seed141"]` at attempt 1, preserves prior accepted canonical records/hashes, continues without any automatic retry and publishes `FREEZE.json` only after strict validation reaches exactly 3,600 valid instances and 18,000 policy-day keys. Persist those counts in the canonical `generation_plan_receipt` carried by the final manifest/header, and use `load_freeze_receipt` plus `read_instance_header` (not `load_frozen_dataset` or a `FrozenDataset.instances` materialization) as the integration evidence. The persisted integration test uses only a private deterministic tiny/file fixture seam that stubs heavy payload I/O without overriding the canonical validator, and never materializes full payloads or executes policy-day DES; artifact writes, hashes and state transitions remain real.
+  - Persist canonical `resample_provenance.json` with `source_dataset_id`, source root hash, ordered IDs, generation attempts, `accepted_record_hashes`, `accepted_instance_hashes` (the newly accepted IDs) and `prior_accepted_instance_hashes` (the inherited IDs), plus authorizing action. The maps are complete, sorted and keyed by instance ID so `read_instance_header` can reconcile `s11`, `s23` and inherited `s00` without loading payload rows. Reference its real canonical SHA in the new manifest. Reject IDs missing/extra/duplicated, root/hash mismatches, destination collisions, or a `PENDING` face report before any namespace.
   - Remove any legacy source-data hash alias, automatic retry helper, fallback alias or hidden resample path from tests and APIs; preserve aborted staging and rejection logs for diagnosis.
 
 - [ ] **Step 4: Run the resample and abort checks.**
 
-Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py -k "resample or staging"`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py -k "probe_diagnoses_both_without_publishing or fail_fast_persisted_resample_sequence or new_rejection_aborts_without_retry"`
 
-Expected: PASS with exactly one attempt per rejected ID and a visible no-retry failure on a second rejection.
+Expected: PASS with the nonpublishing probe diagnosing both IDs, persisted action1/action2 fail-fast STAGING sequence (`s11` then `s23`), canonical accepted hashes preserved, one attempt per explicit resample, final manifest/header receipt of 3,600/18,000 read through the lightweight receipt/header APIs, and a retained second ABORTED STAGING (no `FREEZE.json`) plus visible `PROHIBITED`/`EXPLICIT_RESAMPLE_REQUIRED` no-retry row when the public resample is monkeypatched to reject attempt 1; no `load_frozen_dataset`, full payload or 18,000 DES execution.
 
 - [ ] **Step 5: Commit the task files.**
 
