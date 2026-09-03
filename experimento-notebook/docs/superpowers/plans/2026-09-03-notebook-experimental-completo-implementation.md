@@ -263,17 +263,43 @@ rtk git commit -m "feat(experimento): generate and freeze canonical dataset"
 
 **Interfaces:**
 - Consumes: an `AbortedStaging` path, explicit approved `FaceValidationReport`, the declared `source_staging_root_hash`, and the exact rejected `instance_id` list.
-- Produces: `generate_synthetic_dataset(config, face_report, dataset_root, *, now_utc, generator_version, rejection_injector=None)` (the injector is an internal test-only seam); `load_aborted_staging(path) -> AbortedStaging`; `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination_root, *, now_utc, generator_version)`; `resample_provenance.json`; `generation_attempt` in every derived CRN key.
+- Produces: `generate_synthetic_dataset(config, face_report, dataset_root, *, now_utc, generator_version)`; `load_aborted_staging(path) -> AbortedStaging`; `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination_root, *, now_utc, generator_version)`; `resample_provenance.json`; `generation_attempt` in every derived CRN key. The private `_validate_candidate(candidate) -> bool` seam is monkeypatched only by deterministic tests; neither public API accepts an injector or fallback.
 
 - [ ] **Step 1: Write the failing test (RED).**
 
 ```python
-def test_explicit_resample_provenance_and_abort(tmp_path, approved_face):
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+import pytest
+
+from pequiflux_experiment.config import load_config
+from pequiflux_experiment.dataset import (
+    GenerationRejectedError,
+    generate_synthetic_dataset,
+    load_aborted_staging,
+    resample_synthetic_dataset,
+)
+from pequiflux_experiment.manifest import canonical_file_hash
+
+ROOT = Path(__file__).resolve().parents[1]
+CONFIG = load_config(ROOT / "config" / "confirmatory.json")
+FIXED_NOW = datetime(2026, 9, 3, 12, tzinfo=timezone.utc)
+
+def test_explicit_resample_provenance_and_abort(tmp_path, approved_face, monkeypatch):
     rejected = ["s20-seed101"]
+    # Test-only deterministic seam: reject this ID only on its first attempt;
+    # the explicit resample at generation_attempt=1 must be accepted.
+    monkeypatch.setattr(
+        "pequiflux_experiment.dataset._validate_candidate",
+        lambda candidate: not (
+            candidate.instance_id in rejected and candidate.generation_attempt == 0
+        ),
+    )
     with pytest.raises(GenerationRejectedError, match="EXPLICIT_RESAMPLE_REQUIRED"):
         generate_synthetic_dataset(
             CONFIG, approved_face, tmp_path / "staging", now_utc=FIXED_NOW,
-            generator_version="generator.v1", rejection_injector=lambda iid: iid in rejected
+            generator_version="generator.v1",
         )
     staging = load_aborted_staging(tmp_path / "staging")
     aborted = json.loads((tmp_path / "staging" / "STAGING.json").read_text())
@@ -291,18 +317,23 @@ def test_explicit_resample_provenance_and_abort(tmp_path, approved_face):
     assert out.instance("s20-seed101").generation_attempt == 1
     assert out.manifest["resample_provenance"]["sha256"] == canonical_file_hash(tmp_path / "resampled" / "resample_provenance.json")
 
-def test_new_rejection_aborts_without_retry(tmp_path, approved_face):
+def test_new_rejection_aborts_without_retry(tmp_path, approved_face, monkeypatch):
+    rejected = ["s20-seed101"]
+    # Always reject this ID, including attempt 1, to prove fail-closed abort.
+    monkeypatch.setattr(
+        "pequiflux_experiment.dataset._validate_candidate",
+        lambda candidate: candidate.instance_id not in rejected,
+    )
     with pytest.raises(GenerationRejectedError):
         generate_synthetic_dataset(
             CONFIG, approved_face, tmp_path / "source", now_utc=FIXED_NOW,
-            generator_version="generator.v1", rejection_injector=lambda iid: iid == "s20-seed101"
+            generator_version="generator.v1",
         )
     source = load_aborted_staging(tmp_path / "source")
     with pytest.raises(GenerationRejectedError, match="EXPLICIT_RESAMPLE_REQUIRED"):
         resample_synthetic_dataset(
             CONFIG, approved_face, source.path, source.staging_root_hash, ["s20-seed101"],
             tmp_path / "again", now_utc=FIXED_NOW, generator_version="generator.v1",
-            rejection_injector=lambda iid: iid == "s20-seed101"
         )
 ```
 
@@ -314,7 +345,7 @@ Expected: FAIL because `AbortedStaging`, explicit face/report/source-root valida
 
 - [ ] **Step 3: Implement the fail-fast STAGING flow.**
 
-  - Make the public generator accept an explicit face report and an internal `rejection_injector` only for deterministic tests. On rejection, atomically finish payloads, manifest and checksums, then write `STAGING.json` exactly with `status='ABORTED'`, `manifest_hash`, `checksums_hash`, `staging_root_hash=sha256(manifest_hash+':'+checksums_hash)`, `accepted_instance_ids`, `rejected_instance_ids`, and `next_candidate_ordinal`; never write `FREEZE.json` or retry.
+  - Keep both public dataset signatures free of test controls: accept the explicit face report and use only the private `_validate_candidate(candidate)` seam under `monkeypatch` in tests. On rejection, atomically finish payloads, manifest and checksums, then write `STAGING.json` exactly with `status='ABORTED'`, `manifest_hash`, `checksums_hash`, `staging_root_hash=sha256(manifest_hash+':'+checksums_hash)`, `accepted_instance_ids`, `rejected_instance_ids`, and `next_candidate_ordinal`; never write `FREEZE.json` or retry.
   - Require `resample_synthetic_dataset(config, approved_face, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination, ...)`. Validate the full STAGING/manifest/checksum chain, partition and source root before creating a destination namespace.
   - Preserve accepted canonical records and `instance_hash` values (not physical Parquet bytes); resample each rejected ID exactly once at `generation_attempt=previous+1`, leave not-yet-generated candidates at attempt 0, and stop on a new rejection.
   - Persist canonical `resample_provenance.json` with `source_dataset_id`, source root hash, ordered IDs, generation attempts, accepted record/instance hashes and authorizing action. Reference its real canonical SHA in the new manifest. Reject IDs missing/extra/duplicated, root/hash mismatches, destination collisions, or a `PENDING` face report before any namespace.
