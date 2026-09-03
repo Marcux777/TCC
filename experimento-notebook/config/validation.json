@@ -1,0 +1,11 @@
+{
+  "scenario_indices": [20, 12, 24],
+  "seeds": [101],
+  "policies": [
+    "fifo_strict",
+    "fifo_flow_faithful",
+    "priority_local",
+    "fixed_score",
+    "lexicographic"
+  ]
+}

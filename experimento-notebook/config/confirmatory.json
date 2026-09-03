@@ -12,5 +12,50 @@
   "hopper_counts": [1, 2, 3],
   "scale_counts": [1, 2],
   "regimes": ["nominal", "peak", "critical_failure", "priority_shift"],
-  "policies": ["fifo_strict", "fifo_flow_faithful", "priority_local", "fixed_score", "lexicographic"]
+  "policies": ["fifo_strict", "fifo_flow_faithful", "priority_local", "fixed_score", "lexicographic"],
+  "capacity": {
+    "min_free_ram_gib": 4,
+    "reserve_ram_gib": 2,
+    "max_workers": 4,
+    "receipt_ttl_seconds": 60,
+    "disk_margin": 1.25,
+    "disk_reserve_gib": 5,
+    "provider": "cpu",
+    "cpu_only": true
+  },
+  "crn_version": "crn.v1",
+  "buffer_capacity": 12,
+  "service_distributions": {
+    "gate": [2, 4, 7],
+    "scale_in": [3, 5, 8],
+    "unload": [12, 20, 35],
+    "scale_out": [3, 5, 8]
+  },
+  "arrival_blocks": [
+    {"start_minute": 0, "end_minute": 180, "weight": 6},
+    {"start_minute": 180, "end_minute": 300, "weight": 3},
+    {"start_minute": 300, "end_minute": 480, "weight": 7},
+    {"start_minute": 480, "end_minute": 720, "weight": 2}
+  ],
+  "peak_arrival_weights": [9, 2, 10, 2],
+  "priority_probabilities": {"p2": 0.15, "p1": 0.20, "p0": 0.65},
+  "document_block_probability": 0.03,
+  "document_release_distribution": [30, 60, 120],
+  "base_failure_probability": 0.05,
+  "failure_start_window": [240, 480],
+  "failure_duration_distribution": [20, 40, 70],
+  "priority_shift_fraction": 0.10,
+  "priority_shift_window": [240, 480],
+  "rain_probability": 0.10,
+  "rain_block_minutes": 30,
+  "event_ranks": {
+    "service_completion": 0,
+    "resource_recovery": 10,
+    "rain_end": 11,
+    "resource_failure": 12,
+    "rain_start": 13,
+    "document_release": 20,
+    "priority_change": 21,
+    "arrival": 30
+  }
 }
