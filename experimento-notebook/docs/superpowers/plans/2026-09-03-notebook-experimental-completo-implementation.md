@@ -58,7 +58,7 @@ FrozenInstance ──> run_day(instance, policy) ──> complete event JSONL + 
 | `face_validation.py` | `validate_face_validation_receipt(path, config, pdf_path) -> FaceValidationReport`; `materialize_face_validation_template(path)` | Real PDF/rubric hashes, approved gate or `PENDING` with cause. |
 | `domain.py`/`events.py` | `FrozenInstance`, `Truck`, `Resource`, `Event`, `FrozenValidationDataset`; `write_jsonl`, `read_jsonl` | Serializable immutable payloads and deterministic event order. |
 | `manifest.py` | `canonical_bytes`, `canonical_file_hash`, `create_run_directory`, `build_manifest`, `write_manifest` | Canonical JSON/checksum bytes, collision refusal and dirty-root/environment receipts; never mutates Git. |
-| `dataset.py` | `generate_synthetic_dataset(config, face_report, dataset_root, ...)`, `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination, ...)`, `load_aborted_staging`, `plan_synthetic_dataset`, `load_frozen_dataset`, `validate_frozen_dataset`, `freeze_dataset`, `select_pilot_configurations` | Complete 3,600-instance freeze, explicit one-attempt resample, canonical hash chain; face report is always explicit. |
+| `dataset.py` | `generate_synthetic_dataset(config, face_report, dataset_root, ...)`, `resample_synthetic_dataset(config, face_report, source_staging_path, source_staging_root_hash, exact_rejected_ids, destination, ...)`, `load_aborted_staging`, `plan_synthetic_dataset`, `validate_generation_headers`, `canonical_payload_schemas`, `load_frozen_dataset`, `validate_frozen_dataset`, `freeze_dataset`, `select_pilot_configurations` | Complete 3,600-instance freeze, pure non-publishing header receipt, exact payload schemas, explicit one-attempt resample and canonical hash chain; face report is always explicit. |
 | `validation.py` | `build_validation_dataset(config, validation_config, run_root, face_report)`, `run_validation_checks`, `run_a1_adversarial_suite(fixtures_path)` | Persisted indices `[20,12,24]`, seed `101`, five policies, 15 policy-days and eight A1 contexts from disk. |
 | `dispatch.py`/`policies.py` | `DispatchContext`, `Candidate`, `make_policy`, `filter_admissible`, `select_candidate` | Shared hard constraints and five policy-only ranking rules. |
 | `emulator.py` | `run_day(instance: FrozenInstance, policy: DispatchPolicy | str) -> DayResult` | Terminant DES with no sampling, no lazy defaults and complete event/hash output. |
@@ -79,7 +79,7 @@ FrozenInstance ──> run_day(instance, policy) ──> complete event JSONL + 
 | 72 configurations, exact order/IDs/rho, 50 seeds, policy set and stable hash | `test_config_manifest.py::test_config_contract_and_hash` | 1 |
 | Face receipt/template version, real PDF/rubric hashes, approved gate or pending cause | `test_config_manifest.py::test_face_validation_receipt_gate` | 1 |
 | Reduced validation is `[20,12,24] × [101] × 5`, persisted and non-confirmatory | `test_dispatch_emulator.py::test_validation_dataset_persisted_and_non_confirmatory` | 5 |
-| Complete production plan, 3,600-header orchestration, payloads, manifest, rejection log and checksums | `test_config_manifest.py::test_synthetic_plan_contract` plus `::test_generate_freezes_complete_dataset` | 2 |
+| Pure 72/3,600/18,000 generation plan/header receipt, exact payload schemas and strict loader rejection of test artifacts | `test_config_manifest.py::test_synthetic_plan_contract`, `::test_generation_headers_receipt_is_non_publishing`, `::test_canonical_payload_schemas_are_exact`, and `::test_strict_loader_rejects_header_only_artifact` | 2 |
 | Validation package persists three selected instances for approved and pending face reports | `test_dispatch_emulator.py::test_validation_dataset_persisted_and_non_confirmatory` | 5 |
 | Validation action ignores confirmatory face/capacity gates while pilot/confirmatory enforce them before namespace | `test_experiment_audit.py::test_validation_runner_always_persists_with_pending_face` plus `::test_face_or_capacity_block_makes_zero_worker_calls` | 6 |
 | Explicit resample preserves canonical accepted records, increments attempt once and aborts on new rejection | `test_config_manifest.py::test_explicit_resample_provenance_and_abort` | 3 |
@@ -177,26 +177,32 @@ rtk git commit -m "feat(experimento): freeze config and face validation gate"
 - Modify/Replace: `experimento-notebook/src/pequiflux_experiment/domain.py`
 - Create: `experimento-notebook/src/pequiflux_experiment/dataset.py`
 - Modify/Replace: `experimento-notebook/src/pequiflux_experiment/manifest.py`
-- Modify/Replace: `experimento-notebook/tests/test_config_manifest.py` (replace legacy tiny/full-generation assumptions with pure planning and header-spy orchestration checks)
+- Modify/Replace: `experimento-notebook/tests/test_config_manifest.py` (replace legacy tiny/full-generation assumptions with pure planning/header-receipt checks and a tiny hand-built strict-loader rejection)
 - Modify/Replace: `experimento-notebook/src/pequiflux_experiment/config.py` to expose canonical bytes and CRN helpers.
 
 **Interfaces:**
 - Consumes: `ExperimentConfig`, an explicit `FaceValidationReport`, and the pure `DatasetPlan`.
-- Produces: immutable `Truck`, `Resource`, `FrozenInstance`, `FrozenDataset`; `plan_synthetic_dataset(config) -> DatasetPlan`; `generate_synthetic_dataset(config, face_report, dataset_root, *, now_utc, generator_version)`; `validate_frozen_dataset(path, expected_plan=None, strict_production=False)`; `freeze_dataset`; `load_frozen_dataset`; canonical manifest/checksum functions. The reduced validation integration is deliberately introduced in Task 5 after this production planning/freeze contract.
+- Produces: immutable `Truck`, `Resource`, `FrozenInstance`, `FrozenDataset`; `plan_synthetic_dataset(config) -> DatasetPlan` with lightweight `ordered_instance_headers`; pure `validate_generation_headers(headers, expected_plan) -> GenerationPlanReceipt` (72 scenarios/3,600 instances/18,000 policy-days and canonical order, with no I/O, `FrozenInstance` construction or `FREEZE.json`); `canonical_payload_schemas()`; `generate_synthetic_dataset(config, face_report, dataset_root, *, now_utc, generator_version)`; strict `validate_frozen_dataset(path, expected_plan=None)`; strict `load_frozen_dataset(path, expected_plan=None) -> FrozenDataset`; `freeze_dataset`; canonical manifest/checksum functions. The public generator has no rejection injector or reduced/fallback flag, and the reduced validation integration is deliberately introduced in Task 5 after this production planning/freeze contract.
 
 - [ ] **Step 1: Write the failing test (RED).**
 
 ```python
+import json
 from pathlib import Path
-from datetime import datetime, timezone
 import pytest
 
 from pequiflux_experiment.config import load_config
-from pequiflux_experiment.dataset import DatasetContractError, plan_synthetic_dataset, generate_synthetic_dataset, validate_frozen_dataset
+from pequiflux_experiment.dataset import (
+    DatasetContractError,
+    GenerationPlanReceipt,
+    canonical_payload_schemas,
+    load_frozen_dataset,
+    plan_synthetic_dataset,
+    validate_generation_headers,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = load_config(ROOT / "config" / "confirmatory.json")
-FIXED_NOW = datetime(2026, 9, 3, 12, tzinfo=timezone.utc)
 
 def test_synthetic_plan_contract():
     plan = plan_synthetic_dataset(CONFIG)
@@ -206,45 +212,64 @@ def test_synthetic_plan_contract():
     assert plan.instance_ids[0] == "s00-seed101"
     assert plan.instance_ids[-1] == "s71-seed150"
 
-def test_generate_freezes_complete_dataset(tmp_path, approved_face, monkeypatch):
+def test_generation_headers_receipt_is_non_publishing():
     plan = plan_synthetic_dataset(CONFIG)
-    class HeaderMaterializerSpy:
-        count = 0
-        def __call__(self, header, writer):
-            self.count += 1
-            writer.write_header({"instance_id": header.instance_id, "generation_attempt": 0})
-    writer = HeaderMaterializerSpy()
-    monkeypatch.setattr("pequiflux_experiment.dataset._materialize_production_header", writer)
-    generate_synthetic_dataset(CONFIG, approved_face, tmp_path, now_utc=FIXED_NOW, generator_version="generator.v1")
-    assert writer.count == 3_600
-    validate_frozen_dataset(tmp_path, expected_plan=plan, strict_production=True)
+    receipt = validate_generation_headers(plan.ordered_instance_headers, expected_plan=plan)
+    assert isinstance(receipt, GenerationPlanReceipt)
+    assert (receipt.scenario_count, receipt.instance_count, receipt.policy_day_count) == (72, 3_600, 18_000)
+    assert receipt.ordered_instance_ids == plan.instance_ids
 
-def test_production_refuses_incomplete_freeze(tmp_path, approved_face):
-    with pytest.raises(DatasetContractError, match="3,600"):
-        validate_frozen_dataset(tmp_path, expected_plan=plan_synthetic_dataset(CONFIG), strict_production=True)
+def test_canonical_payload_schemas_are_exact():
+    assert canonical_payload_schemas() == {
+        "scenario_index.parquet": (
+            "scenario_index", "scenario_id", "N", "hopper_count", "scale_count",
+            "regime", "rho", "stratum", "protocol_version", "config_hash", "generator_version",
+        ),
+        "trucks.parquet": (
+            "instance_id", "scenario_index", "scenario_id", "seed", "truck_id", "arrival_minute",
+            "cargo_type", "priority", "document_status", "stage", "eligible_resources", "truck_record_hash",
+        ),
+        "service_times.parquet": (
+            "instance_id", "scenario_index", "scenario_id", "seed", "truck_id", "operation",
+            "duration_min", "source_a", "source_mode", "source_b", "draw_key", "crn_version",
+            "service_record_hash",
+        ),
+    }
+
+def test_strict_loader_rejects_header_only_artifact(tmp_path):
+    artifact = tmp_path / "header-only"
+    artifact.mkdir()
+    for name in ("scenario_index.parquet", "trucks.parquet", "service_times.parquet"):
+        (artifact / name).write_bytes(b"header-only test artifact")
+    (artifact / "disruptions.jsonl").write_text("", encoding="utf-8")
+    (artifact / "rejection_log.jsonl").write_text("", encoding="utf-8")
+    (artifact / "manifest.json").write_text(json.dumps({"instance_count": 3_600}), encoding="utf-8")
+    with pytest.raises(DatasetContractError, match="FREEZE|header-only|schema"):
+        load_frozen_dataset(artifact, expected_plan=plan_synthetic_dataset(CONFIG))
 ```
 
 - [ ] **Step 2: Run the focused RED check once.**
 
-Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py::test_synthetic_plan_contract`
+Run (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py -k "synthetic_plan or generation_headers or canonical_payload_schemas or strict_loader"`
 
-Expected: FAIL because the pure plan, explicit face-report signature and freeze validator are absent.
+Expected: FAIL because the pure plan/header receipt, exact schema contract and strict loader are absent; this check must not call `generate_synthetic_dataset` or create/load 3,600 `FrozenInstance` objects.
 
 - [ ] **Step 3: Implement generation and freeze.**
 
-  - Make `plan_synthetic_dataset(config)` pure and cheap: return all 72 ordered headers, exact 3,600 instance IDs, 18,000 policy-day keys and cardinalities without writing or sampling. The production API has no reduced/fallback flag; it accepts only an explicit face report and the complete plan.
-  - Build canonical immutable payloads for `scenario_index`, trucks, four service times per truck, priority/document state, disruptions and rejection records; use CRN substreams keyed by the exact tuple and stable `(arrival_time, truck_id)` ordering. Do not add a reduced/fallback selector to this production API; Task 5 owns the separate three-instance validation integration.
-  - Write Parquet/JSONL payloads, `manifest.json`, `rejection_log.jsonl`, and checksums via a staging directory. Hash only the five payload files; `checksums.sha256` is ordered `relative_name<TAB>sha256_hex`, `manifest_hash=sha256(canonical manifest bytes)`, `checksums_hash=sha256(canonical checksum bytes)`, and `dataset_root_hash=sha256(manifest_hash+":"+checksums_hash)`. Exclude `manifest.json`, `FREEZE.json`, and `checksums.sha256` from their own checksum list.
-  - Define `FREEZE.json` with exactly `manifest_hash`, `checksums_hash`, and `dataset_root_hash`; manifest fields include `dataset_id`, `phase=synthetic`, protocol/config/scenario hashes, `instance_count=3600`, `scenario_count=72`, `seed_count=50`, CRN/generator versions, frozen parameters, `freeze_status`, UTC time, commit/dirty state, runtime inventory, ordered five-payload hashes, rejection count, `policy_days_executed=false`, and `resample_provenance=null` for initial generation.
-  - For `test_generate_freezes_complete_dataset`, exercise all 3,600 headers with an internal deterministic lightweight materializer/writer spy and strict validator; do not generate full truck/service payloads in pytest. Full materialization is a campaign action gated by the approved face receipt, not permanent test evidence.
-  - Have loaders reject absent/corrupt/altered freeze, missing fields, extra fields, non-finite values, collisions and changed hashes before returning `FrozenInstance`; a `PENDING` face report must fail before creating any namespace.
-  - Remove obsolete `tiny_scenario`, old IDs/aliases, old results schema and legacy `test_config_manifest.py` expectations; retain only the canonical plan/freeze/validation assertions.
+  - Make `plan_synthetic_dataset(config)` pure and cheap: return 72 ordered scenario headers, exact 3,600 ordered instance IDs and 18,000 policy-day keys/cardinalities without writing, sampling or constructing `FrozenInstance`. `validate_generation_headers(headers, expected_plan)` compares only lightweight header fields and returns `GenerationPlanReceipt`; it never writes a payload, exposes a destination, publishes `FREEZE.json` or is accepted by the strict production loader. Task 5 owns the only reduced three-instance materializer.
+  - Define `canonical_payload_schemas()` with no optional/default columns and reject any missing, extra, nullable or type-divergent field. The exact Parquet columns are: `scenario_index.parquet = (scenario_index, scenario_id, N, hopper_count, scale_count, regime, rho, stratum, protocol_version, config_hash, generator_version)`; `trucks.parquet = (instance_id, scenario_index, scenario_id, seed, truck_id, arrival_minute, cargo_type, priority, document_status, stage, eligible_resources, truck_record_hash)`; `service_times.parquet = (instance_id, scenario_index, scenario_id, seed, truck_id, operation, duration_min, source_a, source_mode, source_b, draw_key, crn_version, service_record_hash)`. JSONL schemas are exact too: `disruptions.jsonl` rows carry `instance_id, scenario_index, scenario_id, seed, time, event_rank, resource_id, truck_id, sequence, event_type, cause, operation, duration_min, return_time, payload_hash`; `rejection_log.jsonl` rows carry `dataset_id, candidate_ordinal, scenario_index, instance_id, seed, generation_attempt, reason_code, validator, observed, expected, candidate_hash, automatic_resample_status, next_action, timestamp`.
+  - Materialize exactly 72 scenario rows in canonical fatorial order (`N` outer, then `hopper_count`, `scale_count`, `regime`), with consecutive `scenario_index=0..71` and exact `scenario_id`; emit exactly `N` truck rows per instance, unique/injective truck IDs, and exactly four service-operation rows per truck with no missing/duplicate operation. Validate disruptions against the canonical event ordering/schema and rejection-log cardinality against accepted/rejected/next-ordinal partitions; an empty rejection log is still a valid zero-row file with the declared schema.
+  - On load, reconstruct `instance_id -> (scenario_index, seed)` and verify every scenario/truck/service/disruption/rejection row carries the matching instance/scenario/seed. Recompute each service `draw_key` from the exact CRN tuple `(crn_version, scenario_index, seed, generation_attempt, entity_id, operation_or_event)` and canonical hash bytes; reject any late/default draw, mismatch, duplicate, missing row, non-finite value or changed order before returning `FrozenInstance`.
+  - Write all five payloads plus manifest/checksums under a sibling temporary staging directory, never the requested destination. Strictly validate schemas, cardinalities, hashes and the complete 3,600-instance plan in staging; only then atomically rename the sibling directory to the collision-free destination and publish `FREEZE.json`. Delete scratch staging only after successful rename; retain causal rejection/validation staging, `STAGING.json` and `rejection_log` with the original exception chain when validation fails, and never expose a partial destination.
+  - Hash only the five payload files; `checksums.sha256` is ordered `relative_name<TAB>sha256_hex`, `manifest_hash=sha256(canonical manifest bytes)`, `checksums_hash=sha256(canonical checksum bytes)`, and `dataset_root_hash=sha256(manifest_hash+":"+checksums_hash)`. Exclude `manifest.json`, `FREEZE.json`, and `checksums.sha256` from their own checksum list. Define `FREEZE.json` with exactly `manifest_hash`, `checksums_hash`, and `dataset_root_hash`; manifest fields include `dataset_id`, `phase=synthetic`, protocol/config/scenario hashes, `instance_count=3600`, `scenario_count=72`, `seed_count=50`, CRN/generator versions, frozen parameters, `freeze_status`, UTC time, commit/dirty state, runtime inventory, ordered five-payload hashes, rejection count, `policy_days_executed=false`, and `resample_provenance=null` for initial generation. Before accepting the hash chain, require raw `manifest.json` and `FREEZE.json` bytes to equal `canonical_bytes(parsed_object)` followed by exactly one LF (that is, `canonical_bytes(parsed_object)+b"\\n"` when the helper returns an LF-free body), rejecting any noncanonical whitespace/order/metadata; require `checksums.sha256`, `disruptions.jsonl` and `rejection_log.jsonl` raw bytes to equal their canonical ordered-line serializers with exactly one LF per line. Hash equality alone is insufficient.
+  - Make `load_frozen_dataset` always invoke strict production validation and reject `GenerationPlanReceipt`, header-only/test artifacts, missing/extra/default fields, absent/corrupt/altered `FREEZE.json`, collisions and changed hashes before returning `FrozenDataset`; the public `generate_synthetic_dataset` has no rejection injector, reduced selector or fallback. Keep the private deterministic rejection seam introduced in Task 3 separate from this complete-generation contract; a `PENDING` face report fails before creating a namespace.
+  - Remove obsolete `tiny_scenario`, old IDs/aliases, old results schema and legacy `test_config_manifest.py` expectations; retain only pure plan/header receipt and tiny strict-loader checks here. Do not move the real three-instance materializer into Task 2; it is implemented and tested in Task 5.
 
-- [ ] **Step 4: Run the generator and refusal checks.**
+- [ ] **Step 4: Run the plan/schema/loader checks.**
 
-Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py -k "synthetic_plan or generate_freezes_complete_dataset or incomplete_freeze"`
+Verify (CWD `C:\\p\\PequiFlux\\TCC`): `rtk experimento-notebook\\.venv\\Scripts\\python.exe -m pytest -q experimento-notebook\\tests\\test_config_manifest.py -k "synthetic_plan or generation_headers or canonical_payload_schemas or strict_loader"`
 
-Expected: PASS for the pure 3,600-instance plan, header orchestration and explicit incomplete-freeze error; no full payload campaign runs in pytest.
+Expected: PASS for the pure 72/3,600/18,000 plan and ordered `GenerationPlanReceipt`, exact Parquet/JSONL schema declarations and tiny strict-loader rejection; no production payload generation, `FREEZE.json` publication or 3,600-instance load occurs in pytest.
 
 - [ ] **Step 5: Commit the task files.**
 
