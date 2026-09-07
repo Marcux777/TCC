@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections import Counter
 from datetime import datetime, timezone
 from dataclasses import replace
 from decimal import Decimal
@@ -136,6 +137,11 @@ def test_synthetic_plan_contract():
     assert plan.scenario_indices == tuple(range(72))
     assert plan.instance_count == 3_600
     assert plan.policy_day_count == 18_000
+    assert plan.truck_count == 432_000
+    assert plan.potential_service_time_count == 1_728_000
+    assert Counter(scenario.stratum for scenario in plan.scenarios) == {
+        "low": 4, "medium": 12, "high": 56,
+    }
     assert plan.instance_ids[0] == "s00-seed101"
     assert plan.instance_ids[-1] == "s71-seed150"
 

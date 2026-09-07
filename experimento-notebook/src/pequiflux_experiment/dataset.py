@@ -116,6 +116,18 @@ class DatasetPlan:
         return len(self.policy_day_keys)
 
     @property
+    def truck_count(self) -> int:
+        """Predicted truck rows across instances, not observed generation output."""
+
+        return sum(scenario.N for scenario in self.scenarios) * self.seed_count
+
+    @property
+    def potential_service_time_count(self) -> int:
+        """Predicted potential-service rows, shared by all policies per instance."""
+
+        return self.truck_count * len(_OPERATIONS)
+
+    @property
     def headers(self) -> tuple[ScenarioConfig, ...]:
         return self.scenarios
 
