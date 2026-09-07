@@ -18,7 +18,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
-from .config import crn_digest
+from .config import canonical_bytes, crn_digest
 
 
 def _identifier(name: str, value: object) -> str:
@@ -426,16 +426,7 @@ def _thaw_dataset_value(value: Any) -> Any:
 
 
 def _dataset_canonical_bytes(value: Any) -> bytes:
-    return (
-        json.dumps(
-            _thaw_dataset_value(value),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-        + b"\n"
-    )
+    return canonical_bytes(_thaw_dataset_value(value))
 
 
 def _dataset_digest(value: Any) -> str:

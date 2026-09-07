@@ -182,16 +182,6 @@ def _resolve_rubric(project_root: Path, relative_path: object) -> Path:
     return resolved
 
 
-def _require_hex(name: str, value: object) -> str:
-    if not isinstance(value, str) or len(value) != 64:
-        raise ValueError(f"{name} must be a 64-character SHA-256 hex digest")
-    try:
-        int(value, 16)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a 64-character SHA-256 hex digest") from exc
-    return value.lower()
-
-
 def _validate_reviewers(value: object) -> None:
     if not isinstance(value, list):
         raise ValueError("reviewer_ids must be a list")

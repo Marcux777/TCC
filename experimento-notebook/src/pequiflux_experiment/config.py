@@ -624,13 +624,7 @@ def config_as_dict(config: ExperimentConfig) -> dict[str, Any]:
 def canonical_json(config: ExperimentConfig) -> str:
     """Serialize configuration with stable key ordering and compact separators."""
 
-    return json.dumps(
-        config_as_dict(config),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ) + chr(10)
+    return canonical_bytes(config_as_dict(config)).decode("utf-8")
 
 
 def canonical_bytes(value: Any) -> bytes:

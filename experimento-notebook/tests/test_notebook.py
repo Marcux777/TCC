@@ -199,6 +199,7 @@ def test_notebook_load_confirmatory_and_runtime_dependencies_are_explicit() -> N
         "nbclient",
         "nbconvert",
         "ipykernel",
+        "psutil",
     }
 
     lock_versions: dict[str, tuple[int, ...]] = {}

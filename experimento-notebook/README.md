@@ -7,10 +7,9 @@ módulos em `src/`.
 
 ## Ambiente deliberado
 
-O projeto requer Python 3.11 ou superior. O `pyproject.toml` não instala
-dependências automaticamente. Em um ambiente isolado, a instalação é uma ação
-deliberada do operador e deve ser feita uma única vez, com a versão aprovada
-para o experimento:
+O projeto requer Python 3.11 ou superior. O `pyproject.toml` declara as
+dependências com intervalos de versão; `requirements.lock` fixa as versões
+aprovadas para o experimento. Prepare o ambiente isolado com o lock:
 
 ```text
 rtk py -3 -m venv .venv
@@ -33,11 +32,16 @@ rtk .\.venv\Scripts\python.exe -m pytest -q
 ```
 
 `tests/test_notebook.py` sempre valida a estrutura JSON com a biblioteca padrão.
-Quando `nbformat`, `nbclient` e `nbconvert` estão disponíveis, o mesmo teste
+Quando `nbformat`, `nbclient` e `nbconvert` estão disponíveis, o teste de execução
 executa o notebook inteiro em uma raiz temporária e exige zero outputs de erro e
 `results/tables/table_audit.csv`. Se algum desses três módulos estiver ausente,
 o teste falha explicitamente com `BLOCKED execution gate`; isso não é convertido
 em `skip` ou em sucesso.
+
+O notebook executa uma seleção explícita de testes rápidos das seis áreas do
+pacote, seguida de sua própria demonstração, matriz de validação, replay e
+auditoria persistida. A seleção não repete os testes de materialização e
+proveniência de datasets; esses permanecem na suíte completa do comando acima.
 
 ## Execução limpa canônica
 
