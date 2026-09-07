@@ -7,13 +7,18 @@ módulos em `src/`.
 
 ## Ambiente deliberado
 
-O projeto requer Python 3.11 ou superior. O `pyproject.toml` declara as
+O projeto requer Python 3.12 ou superior: os pins de NumPy e SciPy no lock
+exigem esse mínimo. O interpretador escolhido para a instalação local é
+CPython 3.13.3 (Windows x64). O `pyproject.toml` declara as
 dependências com intervalos de versão; `requirements.lock` fixa as versões
 aprovadas para o experimento. Prepare o ambiente isolado com o lock:
 
 ```text
-rtk py -3 -m venv .venv
-rtk .\.venv\Scripts\python.exe -m pip install -r requirements.lock
+rtk proxy py -3.13 --version
+rtk proxy py -3.13 -m venv .venv
+rtk proxy .\.venv\Scripts\python.exe -m pip install -r requirements.lock
+rtk proxy .\.venv\Scripts\python.exe -m pip check
+rtk proxy .\.venv\Scripts\python.exe -m ipykernel install --sys-prefix --name python3 --display-name "PequiFlux (Python 3.13)"
 ```
 
 `requirements.lock` reproduz as versões exatas do ambiente validado e já inclui

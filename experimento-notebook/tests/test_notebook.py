@@ -133,7 +133,7 @@ def test_notebook_environment_contract_is_locked() -> None:
     lock = (PROJECT_ROOT / "requirements.lock").read_text(encoding="utf-8")
     gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
 
-    assert "rtk .\\.venv\\Scripts\\python.exe -m pip install -r requirements.lock" in readme
+    assert "rtk proxy .\\.venv\\Scripts\\python.exe -m pip install -r requirements.lock" in readme
     assert "rtk .\\.venv\\Scripts\\python.exe -m pip install numpy" not in readme
     assert "`ipykernel` fornece o kernel nativo local" in readme
     assert "ipykernel==7.3.0" in lock
