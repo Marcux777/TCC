@@ -661,8 +661,9 @@ class _DaySimulation:
         # simulation.
         return self.digital_model.snapshot()
 
-    def _candidate_values(self, resource_id: str, operations: tuple[str, ...]) -> tuple[Candidate, ...]:
-        snapshot = self._digital_snapshot()
+    def _candidate_values(
+        self, resource_id: str, operations: tuple[str, ...], *, snapshot: YardSnapshot
+    ) -> tuple[Candidate, ...]:
         candidates: list[Candidate] = []
         for truck in snapshot.trucks.values():
             operation = truck.next_operation
@@ -735,7 +736,7 @@ class _DaySimulation:
                 resource = snapshot.resources.get(resource_id)
                 if resource is None or resource.status != "available":
                     continue
-                candidates = self._candidate_values(resource_id, operations)
+                candidates = self._candidate_values(resource_id, operations, snapshot=snapshot)
                 if not candidates:
                     continue
                 context = DispatchContext(

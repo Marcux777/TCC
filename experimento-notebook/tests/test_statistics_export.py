@@ -310,16 +310,10 @@ def test_matrix_rejects_non_execution_phase_before_materialising_cells(tmp_path,
     ],
 )
 def test_confirmatory_validator_rejects_any_material_field_override(field, replacement):
-    payload = config_as_dict(load_config(CONFIG_PATH))
-    payload[field] = replacement
-    if field == "policies":
-        # ExperimentConfig protects the canonical panel at construction; the
-        # validator must still remain authoritative for an in-memory mutation
-        # arriving from a manifest or other untrusted boundary.
-        config = load_config(CONFIG_PATH)
-        object.__setattr__(config, field, replacement)
-    else:
-        config = ExperimentConfig(**payload)
+    # Bypass constructor checks deliberately: this test exercises the
+    # independent confirmatory validator against a corrupted in-memory value.
+    config = load_config(CONFIG_PATH)
+    object.__setattr__(config, field, replacement)
 
     with pytest.raises(ValueError, match=field):
         validate_confirmatory_config(config)

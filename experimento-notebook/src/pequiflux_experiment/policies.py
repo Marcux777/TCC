@@ -93,25 +93,18 @@ class LexicographicPolicy(DispatchPolicy):
         # Reordering is the canonical count of candidates that entered the
         # current stage earlier.  It is derived exclusively from the detached
         # candidate set, never accepted as caller-provided physical state.
-        reorder_values = {
-            item.truck_id: float(
-                sum(
-                    1
-                    for other in values
-                    if other.stage_entry_time < item.stage_entry_time
-                )
-            )
-            for item in values
-        }
+        reorder = float(sum(item.stage_entry_time < candidate.stage_entry_time for item in values))
+        latest_entry = max(item.stage_entry_time for item in values)
+        # The latest stage entry has the largest count of earlier arrivals;
+        # tied entries share that count and never count one another.
+        max_reorder = float(sum(item.stage_entry_time < latest_entry for item in values))
 
         def normalized(value: float, maximum: float) -> float:
             return value / maximum if maximum > 0.0 else 0.0
 
         max_pressure = max((float(item.pressure) for item in values), default=0.0)
         max_wait = max((float(item.waiting_time) for item in values), default=0.0)
-        max_reorder = max(reorder_values.values(), default=0.0)
         max_affinity = max((float(item.affinity) for item in values), default=0.0)
-        reorder = reorder_values[candidate.truck_id]
         return (
             -normalized(candidate.pressure, max_pressure),
             -normalized(candidate.waiting_time, max_wait),

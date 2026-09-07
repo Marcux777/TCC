@@ -14,11 +14,37 @@ from pequiflux_experiment.experiment import (
 )
 from pequiflux_experiment.audit import AuditError, AuditReport, audit_run
 from pequiflux_experiment.policies import make_policy
+from pequiflux_experiment.dispatch import DispatchPolicy
 import pequiflux_experiment.audit as audit_module
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "confirmatory.json"
+
+
+@pytest.mark.parametrize("phase", ["validation", "pilot", "execute-confirmatory"])
+def test_matrix_preserves_custom_policy_or_rejects_it_before_confirmatory_execution(
+    tmp_path: Path, phase: str
+):
+    class FailingPolicy(DispatchPolicy):
+        name = "fixed_score"
+
+        def rank_key(self, candidate, context, candidates=()):
+            raise RuntimeError("custom policy execution failed")
+
+    expected_error = ValueError if phase == "execute-confirmatory" else RuntimeError
+    message = "canonical policy names" if phase == "execute-confirmatory" else "custom policy execution failed"
+    with pytest.raises(expected_error, match=message):
+        run_experiment_matrix(
+            scenarios=[tiny_scenario()],
+            seeds=[101],
+            policies=[FailingPolicy()],
+            config=load_config(CONFIG_PATH),
+            runs_root=tmp_path,
+            phase=phase,
+        )
+    if phase == "execute-confirmatory":
+        assert not tuple(tmp_path.iterdir())
 
 
 def build_validation_bundle(tmp_path: Path):

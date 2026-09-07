@@ -35,7 +35,7 @@ from .domain import YardSnapshot
 from .emulator import DayResult, run_day
 from .events import EventRecord
 from .manifest import build_manifest, create_run_directory
-from .policies import DispatchPolicy, make_policy
+from .policies import DispatchPolicy
 from .statistics import canonical_scenario_metadata
 
 
@@ -244,7 +244,7 @@ def _normalise_seeds(seeds: Iterable[int]) -> tuple[int, ...]:
 def _normalise_policies(
     policies: Iterable[str | DispatchPolicy],
     config: ExperimentConfig,
-) -> tuple[str, ...]:
+) -> tuple[str | DispatchPolicy, ...]:
     if isinstance(policies, (str, bytes, bytearray)):
         raise TypeError("policies must be an iterable of policy names")
     try:
@@ -267,7 +267,7 @@ def _normalise_policies(
         names.append(name)
     if len(set(names)) != len(names):
         raise ValueError("policies must be unique")
-    return tuple(names)
+    return values
 
 
 def _validate_confirmatory_matrix(
@@ -773,6 +773,10 @@ def run_experiment_matrix(
     No result is selected from an existing run and no cell is retried.  A
     collision at the namespace boundary or a failure in any cell propagates
     immediately with its context.
+
+    Validation and pilot runs execute supplied policy objects. Confirmatory
+    runs require canonical policy names so the frozen panel cannot be replaced
+    by a custom implementation using the same name.
     """
 
     if not isinstance(config, ExperimentConfig):
@@ -797,11 +801,17 @@ def run_experiment_matrix(
             f"{unknown_seeds}"
         )
     policy_values = _normalise_policies(policies, config)
+    policy_names = tuple(
+        value.name if isinstance(value, DispatchPolicy) else value
+        for value in policy_values
+    )
     if phase_component == "execute-confirmatory":
+        if any(isinstance(value, DispatchPolicy) for value in policy_values):
+            raise ValueError("execute-confirmatory requires canonical policy names, not policy objects")
         canonical_metadata = _validate_confirmatory_matrix(
             scenario_values,
             seed_values,
-            policy_values,
+            policy_names,
             config,
         )
     else:
@@ -828,8 +838,8 @@ def run_experiment_matrix(
     log_entries: dict[str, dict[str, Any]] = {}
     for scenario in scenario_values:
         for seed in seed_values:
-            for policy_name in policy_values:
-                result = run_day(scenario, seed, make_policy(policy_name))
+            for policy_name, policy_value in zip(policy_names, policy_values, strict=True):
+                result = run_day(scenario, seed, policy_value)
                 log_filename = (
                     f"{scenario.scenario_id}__seed_{seed}__policy_{policy_name}.jsonl"
                 )
@@ -879,7 +889,7 @@ def run_experiment_matrix(
         checkout_clean=checkout_clean,
         scenarios=scenario_values,
         seeds=seed_values,
-        policies=policy_values,
+        policies=policy_names,
         log_entries=log_entries,
         now_utc=now_utc,
     )

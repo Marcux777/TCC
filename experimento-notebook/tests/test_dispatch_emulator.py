@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -93,7 +94,23 @@ def test_scale_in_and_scale_out_share_one_physical_pool() -> None:
     assert result.max_scale_occupancy <= 1
 
 
-def test_parallel_pool_resources_do_not_assign_one_truck_twice() -> None:
+def _force_arrival_time(monkeypatch, arrival_time: float) -> None:
+    build_trucks = emulator_module._DaySimulation._build_trucks
+
+    def build_trucks_at_time(simulation):
+        build_trucks(simulation)
+        simulation.schedule.clear()
+        for state in simulation.states.values():
+            state.arrival_time = state.stage_entry_time = arrival_time
+            simulation._push(time=arrival_time, kind="arrival", truck_id=state.truck_id)
+
+    monkeypatch.setattr(emulator_module._DaySimulation, "_build_trucks", build_trucks_at_time)
+
+
+def test_parallel_pool_resources_do_not_assign_one_truck_twice(monkeypatch) -> None:
+    # Queue all four trucks together to exercise actual parallel service;
+    # a late NHPP arrival may legitimately remain at the hard horizon.
+    _force_arrival_time(monkeypatch, 0.0)
     result = run_day(
         tiny_scenario(truck_count=4, hoppers=2, scales=2, regime="nominal"),
         101,
@@ -101,7 +118,17 @@ def test_parallel_pool_resources_do_not_assign_one_truck_twice() -> None:
     )
 
     assert result.completed_trucks == 4
+    assert result.max_scale_occupancy == 2
     assert result.hard_constraint_violations == 0
+    active = {}
+    for event in result.events:
+        if event.kind == "SERVICE_STARTED":
+            truck_id = event.payload["truck_id"]
+            assert truck_id not in active
+            active[truck_id] = event.payload["resource_id"]
+        elif event.kind == "SERVICE_COMPLETED":
+            assert active.pop(event.payload["truck_id"]) == event.payload["resource_id"]
+    assert not active
 
 
 def test_every_selection_is_explained_then_accepted_before_service() -> None:
@@ -323,7 +350,9 @@ def test_makespan_is_relative_to_first_arrival() -> None:
     )
 
 
-def test_zero_completion_fails_closed_without_fabricated_makespan() -> None:
+def test_zero_completion_fails_closed_without_fabricated_makespan(monkeypatch) -> None:
+    # Even the shortest gate service cannot complete before the hard horizon.
+    _force_arrival_time(monkeypatch, 719.0)
     with pytest.raises(RuntimeError, match="no SERVICE_COMPLETED|makespan"):
         run_day(
             tiny_scenario(truck_count=1, hoppers=1, scales=1, regime="nominal"),
@@ -441,8 +470,13 @@ def test_wait_metrics_are_per_truck_and_include_censored_horizon_wait() -> None:
 
 def test_common_random_numbers_are_policy_independent() -> None:
     scenario = tiny_scenario(truck_count=12, hoppers=2, scales=1, regime="critical_failure")
-    fifo = run_day(scenario, 101, make_policy("fifo_strict"))
-    lexicographic = run_day(scenario, 101, make_policy("lexicographic"))
+    fifo_simulation = emulator_module._DaySimulation(scenario, 101, make_policy("fifo_strict"))
+    lex_simulation = emulator_module._DaySimulation(scenario, 101, make_policy("lexicographic"))
+    # Exogenous draws must agree. Public failure times may be deferred until
+    # a busy resource completes its current, policy-dependent service.
+    assert fifo_simulation.schedule == lex_simulation.schedule
+    fifo = fifo_simulation.run()
+    lexicographic = lex_simulation.run()
 
     def realizations(result):
         arrivals = {
@@ -458,23 +492,11 @@ def test_common_random_numbers_are_policy_independent() -> None:
             for event in result.events
             if event.kind == "SERVICE_STARTED"
         }
-        disruptions = tuple(
-            (
-                event.kind,
-                event.time,
-                event.payload.get("resource_id"),
-                event.payload.get("cause"),
-                event.payload.get("priority"),
-            )
-            for event in result.events
-            if event.kind in {"RESOURCE_FAILED", "RESOURCE_RECOVERED", "PRIORITY_CHANGED"}
-        )
-        return arrivals, durations, disruptions
+        return arrivals, durations
 
-    fifo_arrivals, fifo_durations, fifo_disruptions = realizations(fifo)
-    lex_arrivals, lex_durations, lex_disruptions = realizations(lexicographic)
+    fifo_arrivals, fifo_durations = realizations(fifo)
+    lex_arrivals, lex_durations = realizations(lexicographic)
     assert fifo_arrivals == lex_arrivals
-    assert fifo_disruptions == lex_disruptions
     common = fifo_durations.keys() & lex_durations.keys()
     assert common
     assert all(fifo_durations[key] == lex_durations[key] for key in common)
@@ -718,10 +740,16 @@ def test_lexicographic_h_uses_pressure_wait_reorder_affinity_then_stage_entry() 
     assert policy.select(reorder_precedes_affinity, context).truck_id == "T-no-reorder"
 
 
-def test_critical_failure_has_base_substream_and_forced_hopper_override() -> None:
+def test_critical_failure_has_base_substream_and_forced_hopper_override(monkeypatch) -> None:
     scenario = tiny_scenario(truck_count=4, hoppers=2, scales=1, regime="critical_failure")
-    # Seed 23 is frozen because its independent shift-level Bernoulli is below
-    # 5%, so this run must contain both the base draw and the regime override.
+    stream = emulator_module._DaySimulation._stream
+
+    def force_base_failure(simulation, *parts):
+        if parts == ("event", "base_failure", "turn"):
+            return SimpleNamespace(random=lambda: 0.0)
+        return stream(simulation, *parts)
+
+    monkeypatch.setattr(emulator_module._DaySimulation, "_stream", force_base_failure)
     result = run_day(scenario, 23, make_policy("fifo_flow_faithful"))
     failures = [event for event in result.events if event.kind == "RESOURCE_FAILED"]
 
@@ -743,9 +771,11 @@ def test_critical_failure_has_base_substream_and_forced_hopper_override() -> Non
     )
 
 
-def test_priority_shift_promotion_survives_future_arrival() -> None:
+def test_priority_shift_promotion_survives_future_arrival(monkeypatch) -> None:
+    # Both trucks arrive after the latest possible priority-shift draw (480).
+    _force_arrival_time(monkeypatch, 500.0)
     result = run_day(
-        tiny_scenario(truck_count=12, hoppers=2, scales=1, regime="priority_shift"),
+        tiny_scenario(truck_count=2, hoppers=2, scales=1, regime="priority_shift"),
         101,
         make_policy("fifo_flow_faithful"),
     )
@@ -793,7 +823,9 @@ def test_candidates_are_built_from_detached_digital_snapshot_not_physical_state(
     original_priority = state.priority
     state.arrived = False
     state.priority = 99
-    candidates = simulation._candidate_values("gate-1", ("gate",))
+    candidates = simulation._candidate_values(
+        "gate-1", ("gate",), snapshot=simulation._digital_snapshot()
+    )
 
     assert candidates and candidates[0].truck_id == state.truck_id
     assert candidates[0].priority == original_priority
