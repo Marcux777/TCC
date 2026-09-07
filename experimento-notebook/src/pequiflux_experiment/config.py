@@ -48,7 +48,8 @@ _PRIORITY_PROBABILITIES: dict[str, float] = {
     "p1": 0.20,
     "p0": 0.65,
 }
-_EVENT_RANKS: dict[str, int] = {
+EVENT_SEMANTICS_VERSION = "1.0.0"
+EVENT_RANKS: Mapping[str, int] = MappingProxyType({
     "service_completion": 0,
     "resource_recovery": 10,
     "rain_end": 11,
@@ -57,7 +58,8 @@ _EVENT_RANKS: dict[str, int] = {
     "document_release": 20,
     "priority_change": 21,
     "arrival": 30,
-}
+})
+_EVENT_RANKS = EVENT_RANKS
 
 CONFIG_KEYS: tuple[str, ...] = (
     "project_name",

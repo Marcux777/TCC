@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import csv
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
-from pequiflux_experiment.audit import AuditError, audit_run
+from pequiflux_experiment.audit import AuditError, audit_run, _validate_decision_justification
 from pequiflux_experiment.config import POLICY_NAMES, load_config
 from pequiflux_experiment.dispatch import Candidate, DispatchContext, recommend
 from pequiflux_experiment.digital_model import DigitalModel
 from pequiflux_experiment.domain import YardSnapshot
 from pequiflux_experiment.emulator import tiny_scenario
-from pequiflux_experiment.experiment import run_experiment_matrix
+from pequiflux_experiment.experiment import run_validation_matrix
+from pequiflux_experiment.validation_fixtures import build_validation_inputs
 from pequiflux_experiment.policies import make_policy
 from pequiflux_experiment.replay import snapshot_hash
 from pequiflux_experiment.events import EventRecord
@@ -23,6 +25,54 @@ from pequiflux_experiment.events import EventRecord
 
 PROJECT_ROOT = Path(__file__).parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "confirmatory.json"
+
+
+@pytest.mark.parametrize("same_stage_time", [False, True])
+def test_auditor_reconstructs_stage_fifo_and_rejects_tampering(same_stage_time) -> None:
+    # Arrival and stable order favor Z; stage FIFO (including its ID tie break) favors A.
+    payload = recommend(
+        [Candidate("Z", arrival_time=0, stage_entry_time=8, stable_order=0,
+                   operation="unload"),
+         Candidate("A", arrival_time=1, stage_entry_time=8 if same_stage_time else 2,
+                   stable_order=1, operation="unload")],
+        DispatchContext(now=10, resource_id="hopper-1", operation="unload"),
+        make_policy("fifo_strict"),
+    ).to_dict()
+    assert payload["selected"]["truck_id"] == "A"
+    assert _validate_decision_justification(payload)
+    for mutate in (
+        lambda value: value.__setitem__("fifo_reference_truck_id", "Z"),
+        lambda value: value["candidate_order"][0].__setitem__("stage_entry_time", 0),
+        lambda value: value["candidate_order"][0].pop("stage_entry_time"),
+        lambda value: value.__setitem__("schema_version", 1),
+    ):
+        tampered = deepcopy(payload)
+        mutate(tampered)
+        assert not _validate_decision_justification(tampered)
+
+
+@pytest.mark.parametrize("assigned_resource", [None, "hopper-1"])
+def test_auditor_checks_structured_cargo_exclusion_and_context(assigned_resource) -> None:
+    payload = recommend(
+        [Candidate("corn", cargo_type="corn", operation="unload", resource_id=assigned_resource),
+         Candidate("soy", cargo_type="soy", operation="unload", resource_id=assigned_resource)],
+        DispatchContext(now=10, resource_id="hopper-1", operation="unload",
+                        allowed_cargo_types=("soy",)),
+        make_policy("fifo_flow_faithful"),
+    ).to_dict()
+    assert payload["selected"]["truck_id"] == "soy"
+    assert _validate_decision_justification(payload)
+    assert payload["excluded"][0]["cause"] == "CARGO_INCOMPATIBLE"
+    for mutate in (
+        lambda value: value["excluded"][0].__setitem__("cause", "RESOURCE_MISMATCH"),
+        lambda value: value["excluded"][0]["candidate"].__setitem__("cargo_type", "soy"),
+        lambda value: value["context"].__setitem__("allowed_cargo_types", ["soy", "corn"]),
+        lambda value: value["context"].__setitem__("resource_id", "hopper-2"),
+        lambda value: value["candidate_order"][0].__setitem__("cargo_type", "corn"),
+    ):
+        tampered = deepcopy(payload)
+        mutate(tampered)
+        assert not _validate_decision_justification(tampered)
 
 
 def test_recommendation_emits_canonical_five_field_justification() -> None:
@@ -112,24 +162,27 @@ def test_recommend_rejects_missing_or_divergent_operation(
 
 
 def _build_bundle(tmp_path: Path):
-    return run_experiment_matrix(
-        scenarios=[tiny_scenario(truck_count=2, hoppers=1, scales=1)],
-        seeds=[101],
+    instances, controls, ledger = build_validation_inputs(
+        [tiny_scenario(truck_count=2, hoppers=1, scales=1)], [101],
+    )
+    return run_validation_matrix(
+        instances=instances,
+        controls=controls,
+        event_latents=ledger,
         policies=POLICY_NAMES,
         config=load_config(CONFIG_PATH),
         runs_root=tmp_path,
-        phase="validation",
         now_utc="2026-09-01T12:00:00Z",
     )
 
 
-def _rewrite_first_decision(bundle, mutate, *, target: str = "justification") -> None:
+def _rewrite_first_decision(bundle, mutate, *, target: str = "justification", decision_index: int = 0) -> None:
     log_path = next(bundle.logs_dir.glob("*.jsonl"))
     lines = [
         json.loads(line)
         for line in log_path.read_text(encoding="utf-8").splitlines()
     ]
-    decision = next(line for line in lines if line["event_kind"] == "DECISION_RECORDED")
+    decision = [line for line in lines if line["event_kind"] == "DECISION_RECORDED"][decision_index]
     recommendation = decision["payload"]["decision"]
     if target == "justification":
         mutate(recommendation["justification"])
@@ -137,6 +190,8 @@ def _rewrite_first_decision(bundle, mutate, *, target: str = "justification") ->
         mutate(recommendation)
     else:
         raise ValueError(f"unsupported mutation target: {target}")
+    decision["selection"] = recommendation["selected"]
+    decision["excluded"] = recommendation["excluded"]
     # The decision payload is part of the replayed digital-model state.  Keep
     # the tampered fixture replayable so the assertion reaches the A2 semantic
     # gate instead of stopping at an unrelated state-hash mismatch.
@@ -252,3 +307,43 @@ def test_pending_human_audit_is_not_an_approved_a2_result(tmp_path: Path) -> Non
     assert "a2_pass" not in serialized
     assert serialized["a2_structural_pass"] is True
     assert serialized["a2_human_audit_pending"] is True
+
+
+@pytest.mark.parametrize("field", ["instance_hash", "execution_instance_hash", "control_hash", "controls"])
+def test_audit_rejects_input_provenance_tampering(tmp_path: Path, field: str) -> None:
+    bundle = _build_bundle(tmp_path)
+    if field == "controls":
+        manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+        manifest["input_provenance"]["controls"]["ordinary_window"] += 1
+        bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    else:
+        with bundle.results_path.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        rows[0][field] = "0" * 64
+        with bundle.results_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
+            writer.writeheader()
+            writer.writerows(rows)
+    with pytest.raises(AuditError, match="provenance|control_hash|execution instances"):
+        audit_run(bundle.run_dir)
+
+
+@pytest.mark.parametrize("field", ["stage_entry_time", "allowed_cargo_types"])
+def test_audit_authenticates_decision_facts_against_events(tmp_path: Path, field: str) -> None:
+    bundle = _build_bundle(tmp_path)
+
+    def alter_consistently(value):
+        if field == "stage_entry_time":
+            assert value["selected"]["stage_entry_time"] > 0
+            value["selected"]["stage_entry_time"] = 0
+            for item in value["candidate_order"]:
+                if item["truck_id"] == value["selected"]["truck_id"]:
+                    item["stage_entry_time"] = 0
+        else:
+            value["context"]["allowed_cargo_types"].append("invented-cargo")
+        # The payload remains internally consistent; replay facts must expose the forgery.
+        assert _validate_decision_justification(value)
+
+    _rewrite_first_decision(bundle, alter_consistently, target="recommendation", decision_index=1)
+    with pytest.raises(AuditError, match="observation"):
+        audit_run(bundle.run_dir)

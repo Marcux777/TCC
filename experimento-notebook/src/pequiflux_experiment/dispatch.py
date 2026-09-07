@@ -21,6 +21,7 @@ if TYPE_CHECKING:  # pragma: no cover - import-only cycle guard
 
 
 _OPERATIONS = frozenset({"gate", "scale_in", "unload", "scale_out"})
+RECOMMENDATION_SCHEMA_VERSION = 2
 
 # A2 is deliberately represented by one closed, version-independent object.
 # These names are part of the persisted decision contract; a free-form
@@ -374,6 +375,39 @@ class DispatchContext:
     def resource_failed(self) -> bool:
         return self.resource_status == "failed" or not self.resource_available
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "now": self.now,
+            "resource_id": self.resource_id,
+            "resource_available": self.resource_available,
+            "resource_status": self.resource_status,
+            "operation": self.operation,
+            "queue_length": self.queue_length,
+            "affinity_target": self.affinity_target,
+            "allowed_cargo_types": list(self.allowed_cargo_types),
+        }
+
+
+def _exclusion(candidate: Candidate, context: DispatchContext) -> tuple[str, str] | None:
+    """Return a stable cause and supplementary human explanation."""
+    if not candidate.arrived:
+        return "NOT_ARRIVED", "truck not arrived"
+    if candidate.arrival_time > context.now:
+        return "FUTURE_ARRIVAL", "truck arrival is in the future"
+    if not candidate.eligible:
+        return "INELIGIBLE", candidate.eligibility_reason or "candidate is not eligible"
+    if not candidate.document_ok:
+        return "DOCUMENT_BLOCKED", "document blocked"
+    if context.operation is not None and candidate.operation is not None:
+        if candidate.operation != context.operation:
+            return "OPERATION_MISMATCH", "operation mismatch"
+    if context.resource_id is not None and candidate.resource_id is not None:
+        if candidate.resource_id != context.resource_id:
+            return "RESOURCE_MISMATCH", "resource mismatch"
+    if candidate.cargo_type not in context.allowed_cargo_types:
+        return "CARGO_INCOMPATIBLE", f"cargo type {candidate.cargo_type!r} is incompatible with resource"
+    return None
+
 
 def _fifo_reference(candidates: tuple[Candidate, ...]) -> Candidate:
     """Return the deterministic FIFO reference among admissible candidates."""
@@ -392,7 +426,7 @@ def _fifo_reference(candidates: tuple[Candidate, ...]) -> Candidate:
 def _activated_rules(
     *,
     candidates: tuple[Candidate, ...],
-    excluded: tuple[tuple[str, str], ...],
+    exclusion_causes: tuple[str, ...],
     context: DispatchContext,
     policy_name: str,
     fifo_break: bool,
@@ -409,17 +443,16 @@ def _activated_rules(
     has_resource_compatibility = context.resource_id is not None and bool(
         context.allowed_cargo_types
     )
-    exclusion_reasons = tuple(reason.casefold() for _, reason in excluded)
     has_resource_block = any(
-        "resource mismatch" in reason or "cargo" in reason for reason in exclusion_reasons
+        cause in {"RESOURCE_MISMATCH", "CARGO_INCOMPATIBLE"} for cause in exclusion_causes
     )
     if has_resource_compatibility or has_resource_block:
         rules.append("resource_compatibility")
-    if excluded:
+    if exclusion_causes:
         rules.append("excluded_candidates")
         if has_resource_block:
             rules.append("resource_blocked")
-        if any("future" in reason for reason in exclusion_reasons):
+        if "FUTURE_ARRIVAL" in exclusion_causes:
             rules.append("arrival_window")
     rules.extend(_POLICY_JUSTIFICATION_RULES.get(policy_name, ()))
     rules.append(f"policy:{policy_name}")
@@ -431,7 +464,7 @@ def _build_justification(
     *,
     selected: Candidate,
     candidates: tuple[Candidate, ...],
-    excluded: tuple[tuple[str, str], ...],
+    exclusion_causes: tuple[str, ...],
     context: DispatchContext,
     policy_name: str,
 ) -> DecisionJustification | None:
@@ -462,9 +495,8 @@ def _build_justification(
         readable_rules = ", ".join(policy_rules)
         reason = f"{reason[:-1]}; applied rules: {readable_rules}."
     if any(
-        "resource mismatch" in exclusion_reason.casefold()
-        or "cargo" in exclusion_reason.casefold()
-        for _, exclusion_reason in excluded
+        cause in {"RESOURCE_MISMATCH", "CARGO_INCOMPATIBLE"}
+        for cause in exclusion_causes
     ):
         reason = (
             f"{reason[:-1]}; a resource assignment was blocked by compatibility "
@@ -475,7 +507,7 @@ def _build_justification(
         resource={"resource_id": context.resource_id},
         activated_rules=_activated_rules(
             candidates=candidates,
-            excluded=excluded,
+            exclusion_causes=exclusion_causes,
             context=context,
             policy_name=policy_name,
             fifo_break=fifo_break,
@@ -525,6 +557,8 @@ class Recommendation:
     resource_id: str | None = None
     explanation: str = ""
     justification: DecisionJustification | None = None
+    context: DispatchContext | None = None
+    excluded_candidates: tuple[Candidate, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.selected, Candidate):
@@ -591,16 +625,30 @@ class Recommendation:
                 "recommendation cannot be serialized without an explicit "
                 "canonical decision justification"
             )
+        if self.context is None:
+            raise ValueError("recommendation serialization requires dispatch context")
+        excluded_evidence = []
+        for candidate in self.excluded_candidates:
+            cause = _exclusion(candidate, self.context)
+            if cause is None:
+                raise ValueError("excluded candidate is feasible in dispatch context")
+            excluded_evidence.append({
+                "truck_id": candidate.truck_id,
+                "cause": cause[0],
+                "reason": cause[1],
+                "candidate": candidate.to_dict(),
+            })
+        if tuple((item["truck_id"], item["reason"]) for item in excluded_evidence) != self.excluded:
+            raise ValueError("exclusion evidence disagrees with exclusions")
         fifo_reference = _fifo_reference(self.candidates)
         return {
             "type": "Recommendation",
+            "schema_version": RECOMMENDATION_SCHEMA_VERSION,
+            "context": self.context.to_dict(),
             "policy": self.policy,
             "selected": self.selected.to_dict(),
             "candidate_ids": [candidate.truck_id for candidate in self.candidates],
-            "excluded": [
-                {"truck_id": truck_id, "reason": reason}
-                for truck_id, reason in self.excluded
-            ],
+            "excluded": excluded_evidence,
             "now": self.now,
             "resource_id": self.resource_id,
             "explanation": self.explanation,
@@ -609,6 +657,10 @@ class Recommendation:
                 {
                     "truck_id": candidate.truck_id,
                     "arrival_time": candidate.arrival_time,
+                    "stage_entry_time": candidate.stage_entry_time,
+                    "cargo_type": candidate.cargo_type,
+                    "eligible": candidate.eligible,
+                    "eligibility_reason": candidate.eligibility_reason,
                     "stable_order": candidate.stable_order,
                     "operation": candidate.operation,
                     "resource_id": candidate.resource_id,
@@ -685,38 +737,9 @@ def feasible_candidates(
         if candidate.truck_id in seen:
             raise ValueError(f"duplicate candidate truck_id: {candidate.truck_id}")
         seen.add(candidate.truck_id)
-        if not candidate.arrived:
-            excluded.append((candidate.truck_id, "truck not arrived"))
-            continue
-        if candidate.arrival_time > context.now:
-            excluded.append((candidate.truck_id, "truck arrival is in the future"))
-            continue
-        if not candidate.eligible:
-            excluded.append(
-                (
-                    candidate.truck_id,
-                    candidate.eligibility_reason or "candidate is not eligible",
-                )
-            )
-            continue
-        if not candidate.document_ok:
-            excluded.append((candidate.truck_id, "document blocked"))
-            continue
-        if context.operation is not None and candidate.operation is not None:
-            if candidate.operation != context.operation:
-                excluded.append((candidate.truck_id, "operation mismatch"))
-                continue
-        if context.resource_id is not None and candidate.resource_id is not None:
-            if candidate.resource_id != context.resource_id:
-                excluded.append((candidate.truck_id, "resource mismatch"))
-                continue
-        if candidate.cargo_type not in context.allowed_cargo_types:
-            excluded.append(
-                (
-                    candidate.truck_id,
-                    f"cargo type {candidate.cargo_type!r} is incompatible with resource",
-                )
-            )
+        exclusion = _exclusion(candidate, context)
+        if exclusion is not None:
+            excluded.append((candidate.truck_id, exclusion[1]))
             continue
         feasible.append(candidate)
 
@@ -796,10 +819,15 @@ def recommend(
     selected = policy.select(admissible, context)
     if selected not in admissible:
         raise ValueError("policy selected a candidate outside the feasible domain")
+    excluded_ids = {truck_id for truck_id, _ in excluded}
+    excluded_candidates = tuple(
+        candidate for candidate in candidate_values if candidate.truck_id in excluded_ids
+    )
+    exclusion_causes = tuple(_exclusion(candidate, context)[0] for candidate in excluded_candidates)
     justification = _build_justification(
         selected=selected,
         candidates=admissible,
-        excluded=excluded,
+        exclusion_causes=exclusion_causes,
         context=context,
         policy_name=policy.name,
     )
@@ -820,6 +848,8 @@ def recommend(
         resource_id=context.resource_id,
         explanation=explanation,
         justification=justification,
+        context=context,
+        excluded_candidates=excluded_candidates,
     )
 
 

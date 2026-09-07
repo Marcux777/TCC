@@ -316,6 +316,10 @@ class DigitalModel:
             truck.priority = priority
             return
 
+        if kind == "DISRUPTION_RECORDED":
+            cls._require_resource(state, payload["resource_id"])
+            return
+
         if kind == "RESOURCE_FAILED":
             resource = cls._require_resource(state, payload["resource_id"])
             if resource.status == "failed":

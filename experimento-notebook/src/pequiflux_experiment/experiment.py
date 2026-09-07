@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from decimal import Decimal
 import hashlib
 import io
 import json
@@ -31,12 +32,17 @@ from .config import (
     validate_confirmatory_config,
 )
 from .digital_model import DigitalModel
-from .domain import YardSnapshot
+from .domain import YardSnapshot, FrozenInstance, ExecutionControls, EventLatentLedger
 from .emulator import DayResult, run_day
 from .events import EventRecord
 from .manifest import build_manifest, create_run_directory
 from .policies import DispatchPolicy
 from .statistics import canonical_scenario_metadata
+
+INPUT_IDENTITY_FIELDS = (
+    "instance_id", "instance_hash", "execution_instance_hash",
+    "dataset_root_hash", "control_hash",
+)
 
 
 RESULT_HEADERS: tuple[str, ...] = (
@@ -44,6 +50,7 @@ RESULT_HEADERS: tuple[str, ...] = (
     "seed",
     "policy",
     "config_hash",
+    *INPUT_IDENTITY_FIELDS,
     "stratum",
     "regime",
     "hopper_count",
@@ -82,6 +89,7 @@ LOG_REQUIRED_FIELDS: tuple[str, ...] = (
     "seed",
     "policy",
     "config_hash",
+    *INPUT_IDENTITY_FIELDS,
     "event_id",
     "event_kind",
     "kind",
@@ -420,6 +428,7 @@ def _normalise_row(row: Mapping[str, Any]) -> dict[str, Any]:
         normalised[key] = value
     for key in (
         "scenario_id",
+        *INPUT_IDENTITY_FIELDS,
         "policy",
         "config_hash",
         "stratum",
@@ -436,6 +445,7 @@ def _normalise_row(row: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("stratum must be one of low, medium, high")
     for key in (
         "config_hash",
+        *INPUT_IDENTITY_FIELDS[1:],
         "log_sha256",
         "initial_state_hash",
         "final_state_hash",
@@ -578,6 +588,7 @@ def _log_lines(
             "seed": result.seed,
             "policy": result.policy_name,
             "config_hash": checksum,
+            **{field: getattr(result, field) for field in INPUT_IDENTITY_FIELDS},
             "event_id": f"{event.sequence}:{event.kind}",
             "event_kind": event.kind,
             "kind": event.kind,
@@ -661,6 +672,7 @@ def _result_row(
         "seed": result.seed,
         "policy": result.policy_name,
         "config_hash": checksum,
+        **{field: getattr(result, field) for field in INPUT_IDENTITY_FIELDS},
         "stratum": scenario_metadata["stratum"],
         "regime": scenario_metadata["regime"],
         "hopper_count": scenario_metadata["hopper_count"],
@@ -759,6 +771,21 @@ def _manifest_for_run(
     return manifest
 
 
+def _input_provenance(instances, controls, event_latents, *, kind, **evidence):
+    return {
+        "kind": kind,
+        "dataset_root_hash": controls.source_dataset_root_hash,
+        "event_latents_sha256": event_latents.event_latents_sha256,
+        "controls": controls.to_dict(),
+        "instances": [
+            {"instance_id": item.instance_id, "scenario_id": item.scenario_id,
+             "seed": item.seed, "instance_hash": item.instance_hash}
+            for item in instances
+        ],
+        **evidence,
+    }
+
+
 def run_experiment_matrix(
     scenarios: Iterable[ScenarioConfig],
     seeds: Iterable[int],
@@ -767,6 +794,126 @@ def run_experiment_matrix(
     runs_root: str | Path,
     phase: str = "validation",
     now_utc: Any = None,
+    *,
+    dataset_path: str | Path | None = None,
+    expected_dataset_root_hash: str | None = None,
+    controls: ExecutionControls | None = None,
+    face_receipt_path: str | Path | None = None,
+    capacity_receipt: Any = None,
+) -> RunBundle:
+    """Execute scientific cells exclusively from a revalidated, pinned freeze.
+
+    Pilot and confirmation require human face evidence and a current capacity
+    receipt. All prerequisites are checked before creating a run namespace.
+    Engineering fixtures use the explicitly non-confirmatory validation API.
+    """
+    from .dataset import load_frozen_dataset, select_pilot_configurations
+    from .face_validation import validate_face_validation_receipt
+
+    if not isinstance(config, ExperimentConfig):
+        raise TypeError("config must be an ExperimentConfig")
+    validate_confirmatory_config(config)
+    if phase not in EXECUTION_PHASES:
+        raise ValueError("phase must be one of validation, pilot, execute-confirmatory")
+    scenarios = _normalise_scenarios(scenarios)
+    seeds = _normalise_seeds(seeds)
+    policies = _normalise_policies(policies, config)
+    if phase == "execute-confirmatory":
+        if any(isinstance(policy, DispatchPolicy) for policy in policies):
+            raise ValueError("execute-confirmatory requires canonical policy names, not policy objects")
+        _validate_confirmatory_matrix(scenarios, seeds, policies, config)
+    if dataset_path is None or expected_dataset_root_hash is None:
+        raise ValueError("dataset_path and expected_dataset_root_hash are required; no internal generation")
+    if phase == "pilot" and (scenarios != select_pilot_configurations(config)
+                             or seeds != config.seeds or policies != config.policies):
+        raise ValueError("pilot requires the canonical 15 scenarios, 50 seeds and five policies")
+    dataset = load_frozen_dataset(dataset_path, expected_dataset_root_hash=expected_dataset_root_hash)
+    if dataset.manifest["config_hash"] != config_hash(config):
+        raise ValueError("frozen dataset configuration does not match execution configuration")
+    if not isinstance(controls, ExecutionControls):
+        raise TypeError("explicit ExecutionControls are required")
+    if controls.source_dataset_root_hash != expected_dataset_root_hash:
+        raise ValueError("controls source_dataset_root_hash does not match pinned dataset")
+    if dataset.event_latents is None or controls.event_latents_sha256 != dataset.event_latents.event_latents_sha256:
+        raise ValueError("controls event_latents_sha256 does not match frozen dataset")
+    if (controls.ordinary_window != config.ordinary_window
+            or controls.buffer_capacity != config.buffer_capacity
+            or controls.threshold_multiplier != Decimal("1.00") or controls.intensity != "base"):
+        raise ValueError("matrix executor requires explicit canonical baseline controls")
+    selected_keys = {(scenario.scenario_id, seed) for scenario in scenarios for seed in seeds}
+    instances = tuple(item for item in dataset.instances if (item.scenario_id, item.seed) in selected_keys)
+    evidence = {"dataset_path": str(dataset.path.resolve())}
+    workload = None
+    if phase in {"pilot", "execute-confirmatory"}:
+        if face_receipt_path is None:
+            raise ValueError("face_receipt_path is required before scientific execution")
+        face = validate_face_validation_receipt(
+            face_receipt_path, config, Path(__file__).resolve().parents[3] / "main.pdf"
+        )
+        if not face.approved:
+            raise ValueError(f"scientific execution blocked: FACE_VALIDATION={face.status}; {face.cause}")
+        if capacity_receipt is None:
+            raise ValueError("capacity_receipt is required before scientific execution")
+        from .profiles import ConfirmatoryWorkload
+        workload = ConfirmatoryWorkload.from_dataset(dataset, config, phase=phase)
+        evidence["face_validation"] = face.as_dict()
+        evidence["capacity_receipt"] = capacity_receipt.to_dict()
+    return _run_materialized_matrix(
+        scenarios, seeds, policies, config, runs_root, phase, now_utc,
+        instances=instances, controls=controls, event_latents=dataset.event_latents,
+        input_provenance=_input_provenance(instances, controls, dataset.event_latents,
+                                          kind="frozen_dataset", **evidence),
+        capacity_receipt=capacity_receipt, workload=workload,
+    )
+
+
+def run_validation_matrix(
+    instances: Iterable[FrozenInstance],
+    policies: Iterable[str | DispatchPolicy],
+    config: ExperimentConfig,
+    runs_root: str | Path,
+    *,
+    controls: ExecutionControls,
+    event_latents: EventLatentLedger,
+    now_utc: Any = None,
+) -> RunBundle:
+    """Run explicit engineering fixtures; this API cannot select a scientific phase."""
+    values = tuple(instances)
+    scenarios = {}
+    for item in values:
+        if not isinstance(item, FrozenInstance):
+            raise TypeError("instances must contain FrozenInstance values")
+        if not item.instance_id.startswith("validation-"):
+            raise ValueError("run_validation_matrix accepts only explicit validation fixtures")
+        scenarios[item.scenario_id] = ScenarioConfig(
+            truck_count=len(item.trucks),
+            hopper_count=sum(resource.kind == "hopper" for resource in item.resources),
+            scale_count=sum(resource.kind == "scale" for resource in item.resources),
+            regime=item.scenario_id.rsplit("-", 1)[-1], scenario_index=item.scenario_index,
+        )
+    return _run_materialized_matrix(
+        tuple(scenarios.values()), tuple(dict.fromkeys(item.seed for item in values)),
+        policies, config, runs_root, "validation", now_utc,
+        instances=values, controls=controls, event_latents=event_latents,
+        input_provenance=_input_provenance(values, controls, event_latents, kind="validation_fixture"),
+    )
+
+
+def _run_materialized_matrix(
+    scenarios: Iterable[ScenarioConfig],
+    seeds: Iterable[int],
+    policies: Iterable[str | DispatchPolicy],
+    config: ExperimentConfig,
+    runs_root: str | Path,
+    phase: str = "validation",
+    now_utc: Any = None,
+    *,
+    instances: Sequence[FrozenInstance],
+    controls: ExecutionControls,
+    event_latents: EventLatentLedger,
+    input_provenance: Mapping[str, Any],
+    capacity_receipt: Any = None,
+    workload: Any = None,
 ) -> RunBundle:
     """Execute and persist one deterministic paired matrix.
 
@@ -774,9 +921,8 @@ def run_experiment_matrix(
     collision at the namespace boundary or a failure in any cell propagates
     immediately with its context.
 
-    Validation and pilot runs execute supplied policy objects. Confirmatory
-    runs require canonical policy names so the frozen panel cannot be replaced
-    by a custom implementation using the same name.
+    Validation runs may execute supplied policy objects. Scientific runs have
+    already checked the canonical policy panel and their input prerequisites.
     """
 
     if not isinstance(config, ExperimentConfig):
@@ -789,8 +935,7 @@ def run_experiment_matrix(
         )
     if phase_component == "execute-confirmatory":
         # Validate every frozen protocol field before normalising inputs or
-        # creating a run namespace.  Validation and pilot intentionally retain
-        # their reduced-matrix semantics.
+        # creating a run namespace. Validation retains reduced-matrix semantics.
         validate_confirmatory_config(config)
     scenario_values = _normalise_scenarios(scenarios)
     seed_values = _normalise_seeds(seeds)
@@ -823,7 +968,31 @@ def run_experiment_matrix(
         raise TypeError("runs_root must be a string or Path")
     root = Path(runs_root)
     checksum = config_hash(config)
+    if not isinstance(controls, ExecutionControls) or not isinstance(event_latents, EventLatentLedger):
+        raise TypeError("explicit ExecutionControls and EventLatentLedger are required")
+    if controls.event_latents_sha256 != event_latents.event_latents_sha256:
+        raise ValueError("controls do not identify the consumed event-latent ledger")
+    instance_map = {}
+    for instance in instances:
+        if not isinstance(instance, FrozenInstance):
+            raise TypeError("instances must contain FrozenInstance values")
+        key = (instance.scenario_id, instance.seed)
+        if key in instance_map:
+            raise ValueError(f"duplicate frozen instance for {key}")
+        instance_map[key] = instance
+    expected_keys = {(scenario.scenario_id, seed) for scenario in scenario_values for seed in seed_values}
+    if set(instance_map) != expected_keys:
+        raise ValueError("materialized instances must match the requested matrix exactly")
+    for scenario in scenario_values:
+        for seed in seed_values:
+            instance = instance_map[(scenario.scenario_id, seed)]
+            if (len(instance.trucks) != scenario.truck_count
+                    or instance.scenario_index != scenario.scenario_index):
+                raise ValueError("frozen instance dimensions do not match requested scenario")
     commit, checkout_clean = _git_metadata()
+    if phase_component in {"pilot", "execute-confirmatory"}:
+        from .capacity import require_capacity
+        require_capacity(capacity_receipt, workload=workload, requirements=config.capacity, run_root=root)
     run_dir = create_run_directory(
         root,
         phase_component,
@@ -839,7 +1008,13 @@ def run_experiment_matrix(
     for scenario in scenario_values:
         for seed in seed_values:
             for policy_name, policy_value in zip(policy_names, policy_values, strict=True):
-                result = run_day(scenario, seed, policy_value)
+                instance = instance_map[(scenario.scenario_id, seed)]
+                result = run_day(instance, policy_value, controls, event_latents)
+                if (result.instance_id != instance.instance_id
+                        or result.instance_hash != instance.instance_hash
+                        or result.dataset_root_hash != controls.source_dataset_root_hash
+                        or result.control_hash != controls.control_hash):
+                    raise RuntimeError("worker result does not identify its consumed frozen input")
                 log_filename = (
                     f"{scenario.scenario_id}__seed_{seed}__policy_{policy_name}.jsonl"
                 )
@@ -860,6 +1035,7 @@ def run_experiment_matrix(
                     "seed": seed,
                     "policy": policy_name,
                     "config_hash": checksum,
+                    **{field: getattr(result, field) for field in INPUT_IDENTITY_FIELDS},
                 }
                 result_rows.append(
                     _result_row(
@@ -893,6 +1069,9 @@ def run_experiment_matrix(
         log_entries=log_entries,
         now_utc=now_utc,
     )
+    manifest["schema_version"] = 2
+    manifest["input_provenance"] = dict(input_provenance)
+    manifest["non_confirmatory"] = phase_component != "execute-confirmatory"
     _atomic_write_text(run_dir / "results.csv", _csv_text(result_rows))
     _atomic_write_json(run_dir / "manifest.json", manifest)
 
@@ -948,4 +1127,5 @@ __all__ = [
     "RunBundle",
     "load_run_bundle",
     "run_experiment_matrix",
+    "run_validation_matrix",
 ]

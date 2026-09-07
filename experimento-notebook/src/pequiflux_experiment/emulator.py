@@ -9,14 +9,15 @@ dispatch pool for the two weighing operations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-import hashlib
 import heapq
 import math
-import random
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from .config import ScenarioConfig
+from .config import (
+    ScenarioConfig, EVENT_RANKS, EVENT_SEMANTICS_VERSION, CANONICAL_CONFIRMATORY_FIELDS,
+)
+from .dataset import derive_controlled_projection
 from .digital_model import DigitalModel, replay_events
 from .dispatch import (
     Candidate,
@@ -29,9 +30,11 @@ from .dispatch import (
 )
 from .domain import (
     Resource,
+    FrozenInstance,
+    ExecutionControls,
+    EventLatentLedger,
     Truck,
     YardSnapshot,
-    canonical_allowed_cargo_types,
     TRUCK_STAGE_ARRIVED,
     TRUCK_STAGE_DOCUMENT_RELEASED,
     TRUCK_STAGE_SERVICE_COMPLETED,
@@ -43,44 +46,9 @@ from .policies import make_policy
 
 
 _OPERATIONS: tuple[str, ...] = ("gate", "scale_in", "unload", "scale_out")
-HORIZON_MINUTES = 720.0
-BUFFER_CAPACITY = 12
-ARRIVAL_BLOCKS: tuple[tuple[float, float], ...] = (
-    (0.0, 180.0),
-    (180.0, 300.0),
-    (300.0, 480.0),
-    (480.0, 720.0),
-)
-ARRIVAL_WEIGHTS: tuple[int, ...] = (6, 3, 7, 2)
-PEAK_ARRIVAL_WEIGHTS: tuple[int, ...] = (9, 2, 10, 2)
-DOCUMENT_BLOCK_RATE = 0.03
-DOCUMENT_RELEASE_TRIANGULAR = (30.0, 60.0, 120.0)
-SERVICE_TRIANGULAR: Mapping[str, tuple[float, float, float]] = {
-    "gate": (2.0, 4.0, 7.0),
-    "scale_in": (3.0, 5.0, 8.0),
-    "unload": (12.0, 20.0, 35.0),
-    "scale_out": (3.0, 5.0, 8.0),
-}
-CRITICAL_FAILURE_TIME_RANGE = (240.0, 480.0)
-CRITICAL_FAILURE_DURATION = (20.0, 40.0, 70.0)
-PRIORITY_SHIFT_TIME_RANGE = (240.0, 480.0)
-PRIORITY_THRESHOLDS = (60.0, 30.0, 10.0)
-RAIN_BLOCK_MINUTES = 30.0
-RAIN_BLOCK_RATE = 0.10
+HORIZON_MINUTES = float(CANONICAL_CONFIRMATORY_FIELDS["horizon_minutes"])
+PRIORITY_THRESHOLDS = tuple(CANONICAL_CONFIRMATORY_FIELDS["priority_thresholds"])
 
-# Lower rank means that an event at the same timestamp is applied first.
-# Releases, failures/recoveries, priority changes, and arrivals therefore
-# have a stable and explicit order; completions always free resources first.
-_SCHEDULE_RANK = {
-    "completion": 0,
-    "document_release": 1,
-    "resource_failure": 2,
-    "resource_recovery": 2,
-    "rain_start": 2,
-    "rain_end": 2,
-    "priority_change": 3,
-    "arrival": 4,
-}
 VALID_REGIMES = frozenset({"nominal", "peak", "critical_failure", "priority_shift"})
 
 
@@ -105,6 +73,9 @@ class _Scheduled:
     resource_id: str | None = None
     cause: str | None = None
     recovery_at: float | None = None
+    duration: float | None = None
+    latent_id: str | None = None
+    scheduled_start: float | None = None
 
 
 @dataclass(slots=True)
@@ -128,11 +99,17 @@ class _TruckState:
 
 @dataclass(frozen=True, slots=True)
 class DayResult:
-    """Canonical output of one scenario/seed/policy execution."""
+    """Canonical output identifying its frozen input, controls and policy."""
 
     scenario: ScenarioConfig
     seed: int
     policy_name: str
+    instance_id: str
+    instance_hash: str
+    execution_instance_hash: str
+    controls: ExecutionControls
+    controlled_view_hash: str
+    event_overlay_hash: str
     events: tuple[EventRecord, ...]
     metrics: Mapping[str, float | int]
     hard_constraint_violations: int
@@ -149,6 +126,14 @@ class DayResult:
             raise ValueError("seed must be a non-negative integer")
         if not isinstance(self.policy_name, str) or not self.policy_name:
             raise ValueError("policy_name must be a non-empty string")
+        if not isinstance(self.instance_id, str) or not self.instance_id:
+            raise ValueError("instance_id must be a non-empty string")
+        if not isinstance(self.controls, ExecutionControls):
+            raise TypeError("controls must be ExecutionControls")
+        for name in ("instance_hash", "execution_instance_hash", "controlled_view_hash", "event_overlay_hash"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                raise ValueError(f"{name} must be a lowercase SHA-256 digest")
         events = tuple(self.events)
         if any(not isinstance(event, EventRecord) for event in events):
             raise TypeError("events must contain EventRecord values")
@@ -184,6 +169,14 @@ class DayResult:
     @property
     def policy(self) -> str:
         return self.policy_name
+
+    @property
+    def dataset_root_hash(self) -> str:
+        return self.controls.source_dataset_root_hash
+
+    @property
+    def control_hash(self) -> str:
+        return self.controls.control_hash
 
     @property
     def scenario_id(self) -> str:
@@ -227,31 +220,43 @@ def tiny_scenario(
 
 
 class _DaySimulation:
-    def __init__(self, scenario: ScenarioConfig, seed: int, policy: DispatchPolicy) -> None:
+    def __init__(self, instance: FrozenInstance, policy: DispatchPolicy,
+                 controls: ExecutionControls, event_latents: EventLatentLedger) -> None:
+        self.source_instance = instance
+        self.projection = derive_controlled_projection(instance, event_latents, controls)
+        self.instance = self.projection.instance
+        self.controls = controls
+        scenario = ScenarioConfig(
+            len(instance.trucks), sum(r.kind == "hopper" for r in instance.resources),
+            sum(r.kind == "scale" for r in instance.resources),
+            instance.scenario_id.rsplit("-", 1)[-1], instance.scenario_index,
+        )
+        if scenario.scenario_id != instance.scenario_id:
+            raise ValueError("frozen instance scenario_id disagrees with its records")
         _validate_regime(scenario.regime)
+        seed = instance.seed
         self.scenario = scenario
         self.seed = seed
         self.policy = policy
-        self.schedule: list[tuple[float, int, int, _Scheduled]] = []
+        self.schedule: list[tuple[float, int, str, str, int, _Scheduled]] = []
         self.next_schedule_sequence = 0
         self.next_event_sequence = 1
         self.events: list[EventRecord] = []
         self.clock = 0.0
         self.states: dict[str, _TruckState] = {}
-        # ``resources`` is retained as a compact availability view for the
-        # existing API; status is the authoritative physical state.
+        # Status is the authoritative physical resource state.
         self.resources: dict[str, bool] = {}
         self.resource_status: dict[str, str] = {}
         self.resource_failure_cause: dict[str, str | None] = {}
         self.resource_kind: dict[str, str] = {}
         self.resource_allowed_cargo: dict[str, tuple[str, ...]] = {}
         self.resource_pool: dict[str, tuple[str, ...]] = {}
-        self.pending_failures: dict[str, tuple[str, float | None]] = {}
+        self.pending_failures: dict[str, list[_Scheduled]] = {}
+        self.active_disruptions: dict[str, dict[str, float]] = {}
         self.scale_occupancy = 0
         self.max_scale_occupancy = 0
         self.waits: list[float] = []
         self.realized_durations: dict[tuple[str, str], float] = {}
-        self.document_release_delays: dict[str, float] = {}
         self.first_arrival_time: float | None = None
         self.last_completion_time: float | None = None
         self.buffer_occupancy: dict[str, int] = {
@@ -268,140 +273,61 @@ class _DaySimulation:
             scenario=self.scenario,
         )
 
-    def _stream(self, *parts: object) -> random.Random:
-        """Return a reproducible substream independent of dispatch order.
-
-        The policy is intentionally absent from the key.  Every stochastic
-        realization is therefore common across policies for one
-        scenario/seed pair, even when policies start different trucks first.
-        """
-
-        material = "|".join(
-            ("pequiflux-des-crn-v1", self.scenario.scenario_id, str(self.seed), *(str(part) for part in parts))
-        )
-        digest = hashlib.sha256(material.encode("utf-8")).digest()
-        return random.Random(int.from_bytes(digest[:16], "big", signed=False))
-
     def _build_resources(self) -> None:
-        self.resource_pool["gate"] = ("gate-1",)
-        hoppers = tuple(f"hopper-{index}" for index in range(1, self.scenario.hopper_count + 1))
-        scales = tuple(f"scale-{index}" for index in range(1, self.scenario.scale_count + 1))
-        self.resource_pool["unload"] = hoppers
-        self.resource_pool["scale_in"] = scales
-        self.resource_pool["scale_out"] = scales
-        for resource_id in ("gate-1", *hoppers, *scales):
+        expected_resources = {"gate-1": "gate"}
+        expected_resources.update({f"hopper-{index}": "hopper" for index in range(1, self.scenario.hopper_count + 1)})
+        expected_resources.update({f"scale-{index}": "scale" for index in range(1, self.scenario.scale_count + 1)})
+        if {resource.resource_id: resource.kind for resource in self.instance.resources} != expected_resources:
+            raise ValueError("frozen resource identities and kinds disagree with the scenario")
+        for resource in self.instance.resources:
+            resource_id = resource.resource_id
+            if resource_id in self.resources or resource.status != "available":
+                raise ValueError("frozen resources must be unique and initially available")
             self.resources[resource_id] = True
-            self.resource_status[resource_id] = "available"
+            self.resource_status[resource_id] = resource.status
             self.resource_failure_cause[resource_id] = None
-            kind = "scale" if resource_id.startswith("scale") else resource_id.split("-")[0]
-            self.resource_kind[resource_id] = kind
-            self.resource_allowed_cargo[resource_id] = canonical_allowed_cargo_types(
-                resource_id, kind
-            )
+            self.resource_kind[resource_id] = resource.kind
+            self.resource_allowed_cargo[resource_id] = resource.allowed_cargo_types
+            self.active_disruptions[resource_id] = {}
+        for operation, kind in (("gate", "gate"), ("scale_in", "scale"),
+                                ("scale_out", "scale"), ("unload", "hopper")):
+            self.resource_pool[operation] = tuple(sorted(
+                r.resource_id for r in self.instance.resources if r.kind == kind
+            ))
+        if self.resource_pool["gate"] != ("gate-1",):
+            raise ValueError("frozen instance requires its canonical gate-1 resource")
 
     def _build_trucks(self) -> None:
-        weights = PEAK_ARRIVAL_WEIGHTS if self.scenario.regime == "peak" else ARRIVAL_WEIGHTS
-        # Conditioning on N arrivals gives the exact block probabilities of
-        # the protocol while retaining deterministic local random draws.
-        block_weights = [weight * (end - start) for weight, (start, end) in zip(weights, ARRIVAL_BLOCKS)]
-        for index in range(self.scenario.truck_count):
-            arrival_stream = self._stream("truck", index, "arrival")
-            block_index = arrival_stream.choices(
-                range(len(ARRIVAL_BLOCKS)), weights=block_weights, k=1
-            )[0]
-            arrival = arrival_stream.uniform(*ARRIVAL_BLOCKS[block_index])
-            priority_draw = self._stream("truck", index, "priority").random()
-            priority = 2 if priority_draw < 0.15 else 1 if priority_draw < 0.35 else 0
-            document_ok = self._stream("truck", index, "document").random() >= DOCUMENT_BLOCK_RATE
-            truck_id = f"T-{index + 1:03d}"
-            self.states[truck_id] = _TruckState(
-                truck_id=truck_id,
-                arrival_time=float(arrival),
-                priority=priority,
-                cargo_type="soy" if index % 2 == 0 else "corn",
-                document_ok=document_ok,
-                stable_order=index,
-                stage_entry_time=float(arrival),
+        for index, truck in enumerate(self.instance.trucks):
+            if (truck.stage != "gate" or truck.arrival_minute > HORIZON_MINUTES
+                    or truck.scenario_id != self.scenario.scenario_id
+                    or truck.eligible_resources != ("gate-1",)):
+                raise ValueError("frozen truck must start at gate within the horizon")
+            self.states[truck.truck_id] = _TruckState(
+                truck_id=truck.truck_id, arrival_time=truck.arrival_minute,
+                priority=truck.priority, cargo_type=truck.cargo_type,
+                document_ok=truck.document_ok, stable_order=index,
+                stage_entry_time=truck.arrival_minute,
             )
-            self._push(time=float(arrival), kind="arrival", truck_id=truck_id)
+            self._push(time=truck.arrival_minute, kind="arrival", truck_id=truck.truck_id)
+        self.realized_durations = {
+            (row.truck_id, row.operation): row.duration_min for row in self.instance.service_times
+        }
+        expected = {(truck_id, operation) for truck_id in self.states for operation in _OPERATIONS}
+        if set(self.realized_durations) != expected or any(
+            duration <= 0 for duration in self.realized_durations.values()
+        ):
+            raise ValueError("frozen service_times must contain exactly four positive durations per truck")
 
     def _build_disruptions(self) -> None:
-        # One independent shift-level base-failure Bernoulli is sampled for
-        # every regime.  The stream key is policy-independent, so changing a
-        # dispatch policy cannot change the disruption realization.
-        base_failure = self._stream("event", "base_failure", "turn").random() < 0.05
-        if base_failure:
-            resource_ids = tuple(
-                resource_id
-                for resource_id in sorted(self.resource_status)
-                if not (
-                    self.scenario.regime == "critical_failure"
-                    and resource_id == "hopper-1"
-                )
-            )
-            if not resource_ids:
-                raise RuntimeError("base failure has no resource distinct from the forced override")
-            resource_index = self._stream("event", "base_failure", "resource").randrange(
-                len(resource_ids)
-            )
+        for row in self.instance.disruptions:
             self._push(
-                time=self._stream("event", "base_failure", "start").uniform(
-                    *CRITICAL_FAILURE_TIME_RANGE
-                ),
-                kind="resource_failure",
-                resource_id=resource_ids[resource_index],
-                cause="base_failure",
+                time=float(row["time"]), kind=row["event_type"],
+                truck_id=row["truck_id"] or None, resource_id=row["resource_id"] or None,
+                cause=row["cause"], duration=float(row["duration_min"]),
+                recovery_at=float(row["return_time"]) if row["return_time"] else None,
+                latent_id=row["latent_id"], scheduled_start=float(row["time"]),
             )
-        if self.scenario.regime == "critical_failure":
-            self._push(
-                time=self._stream("event", "critical_failure", "start").uniform(*CRITICAL_FAILURE_TIME_RANGE),
-                kind="resource_failure",
-                resource_id="hopper-1",
-                cause="critical_failure",
-            )
-        if self.scenario.regime == "priority_shift":
-            shift_time = self._stream("event", "priority_shift", "start").uniform(*PRIORITY_SHIFT_TIME_RANGE)
-            eligible = [
-                state for state in self.states.values()
-                if state.priority < 2 and state.arrival_time >= shift_time
-            ]
-            if len(eligible) < max(1, math.ceil(0.10 * len(self.states))):
-                eligible = [state for state in self.states.values() if state.priority < 2]
-            target_count = max(1, math.ceil(0.10 * len(self.states)))
-            for state in sorted(eligible, key=lambda item: (item.arrival_time, item.stable_order))[:target_count]:
-                self._push(time=shift_time, kind="priority_change", truck_id=state.truck_id)
-        # Rain exposes only the first hopper in two-or-more-hopper layouts.
-        # Adjacent wet blocks are coalesced into one failure window.
-        if self.scenario.hopper_count >= 2:
-            wet_blocks = [
-                self._stream("event", "rain", block_index).random() < RAIN_BLOCK_RATE
-                for block_index in range(24)
-            ]
-            index = 0
-            while index < len(wet_blocks):
-                if not wet_blocks[index]:
-                    index += 1
-                    continue
-                first = index
-                while index + 1 < len(wet_blocks) and wet_blocks[index + 1]:
-                    index += 1
-                start = first * RAIN_BLOCK_MINUTES
-                end = (index + 1) * RAIN_BLOCK_MINUTES
-                self._push(
-                    time=start,
-                    kind="rain_start",
-                    resource_id="hopper-1",
-                    cause="rain",
-                    recovery_at=end,
-                )
-                self._push(
-                    time=end,
-                    kind="rain_end",
-                    resource_id="hopper-1",
-                    cause="rain",
-                    recovery_at=end,
-                )
-                index += 1
 
     def _push(
         self,
@@ -413,26 +339,31 @@ class _DaySimulation:
         resource_id: str | None = None,
         cause: str | None = None,
         recovery_at: float | None = None,
+        duration: float | None = None,
+        latent_id: str | None = None,
+        scheduled_start: float | None = None,
     ) -> None:
-        if kind not in _SCHEDULE_RANK:
+        if kind not in EVENT_RANKS:
             raise ValueError(f"unknown scheduled event kind: {kind}")
         if not math.isfinite(time) or time < self.clock:
             raise ValueError("scheduled event time must be finite and monotonic")
-        if recovery_at is not None and (not math.isfinite(recovery_at) or recovery_at < time):
+        if recovery_at is not None and (not math.isfinite(recovery_at) or (recovery_at < time and kind != "rain_start")):
             raise ValueError("recovery_at must be finite and no earlier than event time")
         self.next_schedule_sequence += 1
         item = _Scheduled(
             time=float(time),
-            rank=_SCHEDULE_RANK[kind],
+            rank=EVENT_RANKS[kind],
             sequence=self.next_schedule_sequence,
             kind=kind,
             truck_id=truck_id,
             operation=operation,
             resource_id=resource_id,
             cause=cause,
-            recovery_at=recovery_at,
+            recovery_at=recovery_at, duration=duration, latent_id=latent_id,
+            scheduled_start=scheduled_start,
         )
-        heapq.heappush(self.schedule, (item.time, item.rank, item.sequence, item))
+        heapq.heappush(self.schedule, (item.time, item.rank, item.resource_id or "",
+                                     item.truck_id or "", item.sequence, item))
 
     def _emit(self, kind: str, payload: Mapping[str, Any]) -> EventRecord:
         event = EventRecord(
@@ -452,30 +383,7 @@ class _DaySimulation:
         return event
 
     def _duration(self, truck_id: str, operation: str) -> float:
-        key = (truck_id, operation)
-        if key in self.realized_durations:
-            return self.realized_durations[key]
-        low, mode, high = SERVICE_TRIANGULAR[operation]
-        # This draw deliberately occurs after recommendation and acceptance.
-        duration = _round_metric(self._stream("truck", truck_id, "duration", operation).triangular(low, high, mode))
-        self.realized_durations[key] = duration
-        return duration
-
-    def _failure_duration(self, resource_id: str, cause: str, recovery_at: float | None) -> float:
-        low, mode, high = CRITICAL_FAILURE_DURATION
-        return _round_metric(
-            self._stream("event", "failure_duration", resource_id, cause, recovery_at).triangular(
-                low, high, mode
-            )
-        )
-
-    def _document_release_delay(self, truck_id: str) -> float:
-        if truck_id not in self.document_release_delays:
-            low, mode, high = DOCUMENT_RELEASE_TRIANGULAR
-            self.document_release_delays[truck_id] = _round_metric(
-                self._stream("truck", truck_id, "document_release").triangular(low, high, mode)
-            )
-        return self.document_release_delays[truck_id]
+        return self.realized_durations[(truck_id, operation)]
 
     def _initial_snapshot(self) -> YardSnapshot:
         trucks = {
@@ -539,7 +447,7 @@ class _DaySimulation:
         resources = {
             resource_id: Resource(
                 resource_id=resource_id,
-                kind="scale" if resource_id.startswith("scale") else resource_id.split("-")[0],
+                kind=self.resource_kind[resource_id],
                 status=self.resource_status[resource_id],
                 allowed_cargo_types=self.resource_allowed_cargo[resource_id],
             )
@@ -605,23 +513,23 @@ class _DaySimulation:
             self.max_buffer_reservation, self._unload_reservation()
         )
         self.max_buffer_occupancy = max(self.max_buffer_occupancy, *self.buffer_occupancy.values())
-        if self.max_buffer_occupancy > BUFFER_CAPACITY or self.max_buffer_reservation > BUFFER_CAPACITY:
+        if self.max_buffer_occupancy > self.controls.buffer_capacity or self.max_buffer_reservation > self.controls.buffer_capacity:
             raise RuntimeError(
                 "hard constraint violation: buffer capacity exceeded "
                 f"(occupancy={self.max_buffer_occupancy}, reservation="
-                f"{self.max_buffer_reservation}>{BUFFER_CAPACITY})"
+                f"{self.max_buffer_reservation}>{self.controls.buffer_capacity})"
             )
 
     def _buffer_allows(self, operation: str) -> bool:
         if operation == "gate":
-            return self._unload_reservation() < BUFFER_CAPACITY
+            return self._unload_reservation() < self.controls.buffer_capacity
         if operation == "scale_in":
             # The candidate itself is already part of the reservation.
-            return self._unload_reservation() <= BUFFER_CAPACITY
+            return self._unload_reservation() <= self.controls.buffer_capacity
         downstream = {"gate": "scale_in", "scale_in": "unload", "unload": "scale_out"}.get(operation)
         if downstream is None:
             return True
-        return self._queue_occupancy(downstream) < BUFFER_CAPACITY
+        return self._queue_occupancy(downstream) < self.controls.buffer_capacity
 
     @staticmethod
     def _snapshot_unload_reservation(snapshot: YardSnapshot) -> int:
@@ -641,17 +549,16 @@ class _DaySimulation:
             and truck.stage != TRUCK_STAGE_SERVICE_STARTED
         )
 
-    @classmethod
-    def _snapshot_buffer_allows(cls, snapshot: YardSnapshot, operation: str) -> bool:
-        reservation = cls._snapshot_unload_reservation(snapshot)
+    def _snapshot_buffer_allows(self, snapshot: YardSnapshot, operation: str) -> bool:
+        reservation = self._snapshot_unload_reservation(snapshot)
         if operation == "gate":
-            return reservation < BUFFER_CAPACITY
+            return reservation < self.controls.buffer_capacity
         if operation == "scale_in":
-            return reservation <= BUFFER_CAPACITY
+            return reservation <= self.controls.buffer_capacity
         downstream = {"scale_in": "unload", "unload": "scale_out"}.get(operation)
         if downstream is None:
             return True
-        return cls._snapshot_queue_occupancy(snapshot, downstream) < BUFFER_CAPACITY
+        return self._snapshot_queue_occupancy(snapshot, downstream) < self.controls.buffer_capacity
 
     def _digital_snapshot(self) -> YardSnapshot:
         if self.digital_model is None:
@@ -841,7 +748,7 @@ class _DaySimulation:
         ordered = tuple(
             sorted(hard_feasible, key=lambda item: (item.stage_entry_time, item.truck_id))
         )
-        top_window = ordered[:6]
+        top_window = ordered[:self.controls.ordinary_window]
         pressured = tuple(
             candidate
             for candidate in ordered
@@ -855,14 +762,12 @@ class _DaySimulation:
             sorted(merged.values(), key=lambda item: (item.stage_entry_time, item.truck_id))
         )
 
-    @staticmethod
-    def _pressure_value(priority: int, waiting_time: float) -> float:
-        threshold = PRIORITY_THRESHOLDS[min(priority, len(PRIORITY_THRESHOLDS) - 1)]
+    def _pressure_value(self, priority: int, waiting_time: float) -> float:
+        threshold = PRIORITY_THRESHOLDS[min(priority, len(PRIORITY_THRESHOLDS) - 1)] * float(self.controls.threshold_multiplier)
         return max(0.0, waiting_time - threshold)
 
-    @classmethod
-    def _pressure(cls, candidate: Candidate) -> float:
-        return cls._pressure_value(candidate.priority, candidate.waiting_time)
+    def _pressure(self, candidate: Candidate) -> float:
+        return self._pressure_value(candidate.priority, candidate.waiting_time)
 
     def _accept_and_start(self, recommendation: Recommendation, operation: str, resource_id: str) -> None:
         selected_id = recommendation.selected.truck_id
@@ -927,60 +832,70 @@ class _DaySimulation:
         )
         self._push(
             time=self.clock + duration,
-            kind="completion",
+            kind="service_completion",
             truck_id=selected_id,
             operation=operation,
             resource_id=resource_id,
         )
 
-    def _next_completion_time(self, resource_id: str) -> float | None:
-        values = [item.time for _, _, _, item in self.schedule if item.kind == "completion" and item.resource_id == resource_id]
-        return min(values) if values else None
-
-    def _emit_resource_failure(self, resource_id: str, cause: str, recovery_at: float | None) -> None:
-        if self.resource_status[resource_id] == "failed":
+    def _activate_disruption(self, item: _Scheduled) -> None:
+        resource_id = item.resource_id
+        if resource_id is None or item.latent_id is None or item.duration is None:
+            raise RuntimeError("frozen disruption is missing its resource, latent or duration")
+        recovery = (item.recovery_at if item.kind == "rain_start"
+                    else self.clock + item.duration)
+        if recovery is None:
+            raise RuntimeError("rain requires its frozen end time")
+        evidence = {
+            "resource_id": resource_id, "cause": item.cause, "latent_id": item.latent_id,
+            "scheduled_failure_start": item.scheduled_start,
+            "effective_failure_start": self.clock,
+            "scheduled_failure_duration": item.duration,
+            "recovery_time": recovery,
+            "expired_before_effective_start": recovery <= self.clock,
+        }
+        self._emit("DISRUPTION_RECORDED", evidence)
+        if recovery <= self.clock:
             return
-        if self.resource_status[resource_id] != "available":
-            raise RuntimeError("resource failure must be applied only when resource is available")
-        if recovery_at is None:
-            duration = self._failure_duration(resource_id, cause, recovery_at)
-            recovery_at = self.clock + duration
-        else:
-            duration = max(0.0, recovery_at - self.clock)
-        self._set_resource_status(resource_id, "failed", cause=cause)
-        self._emit(
-            "RESOURCE_FAILED",
-            {
-                "resource_id": resource_id,
-                "cause": cause,
-                "duration_minutes": _round_metric(duration),
-            },
-        )
-        recovery_at = max(self.clock, recovery_at)
-        self._push(
-            time=recovery_at,
-            kind="resource_recovery",
-            resource_id=resource_id,
-            cause=cause,
-        )
+        active = self.active_disruptions[resource_id]
+        if item.latent_id in active:
+            raise RuntimeError("duplicate active frozen disruption")
+        active[item.latent_id] = recovery
+        if self.resource_status[resource_id] == "available":
+            self._set_resource_status(resource_id, "failed", cause=item.cause)
+            self._emit("RESOURCE_FAILED", {
+                **evidence, "duration_minutes": recovery - self.clock,
+            })
+        elif self.resource_status[resource_id] != "failed":
+            raise RuntimeError("disruption cannot preempt an active service")
+        if item.kind != "rain_start":
+            self._push(time=recovery, kind="resource_recovery", resource_id=resource_id,
+                       cause=item.cause, latent_id=item.latent_id)
 
     def _handle_resource_failure(self, item: _Scheduled) -> None:
-        resource_id = item.resource_id
-        if resource_id is None or resource_id not in self.resource_status:
+        if item.resource_id not in self.resource_status:
             raise RuntimeError("resource failure event has an unknown resource")
-        cause = item.cause or "unknown"
-        if self.resource_status[resource_id] == "failed":
-            return
-        if self.resource_status[resource_id] == "busy":
-            # Non-preemptive services finish first.  The public failure is
-            # emitted exactly at that completion boundary.
-            recovery_at = item.recovery_at
-            self.pending_failures.setdefault(resource_id, (cause, recovery_at))
-            return
-        self._emit_resource_failure(resource_id, cause, item.recovery_at)
+        if self.resource_status[item.resource_id] == "busy":
+            self.pending_failures.setdefault(item.resource_id, []).append(item)
+        else:
+            self._activate_disruption(item)
+
+    def _recover_disruption(self, item: _Scheduled) -> None:
+        active = self.active_disruptions[item.resource_id]
+        if item.latent_id not in active:
+            if item.kind == "rain_end":
+                return  # rain may finish before the nonpreemptive service
+            raise RuntimeError("resource recovery has no matching active disruption")
+        del active[item.latent_id]
+        if not active:
+            self._set_resource_status(item.resource_id, "available")
+            self._emit("RESOURCE_RECOVERED", {
+                "resource_id": item.resource_id, "cause": item.cause,
+                "latent_id": item.latent_id,
+            })
 
     def _process(self, item: _Scheduled) -> None:
-        if item.kind in {"arrival", "document_release", "completion", "priority_change"}:
+        if item.kind in {"arrival", "document_release", "service_completion", "priority_change"}:
             if item.truck_id is None:
                 raise RuntimeError(f"scheduled {item.kind} event has no truck")
             state = self.states[item.truck_id]
@@ -1007,9 +922,6 @@ class _DaySimulation:
             )
             state.ready_time = state.arrival_time
             state.stage_entry_time = self.clock
-            if not state.document_ok:
-                state.ready_time = self.clock + self._document_release_delay(state.truck_id)
-                self._push(time=state.ready_time, kind="document_release", truck_id=state.truck_id)
             return
         if item.kind == "document_release":
             if state.document_ok:
@@ -1028,17 +940,10 @@ class _DaySimulation:
         if item.kind in {"resource_failure", "rain_start"}:
             self._handle_resource_failure(item)
             return
-        if item.kind == "rain_end":
+        if item.kind in {"rain_end", "resource_recovery"}:
+            self._recover_disruption(item)
             return
-        if item.kind == "resource_recovery":
-            resource_id = item.resource_id
-            if resource_id is None or self.resource_status.get(resource_id) != "failed":
-                raise RuntimeError("resource recovery does not match a failed resource")
-            cause = item.cause or self.resource_failure_cause.get(resource_id) or "unknown"
-            self._set_resource_status(resource_id, "available")
-            self._emit("RESOURCE_RECOVERED", {"resource_id": resource_id, "cause": cause})
-            return
-        if item.kind == "completion":
+        if item.kind == "service_completion":
             if state is None or item.operation is None or item.resource_id is None:
                 raise RuntimeError("completion event missing operation/resource")
             if state.active_operation != item.operation or state.active_resource != item.resource_id:
@@ -1070,9 +975,13 @@ class _DaySimulation:
                 state.ready_time = self.clock
                 state.stage_entry_time = self.clock
             pending = self.pending_failures.pop(item.resource_id, None)
-            if pending is not None:
-                cause, recovery_at = pending
-                self._emit_resource_failure(item.resource_id, cause, recovery_at)
+            for failure in pending or ():
+                self._push(
+                    time=self.clock, kind=failure.kind, resource_id=failure.resource_id,
+                    cause=failure.cause, recovery_at=failure.recovery_at,
+                    duration=failure.duration, latent_id=failure.latent_id,
+                    scheduled_start=failure.scheduled_start,
+                )
             self._update_buffer_occupancy()
             return
         raise RuntimeError(f"unknown scheduled event kind: {item.kind}")
@@ -1082,7 +991,8 @@ class _DaySimulation:
 
         waits: list[float] = []
         censored = 0.0
-        for state in self.states.values():
+        for truck_id in sorted(self.states):
+            state = self.states[truck_id]
             value = state.waiting_total
             if (
                 state.arrived
@@ -1109,6 +1019,16 @@ class _DaySimulation:
             "RUN_STARTED",
             {
                 "scenario_id": self.scenario.scenario_id,
+                "instance_id": self.source_instance.instance_id,
+                "instance_hash": self.source_instance.instance_hash,
+                "execution_instance_hash": self.instance.instance_hash,
+                "dataset_root_hash": self.controls.source_dataset_root_hash,
+                "control_hash": self.controls.control_hash,
+                "controlled_view_hash": self.projection.controlled_view_hash,
+                "event_overlay_hash": self.projection.event_overlay_hash,
+                "event_latents_sha256": self.controls.event_latents_sha256,
+                "event_semantics_version": EVENT_SEMANTICS_VERSION,
+                "event_ranks": dict(EVENT_RANKS),
                 "resources": initial_snapshot.canonical_dict()["resources"],
             },
         )
@@ -1118,11 +1038,8 @@ class _DaySimulation:
                 self.clock = HORIZON_MINUTES
                 break
             self.clock = float(next_time)
-            same_time: list[_Scheduled] = []
             while self.schedule and self.schedule[0][0] == next_time:
-                same_time.append(heapq.heappop(self.schedule)[3])
-            for item in same_time:
-                self._process(item)
+                self._process(heapq.heappop(self.schedule)[-1])
             self._update_buffer_occupancy()
             self._dispatch_available()
         # The horizon is a fixed observation boundary even when the queue
@@ -1189,13 +1106,19 @@ class _DaySimulation:
             "scale_utilization_peak": self.max_scale_occupancy,
             "max_buffer_occupancy": self.max_buffer_occupancy,
             "max_buffer_reservation": self.max_buffer_reservation,
-            "buffer_capacity": BUFFER_CAPACITY,
+            "buffer_capacity": self.controls.buffer_capacity,
             "hard_constraint_violations": 0,
         }
         return DayResult(
             scenario=self.scenario,
             seed=self.seed,
             policy_name=self.policy.name,
+            instance_id=self.source_instance.instance_id,
+            instance_hash=str(self.source_instance.instance_hash),
+            execution_instance_hash=str(self.instance.instance_hash),
+            controls=self.controls,
+            controlled_view_hash=self.projection.controlled_view_hash,
+            event_overlay_hash=self.projection.event_overlay_hash,
             events=tuple(self.events),
             metrics=metrics,
             hard_constraint_violations=0,
@@ -1207,27 +1130,24 @@ class _DaySimulation:
         )
 
 
-def run_day(scenario: ScenarioConfig, seed: int, policy: DispatchPolicy | str) -> DayResult:
-    """Execute one deterministic scenario using a local RNG and policy."""
-
-    if not isinstance(scenario, ScenarioConfig):
-        raise TypeError("scenario must be a ScenarioConfig")
-    _validate_regime(scenario.regime)
-    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
-        raise ValueError("seed must be a non-negative integer")
+def run_day(instance: FrozenInstance, policy: DispatchPolicy | str,
+            controls: ExecutionControls, event_latents: EventLatentLedger) -> DayResult:
+    """Execute validated frozen inputs; never generate or replace missing draws."""
+    if not isinstance(instance, FrozenInstance):
+        raise TypeError("instance must be a FrozenInstance")
+    if not isinstance(controls, ExecutionControls):
+        raise TypeError("controls must be ExecutionControls")
+    if not isinstance(event_latents, EventLatentLedger):
+        raise TypeError("event_latents must be an EventLatentLedger")
     selected_policy = make_policy(policy) if isinstance(policy, str) else policy
     if not isinstance(selected_policy, DispatchPolicy):
         raise TypeError("policy must be a DispatchPolicy or policy name")
-    return _DaySimulation(scenario, seed, selected_policy).run()
+    return _DaySimulation(instance, selected_policy, controls, event_latents).run()
 
 
 __all__ = [
-    "ARRIVAL_BLOCKS",
-    "ARRIVAL_WEIGHTS",
-    "BUFFER_CAPACITY",
     "DayResult",
     "HORIZON_MINUTES",
-    "SERVICE_TRIANGULAR",
     "run_day",
     "tiny_scenario",
 ]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from types import SimpleNamespace
+from dataclasses import replace
 
 import pytest
 
@@ -19,7 +19,21 @@ from pequiflux_experiment.dispatch import (
 )
 import pequiflux_experiment.emulator as emulator_module
 from pequiflux_experiment.emulator import run_day, tiny_scenario
+from pequiflux_experiment.validation_fixtures import build_validation_fixture
+from pequiflux_experiment.domain import EventLatentLedger, ExecutionControls
+from pequiflux_experiment.dataset import _coalesced_rain_rows, _disruption_payload_hash
+from pequiflux_experiment.config import EVENT_RANKS
 from pequiflux_experiment.policies import make_policy
+
+
+def _run_fixture(scenario, seed, policy):
+    fixture = build_validation_fixture(scenario, seed)
+    return run_day(fixture.instance, policy, fixture.controls, fixture.event_latents)
+
+
+def _simulation_fixture(scenario, seed, policy):
+    fixture = build_validation_fixture(scenario, seed)
+    return emulator_module._DaySimulation(fixture.instance, policy, fixture.controls, fixture.event_latents)
 
 
 def candidate(truck_id: str, *, document_ok: bool) -> Candidate:
@@ -71,8 +85,8 @@ def test_policy_select_also_fails_closed_on_unavailable_resource(policy: str) ->
 
 def test_same_seed_produces_identical_events_and_metrics() -> None:
     scenario = tiny_scenario(truck_count=8, hoppers=1, scales=1, regime="nominal")
-    first = run_day(scenario, 101, make_policy("lexicographic"))
-    second = run_day(scenario, 101, make_policy("lexicographic"))
+    first = _run_fixture(scenario, 101, make_policy("lexicographic"))
+    second = _run_fixture(scenario, 101, make_policy("lexicographic"))
 
     assert [event.to_dict() for event in first.events] == [
         event.to_dict() for event in second.events
@@ -83,7 +97,7 @@ def test_same_seed_produces_identical_events_and_metrics() -> None:
 
 def test_scale_in_and_scale_out_share_one_physical_pool() -> None:
     scenario = tiny_scenario(truck_count=4, hoppers=1, scales=1, regime="nominal")
-    result = run_day(scenario, 101, make_policy("fifo_strict"))
+    result = _run_fixture(scenario, 101, make_policy("fifo_strict"))
 
     started = [
         event.payload["operation"]
@@ -94,7 +108,7 @@ def test_scale_in_and_scale_out_share_one_physical_pool() -> None:
     assert result.max_scale_occupancy <= 1
 
 
-def _force_arrival_time(monkeypatch, arrival_time: float) -> None:
+def _force_arrival_time(monkeypatch, arrival_time: float, *, priority: int | None = None) -> None:
     build_trucks = emulator_module._DaySimulation._build_trucks
 
     def build_trucks_at_time(simulation):
@@ -102,6 +116,8 @@ def _force_arrival_time(monkeypatch, arrival_time: float) -> None:
         simulation.schedule.clear()
         for state in simulation.states.values():
             state.arrival_time = state.stage_entry_time = arrival_time
+            if priority is not None:
+                state.priority = priority
             simulation._push(time=arrival_time, kind="arrival", truck_id=state.truck_id)
 
     monkeypatch.setattr(emulator_module._DaySimulation, "_build_trucks", build_trucks_at_time)
@@ -111,7 +127,7 @@ def test_parallel_pool_resources_do_not_assign_one_truck_twice(monkeypatch) -> N
     # Queue all four trucks together to exercise actual parallel service;
     # a late NHPP arrival may legitimately remain at the hard horizon.
     _force_arrival_time(monkeypatch, 0.0)
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=4, hoppers=2, scales=2, regime="nominal"),
         101,
         make_policy("lexicographic"),
@@ -132,7 +148,7 @@ def test_parallel_pool_resources_do_not_assign_one_truck_twice(monkeypatch) -> N
 
 
 def test_every_selection_is_explained_then_accepted_before_service() -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=2, hoppers=1, scales=1, regime="nominal"),
         101,
         make_policy("fifo_strict"),
@@ -174,14 +190,14 @@ class _RecordingPolicy(DispatchPolicy):
 
 def test_policy_context_excludes_future_and_non_arrived_trucks() -> None:
     policy = _RecordingPolicy()
-    run_day(tiny_scenario(truck_count=4, hoppers=1, scales=1), 101, policy)
+    _run_fixture(tiny_scenario(truck_count=4, hoppers=1, scales=1), 101, policy)
 
     assert policy.observations
     assert all(queue_length == len(candidate_ids) for queue_length, candidate_ids in policy.observations)
 
 
 def test_run_day_exposes_equivalent_independent_physical_and_digital_snapshots() -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=2, hoppers=1, scales=1),
         101,
         make_policy("fifo_strict"),
@@ -203,42 +219,108 @@ def test_run_day_fails_with_diagnostic_when_physical_snapshot_diverges(monkeypat
     monkeypatch.setattr(emulator_module._DaySimulation, "_final_snapshot", divergent_snapshot)
 
     with pytest.raises(RuntimeError, match="snapshot divergence"):
-        run_day(
+        _run_fixture(
             tiny_scenario(truck_count=2, hoppers=1, scales=1),
             101,
             make_policy("fifo_strict"),
         )
 
 
-def test_canonical_nhpp_blocks_and_document_block_rate() -> None:
-    """Arrivals and document blocks follow the frozen protocol inputs."""
+def test_des_consumes_frozen_arrivals_documents_and_services_without_rng() -> None:
+    fixture = build_validation_fixture(tiny_scenario(truck_count=12))
+    result = run_day(fixture.instance, "lexicographic", fixture.controls, fixture.event_latents)
+    arrivals = {event.payload["truck_id"]: event.payload for event in result.events if event.kind == "TRUCK_ARRIVED"}
+    for truck in fixture.instance.trucks:
+        assert arrivals[truck.truck_id]["arrival_time"] == truck.arrival_minute
+        assert arrivals[truck.truck_id]["document_ok"] == truck.document_ok
+    durations = {(row.truck_id, row.operation): row.duration_min for row in fixture.instance.service_times}
+    for event in result.events:
+        if event.kind == "SERVICE_STARTED":
+            assert event.payload["duration_minutes"] == durations[event.payload["truck_id"], event.payload["operation"]]
+    assert result.instance_id == fixture.instance.instance_id
+    assert result.instance_hash == fixture.instance.instance_hash
+    assert not hasattr(emulator_module._DaySimulation, "_stream")
 
-    scenario = tiny_scenario(truck_count=2000, hoppers=1, scales=1, regime="nominal")
-    simulation = emulator_module._DaySimulation(scenario, 101, make_policy("fifo_strict"))
-    arrival_times = [state.arrival_time for state in simulation.states.values()]
+    first = fixture.instance.service_times[0]
+    changed_service = replace(first, duration_min=first.source_a, service_record_hash=None)
+    changed = replace(fixture.instance, service_times=(changed_service, *fixture.instance.service_times[1:]),
+                      canonical_record_hash=None, instance_hash=None)
+    changed_result = run_day(changed, "lexicographic", fixture.controls, fixture.event_latents)
+    observed = next(event for event in changed_result.events if event.kind == "SERVICE_STARTED"
+                    and event.payload["truck_id"] == first.truck_id and event.payload["operation"] == first.operation)
+    assert observed.payload["duration_minutes"] == first.source_a
+    assert changed_result.instance_hash == changed.instance_hash != result.instance_hash
+    missing = replace(fixture.instance, service_times=fixture.instance.service_times[1:],
+                      canonical_record_hash=None, instance_hash=None)
+    with pytest.raises(ValueError, match="four positive durations"):
+        run_day(missing, "lexicographic", fixture.controls, fixture.event_latents)
+    with pytest.raises(TypeError, match="FrozenInstance"):
+        run_day(tiny_scenario(), "lexicographic", fixture.controls, fixture.event_latents)
+    forged_rows = tuple({
+        **row, "instance_id": "s00-seed101",
+        "latent_id": row["latent_id"].replace(fixture.instance.instance_id, "s00-seed101"),
+    } for row in fixture.event_latents.to_rows())
+    with pytest.raises(ValueError, match="scenario_id diverges"):
+        EventLatentLedger(forged_rows)
 
-    assert len(arrival_times) == 2000
-    assert all(0.0 <= value <= 720.0 for value in arrival_times)
-    block_edges = (0.0, 180.0, 300.0, 480.0, 720.0)
-    block_counts = [
-        sum(start <= value < end for value in arrival_times)
-        for start, end in zip(block_edges, block_edges[1:])
-    ]
-    assert all(count > 0 for count in block_counts)
-    # Conditional NHPP weights are (6, 3, 7, 2) over the four block lengths;
-    # these broad bounds reject the previous all-early uniform stream while
-    # allowing ordinary seed-to-seed multinomial variation.
-    assert block_counts[0] < 900
-    assert 140 < block_counts[1] < 330
-    assert 650 < block_counts[2] < 950
-    assert 180 < block_counts[3] < 430
 
-    blocked = sum(not state.document_ok for state in simulation.states.values())
-    assert 0.01 <= blocked / len(simulation.states) <= 0.06
+def _overlap_fixture(*, unload_duration=20.0, failure_start=245.0):
+    fixture = build_validation_fixture(tiny_scenario(truck_count=1, hoppers=2, regime="critical_failure"))
+    truck = replace(fixture.instance.trucks[0], arrival_minute=230.0, cargo_type="soy",
+                    document_status="CLEAR", truck_record_hash=None)
+    services = tuple(replace(row, duration_min={"gate": 4.0, "scale_in": 5.0,
+                         "unload": unload_duration, "scale_out": 5.0}[row.operation],
+                         service_record_hash=None) for row in fixture.instance.service_times)
+    rows = list(fixture.event_latents.to_rows())
+    for row in rows:
+        payload = row["payload"]
+        if row["latent_kind"] == "document":
+            payload["u"] = 0.99
+        elif row["latent_kind"] == "rain_block":
+            payload["u"] = 0.0 if payload["block_index"] == 8 else 0.99
+        elif row["latent_kind"] == "forced_failure":
+            payload.update(start_minute=failure_start, duration_min=40.0, end_minute=failure_start + 40.0)
+    ledger = EventLatentLedger(tuple(rows))
+    failure = dict(next(row for row in fixture.instance.disruptions if row["cause"] == "critical_failure"))
+    failure.update(time=failure_start, duration_min=40.0, return_time=failure_start + 40.0)
+    disruptions = [failure, *_coalesced_rain_rows(fixture.instance,
+        [row for row in rows if row["latent_kind"] == "rain_block" and row["payload"]["u"] == 0.0])]
+    disruptions.sort(key=lambda row: (row["time"], row["event_rank"], row["resource_id"], row["truck_id"]))
+    for index, row in enumerate(disruptions, 1):
+        row["sequence"] = index
+        row["payload_hash"] = _disruption_payload_hash(row)
+    instance = replace(fixture.instance, trucks=(truck,), service_times=services,
+                       disruptions=tuple(disruptions), canonical_record_hash=None, instance_hash=None)
+    controls = ExecutionControls.build(**{key: value for key, value in fixture.controls.to_dict().items()
+        if key not in {"control_hash", "event_latents_sha256"}}, event_latents_sha256=ledger.event_latents_sha256)
+    return instance, controls, ledger
+
+
+@pytest.mark.parametrize("unload_duration,failure_start", ((20.0, 245.0), (35.0, 245.0), (31.0, 270.0)))
+def test_nonpreemptive_failure_rain_overlap_and_same_timestamp_order(unload_duration, failure_start):
+    instance, controls, ledger = _overlap_fixture(unload_duration=unload_duration, failure_start=failure_start)
+    result = run_day(instance, "lexicographic", controls, ledger)
+    completion = next(event.time for event in result.events if event.kind == "SERVICE_COMPLETED"
+                      and event.payload["operation"] == "unload")
+    assert completion == 239.0 + unload_duration
+    evidence = [event for event in result.events if event.kind == "DISRUPTION_RECORDED"]
+    critical = next(event.payload for event in evidence if event.payload["cause"] == "critical_failure")
+    assert critical["effective_failure_start"] == max(failure_start, completion)
+    assert critical["recovery_time"] == max(failure_start, completion) + 40.0
+    recovered = [event.time for event in result.events if event.kind == "RESOURCE_RECOVERED"]
+    assert recovered == [critical["recovery_time"]]
+    assert all(not (completion <= event.time < critical["recovery_time"])
+               for event in result.events if event.kind == "SERVICE_STARTED"
+               and event.payload["resource_id"] == "hopper-1")
+    # Completion precedes the public failure; at a rain-end/failure collision,
+    # all same-time changes settle before dispatch and the new failure wins.
+    same_time = [event.kind for event in result.events if event.time == completion]
+    assert same_time.index("SERVICE_COMPLETED") < same_time.index("RESOURCE_FAILED")
+    assert EVENT_RANKS["rain_end"] < EVENT_RANKS["resource_failure"]
 
 
 def test_service_durations_use_canonical_triangular_ranges() -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=4, hoppers=1, scales=1, regime="nominal"),
         101,
         make_policy("fifo_strict"),
@@ -270,7 +352,7 @@ def test_service_durations_use_canonical_triangular_ranges() -> None:
 
 @pytest.mark.parametrize("regime", ("critical_failure", "priority_shift"))
 def test_canonical_disruption_regimes_emit_public_events(regime: str) -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=60, hoppers=2, scales=1, regime=regime),
         101,
         make_policy("lexicographic"),
@@ -281,7 +363,7 @@ def test_canonical_disruption_regimes_emit_public_events(regime: str) -> None:
         assert any(
             event.payload.get("cause") == "critical_failure"
             for event in result.events
-            if event.kind == "RESOURCE_FAILED"
+            if event.kind == "DISRUPTION_RECORDED"
         )
     else:
         changed = [event for event in result.events if event.kind == "PRIORITY_CHANGED"]
@@ -290,7 +372,7 @@ def test_canonical_disruption_regimes_emit_public_events(regime: str) -> None:
 
 
 def test_rain_blocks_exposed_hopper_with_failure_recovery_events() -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=60, hoppers=2, scales=1, regime="nominal"),
         101,
         make_policy("lexicographic"),
@@ -312,7 +394,7 @@ def test_rain_blocks_exposed_hopper_with_failure_recovery_events() -> None:
 
 
 def test_horizon_censors_wait_and_reports_buffer_remnants() -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=60, hoppers=1, scales=1, regime="nominal"),
         101,
         make_policy("fifo_strict"),
@@ -328,7 +410,7 @@ def test_horizon_censors_wait_and_reports_buffer_remnants() -> None:
 
 
 def test_makespan_is_relative_to_first_arrival() -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=4, hoppers=1, scales=1, regime="nominal"),
         101,
         make_policy("fifo_strict"),
@@ -354,7 +436,7 @@ def test_zero_completion_fails_closed_without_fabricated_makespan(monkeypatch) -
     # Even the shortest gate service cannot complete before the hard horizon.
     _force_arrival_time(monkeypatch, 719.0)
     with pytest.raises(RuntimeError, match="no SERVICE_COMPLETED|makespan"):
-        run_day(
+        _run_fixture(
             tiny_scenario(truck_count=1, hoppers=1, scales=1, regime="nominal"),
             327,
             make_policy("fifo_strict"),
@@ -384,10 +466,12 @@ class _ScaleOutFirstPolicy(DispatchPolicy):
         return selected
 
 
-def test_reentrant_scale_pool_competes_scale_in_and_scale_out_in_one_dispatch() -> None:
+def test_reentrant_scale_pool_competes_scale_in_and_scale_out_in_one_dispatch(monkeypatch) -> None:
+    # Homogeneous priorities keep both scale operations in the admissible pool.
+    _force_arrival_time(monkeypatch, 0.0, priority=0)
     policy = _ScaleOutFirstPolicy()
-    result = run_day(
-        tiny_scenario(truck_count=60, hoppers=1, scales=1, regime="nominal"),
+    result = _run_fixture(
+        tiny_scenario(truck_count=12, hoppers=1, scales=1, regime="nominal"),
         101,
         policy,
     )
@@ -402,7 +486,7 @@ def test_reentrant_scale_pool_competes_scale_in_and_scale_out_in_one_dispatch() 
 def test_buffer_reserves_upstream_trucks_destined_to_unload(truck_count: int) -> None:
     """The unload buffer includes upstream/in-flight reservations, not only its queue."""
 
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=truck_count, hoppers=1, scales=1, regime="nominal"),
         101,
         make_policy("fifo_strict"),
@@ -454,7 +538,7 @@ def _per_truck_waits_from_events(result):
 
 
 def test_wait_metrics_are_per_truck_and_include_censored_horizon_wait() -> None:
-    result = run_day(
+    result = _run_fixture(
         tiny_scenario(truck_count=60, hoppers=1, scales=1, regime="nominal"),
         101,
         make_policy("fifo_strict"),
@@ -470,8 +554,8 @@ def test_wait_metrics_are_per_truck_and_include_censored_horizon_wait() -> None:
 
 def test_common_random_numbers_are_policy_independent() -> None:
     scenario = tiny_scenario(truck_count=12, hoppers=2, scales=1, regime="critical_failure")
-    fifo_simulation = emulator_module._DaySimulation(scenario, 101, make_policy("fifo_strict"))
-    lex_simulation = emulator_module._DaySimulation(scenario, 101, make_policy("lexicographic"))
+    fifo_simulation = _simulation_fixture(scenario, 101, make_policy("fifo_strict"))
+    lex_simulation = _simulation_fixture(scenario, 101, make_policy("lexicographic"))
     # Exogenous draws must agree. Public failure times may be deferred until
     # a busy resource completes its current, policy-dependent service.
     assert fifo_simulation.schedule == lex_simulation.schedule
@@ -611,7 +695,7 @@ def test_dispatch_hard_filters_cargo_before_affinity_ranking() -> None:
 def test_admissible_window_filters_cargo_before_priority_and_top_h0(
     candidates: tuple[Candidate, ...],
 ) -> None:
-    simulation = emulator_module._DaySimulation(
+    simulation = _simulation_fixture(
         tiny_scenario(truck_count=1, hoppers=2, scales=1, regime="nominal"),
         101,
         make_policy("lexicographic"),
@@ -740,42 +824,23 @@ def test_lexicographic_h_uses_pressure_wait_reorder_affinity_then_stage_entry() 
     assert policy.select(reorder_precedes_affinity, context).truck_id == "T-no-reorder"
 
 
-def test_critical_failure_has_base_substream_and_forced_hopper_override(monkeypatch) -> None:
-    scenario = tiny_scenario(truck_count=4, hoppers=2, scales=1, regime="critical_failure")
-    stream = emulator_module._DaySimulation._stream
-
-    def force_base_failure(simulation, *parts):
-        if parts == ("event", "base_failure", "turn"):
-            return SimpleNamespace(random=lambda: 0.0)
-        return stream(simulation, *parts)
-
-    monkeypatch.setattr(emulator_module._DaySimulation, "_stream", force_base_failure)
-    result = run_day(scenario, 23, make_policy("fifo_flow_faithful"))
-    failures = [event for event in result.events if event.kind == "RESOURCE_FAILED"]
-
-    base = [event for event in failures if event.payload.get("cause") == "base_failure"]
-    forced = [
-        event
-        for event in failures
-        if event.payload.get("cause") == "critical_failure"
-    ]
-    assert len(base) == 1
-    assert len(forced) == 1
-    assert base[0].payload["resource_id"] != forced[0].payload["resource_id"]
-    assert forced[0].payload["resource_id"] == "hopper-1"
-    assert 240.0 <= forced[0].time <= 480.0
-    assert all(
-        20.0 <= float(event.payload.get("duration_minutes", 20.0)) <= 70.0
-        for event in failures
-        if event.payload.get("cause") == "critical_failure"
-    )
+@pytest.mark.parametrize("hoppers,scales,expected_resource", ((1, 1, "hopper-1"), (2, 1, "hopper-1"), (3, 1, "scale-1"), (3, 2, "hopper-1")))
+def test_critical_failure_uses_only_frozen_nominal_bottleneck(hoppers, scales, expected_resource) -> None:
+    fixture = build_validation_fixture(tiny_scenario(truck_count=12, hoppers=hoppers, scales=scales, regime="critical_failure"))
+    result = run_day(fixture.instance, "fifo_flow_faithful", fixture.controls, fixture.event_latents)
+    failures = [event for event in result.events if event.kind == "DISRUPTION_RECORDED" and event.payload["cause"] != "rain"]
+    assert len(failures) == 1
+    failure = failures[0].payload
+    frozen = next(row for row in fixture.instance.disruptions if row["cause"] == "critical_failure")
+    assert failure["resource_id"] == expected_resource
+    assert failure["scheduled_failure_start"] == frozen["time"]
+    assert failure["scheduled_failure_duration"] == frozen["duration_min"]
+    assert failure["recovery_time"] == failure["effective_failure_start"] + frozen["duration_min"]
 
 
-def test_priority_shift_promotion_survives_future_arrival(monkeypatch) -> None:
-    # Both trucks arrive after the latest possible priority-shift draw (480).
-    _force_arrival_time(monkeypatch, 500.0)
-    result = run_day(
-        tiny_scenario(truck_count=2, hoppers=2, scales=1, regime="priority_shift"),
+def test_priority_shift_promotion_survives_future_arrival() -> None:
+    result = _run_fixture(
+        tiny_scenario(truck_count=12, hoppers=2, scales=1, regime="priority_shift"),
         101,
         make_policy("fifo_flow_faithful"),
     )
@@ -797,7 +862,7 @@ def test_priority_shift_promotion_survives_future_arrival(monkeypatch) -> None:
 
 
 def test_candidates_are_built_from_detached_digital_snapshot_not_physical_state() -> None:
-    simulation = emulator_module._DaySimulation(
+    simulation = _simulation_fixture(
         tiny_scenario(truck_count=1, hoppers=1, scales=1, regime="nominal"),
         101,
         make_policy("fifo_flow_faithful"),

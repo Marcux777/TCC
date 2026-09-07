@@ -66,10 +66,11 @@ recente e não ativam uma rota alternativa.
 
 - `validation`: duas sementes, cenário mínimo e as cinco políticas; produz
   manifesto, resultados, logs, replay, auditoria e `table_audit.csv`. É
-  evidência de engenharia e é o valor fixo de `RUN_PROFILE` nesta rodada.
-- `pilot`: amostra piloto pré-especificada em namespace próprio. O notebook
-  expõe um bloqueador porque os pré-requisitos de piloto e a gate de capacidade
-  ainda não estão materializados.
+  evidência de engenharia, com fixtures materializadas explicitamente por
+  `build_validation_inputs` e consumidas por `run_validation_matrix`.
+- `pilot`: 15 cenários pré-especificados, 50 sementes e cinco políticas (3.750
+  células), em namespace próprio. O executor exige dataset congelado, aprovação
+  de face e recibo de capacidade vigente antes de criar o namespace.
 - `load-confirmatory`: carrega somente o namespace identificado por
   `CONFIRMATORY_RUN_ID`, definido explicitamente na célula de identificação.
   ID ausente ou inexistente falha claramente. O pacote carregado é reauditado
@@ -80,8 +81,35 @@ recente e não ativam uma rota alternativa.
   `export_analysis` regenera as tabelas e figuras em `PEQUIFLUX_RESULTS_ROOT`.
   Não há descoberta de resultado mais recente nem fallback para execução.
 - `execute-confirmatory`: reservado à matriz confirmatória completa, após gates
-  de protocolo e capacidade. Nenhuma campanha confirmatória é executada nesta
-  rodada; o notebook expõe o bloqueador desses gates.
+  de protocolo e capacidade no núcleo da API. Exige exatamente 18.000 células,
+  dataset congelado validado, aprovação de face e recibo de capacidade vigente.
+
+`run_experiment_matrix` recebe `dataset_path`, `expected_dataset_root_hash`,
+`controls`, `face_receipt_path` e `capacity_receipt`. O hash externo fixa a
+origem; o executor revalida os seis payloads e usa suas instâncias no
+`run_day(instance, policy, controls, event_latents)`. Não há geração interna
+no DES. Resultados e logs registram os hashes da instância original, da projeção
+executada, dos controles e do dataset. O esquema de resultados/logs é versão 2;
+artefatos antigos precisam ser identificados como antigos, sem converter sua
+proveniência em consumo de entradas congeladas.
+
+Para preparar uma execução científica, carregue o dataset com
+`dataset.load_frozen_dataset(path, expected_dataset_root_hash=pin)`, construa
+`ExecutionControls.build(ordinary_window=6, buffer_capacity=12,
+threshold_multiplier=Decimal('1.00'), intensity='base',
+source_dataset_root_hash=pin, event_latents_sha256=dataset.event_latents.event_latents_sha256)`
+e use `ConfirmatoryWorkload.from_dataset(dataset, CONFIG, phase=RUN_PROFILE)`.
+`inspect_capacity(workload, CONFIG.capacity, RUNS_ROOT)` persiste a inspeção;
+seu objeto de retorno preenche `CAPACITY_RECEIPT` no notebook. O executor
+revalida o recibo imediatamente antes do namespace: TTL de 60 segundos,
+hashes, processo, dependências, RAM, disco e concorrência devem continuar
+válidos. A inspeção é uma estimativa de capacidade, não uma medição da campanha.
+
+Os caminhos e controles científicos são explícitos na célula inicial do
+notebook. Sem evidência válida, a chamada falha no executor também quando
+feita fora do notebook. Aprovações humanas pendentes não são preenchidas
+automaticamente. Fixtures, piloto e instalação limpa não comprovam a campanha
+confirmatória nem autorizam conclusões de H1.
 
 Não há seleção de perfil por variável de ambiente ou por descoberta de arquivos.
 Cada execução canônica deve receber uma `PEQUIFLUX_RESULTS_ROOT` nova e vazia;

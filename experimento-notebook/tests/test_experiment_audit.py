@@ -11,6 +11,7 @@ from pequiflux_experiment.experiment import (
     _log_lines,
     load_run_bundle,
     run_experiment_matrix,
+    run_validation_matrix,
 )
 from pequiflux_experiment.audit import AuditError, AuditReport, audit_run
 from pequiflux_experiment.policies import make_policy
@@ -23,6 +24,62 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "confirmatory.json"
 
 
 @pytest.mark.parametrize("phase", ["validation", "pilot", "execute-confirmatory"])
+def test_scientific_executor_requires_frozen_inputs_before_namespace(tmp_path, monkeypatch, phase):
+    from pequiflux_experiment.config import factorial_scenarios
+    import pequiflux_experiment.experiment as execution
+
+    config = load_config(CONFIG_PATH)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("namespace or worker reached without frozen inputs")
+    monkeypatch.setattr(execution, "create_run_directory", forbidden)
+    monkeypatch.setattr(execution, "run_day", forbidden)
+    with pytest.raises(ValueError, match="dataset_path.*expected_dataset_root_hash"):
+        run_experiment_matrix(
+            factorial_scenarios(config), config.seeds, config.policies,
+            config, tmp_path / "runs", phase=phase,
+        )
+    assert not (tmp_path / "runs").exists()
+
+
+@pytest.mark.parametrize("phase", ["pilot", "execute-confirmatory"])
+@pytest.mark.parametrize("missing", ["face", "approved_face", "capacity"])
+def test_scientific_prerequisites_cannot_be_bypassed_by_direct_api(tmp_path, monkeypatch, phase, missing):
+    from types import SimpleNamespace
+    from pequiflux_experiment.config import factorial_scenarios, config_hash
+    from pequiflux_experiment.validation_fixtures import build_validation_fixture
+    import pequiflux_experiment.dataset as datasets
+    import pequiflux_experiment.face_validation as faces
+    import pequiflux_experiment.experiment as execution
+
+    config = load_config(CONFIG_PATH)
+    fixture = build_validation_fixture()
+    # The loader itself has separate full-payload tests. Here its validated
+    # output is held fixed to isolate the executor's human/capacity boundary.
+    dataset = SimpleNamespace(manifest={"config_hash": config_hash(config)},
+                              instances=(), path=tmp_path,
+                              event_latents=fixture.event_latents)
+    monkeypatch.setattr(datasets, "load_frozen_dataset", lambda *args, **kwargs: dataset)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("namespace or worker reached without prerequisites")
+    monkeypatch.setattr(execution, "create_run_directory", forbidden)
+    monkeypatch.setattr(execution, "run_day", forbidden)
+    if missing == "capacity":
+        monkeypatch.setattr(faces, "validate_face_validation_receipt",
+                            lambda *args: SimpleNamespace(approved=True))
+    scenarios = datasets.select_pilot_configurations(config) if phase == "pilot" else factorial_scenarios(config)
+    message = {"face": "face_receipt_path", "approved_face": "FACE_VALIDATION=PENDING",
+               "capacity": "capacity_receipt"}[missing]
+    with pytest.raises(ValueError, match=message):
+        run_experiment_matrix(
+            scenarios, config.seeds, config.policies, config, tmp_path / "runs", phase,
+            dataset_path=tmp_path, expected_dataset_root_hash=fixture.controls.source_dataset_root_hash,
+            controls=fixture.controls,
+            face_receipt_path=None if missing == "face" else PROJECT_ROOT / "inputs/face_validation_receipt.json",
+        )
+    assert not (tmp_path / "runs").exists()
+
+
+@pytest.mark.parametrize("phase", ["validation", "execute-confirmatory"])
 def test_matrix_preserves_custom_policy_or_rejects_it_before_confirmatory_execution(
     tmp_path: Path, phase: str
 ):
@@ -35,26 +92,28 @@ def test_matrix_preserves_custom_policy_or_rejects_it_before_confirmatory_execut
     expected_error = ValueError if phase == "execute-confirmatory" else RuntimeError
     message = "canonical policy names" if phase == "execute-confirmatory" else "custom policy execution failed"
     with pytest.raises(expected_error, match=message):
-        run_experiment_matrix(
-            scenarios=[tiny_scenario()],
-            seeds=[101],
-            policies=[FailingPolicy()],
-            config=load_config(CONFIG_PATH),
-            runs_root=tmp_path,
-            phase=phase,
-        )
+        if phase == "validation":
+            from pequiflux_experiment.validation_fixtures import build_validation_inputs
+            instances, controls, latents = build_validation_inputs([tiny_scenario()], [101])
+            run_validation_matrix(instances, [FailingPolicy()], load_config(CONFIG_PATH),
+                                  tmp_path, controls=controls, event_latents=latents)
+        else:
+            run_experiment_matrix([tiny_scenario()], [101], [FailingPolicy()],
+                                  load_config(CONFIG_PATH), tmp_path, phase=phase)
     if phase == "execute-confirmatory":
         assert not tuple(tmp_path.iterdir())
 
 
 def build_validation_bundle(tmp_path: Path):
-    return run_experiment_matrix(
-        scenarios=[tiny_scenario()],
-        seeds=[101, 102],
+    from pequiflux_experiment.validation_fixtures import build_validation_inputs
+    instances, controls, latents = build_validation_inputs([tiny_scenario()], [101, 102])
+    return run_validation_matrix(
+        instances=instances,
         policies=POLICY_NAMES,
         config=load_config(CONFIG_PATH),
         runs_root=tmp_path,
-        phase="validation",
+        controls=controls,
+        event_latents=latents,
         now_utc="2026-09-01T12:00:00Z",
     )
 
@@ -201,7 +260,9 @@ def test_results_persist_censored_wait_metric_and_roundtrip(tmp_path: Path):
 
 def test_audit_derives_accumulated_wait_and_active_horizon(tmp_path: Path):
     scenario = tiny_scenario(truck_count=120, hoppers=1, scales=1)
-    result = run_day(scenario, 101, make_policy("fifo_strict"))
+    from pequiflux_experiment.validation_fixtures import build_validation_fixture
+    fixture = build_validation_fixture(scenario, 101)
+    result = run_day(fixture.instance, make_policy("fifo_strict"), fixture.controls, fixture.event_latents)
     log_text, *_ = _log_lines(
         result,
         run_id="active-horizon",

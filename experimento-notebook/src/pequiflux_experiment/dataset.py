@@ -275,7 +275,7 @@ _EVENT_RANK_NAMES: frozenset[str] = frozenset(
         "rain_start", "document_release", "priority_change", "arrival",
     }
 )
-_CANONICAL_EVENT_RANKS: Mapping[str, int] = dict(_EVENT_RANKS)
+_CANONICAL_EVENT_RANKS: Mapping[str, int] = _EVENT_RANKS
 # These protocol probabilities are frozen by the confirmatory design.  Keep
 # them named at this layer so pure high-intensity projection can reuse the
 # exact values without loading or mutating an ExperimentConfig.
@@ -588,10 +588,13 @@ def _build_event_latents(
     seed: int,
     generation_attempt: int,
     trucks: Iterable[FrozenTruck],
+    *,
+    validation_fixture: bool = False,
 ) -> EventLatentLedger:
     """Materialize every event candidate before its disruption realization."""
 
-    instance_id = _instance_id(scenario.scenario_index, seed)
+    instance_id = (f"validation-{scenario.scenario_id}-s{scenario.scenario_index:02d}-seed{seed}"
+                   if validation_fixture else _instance_id(scenario.scenario_index, seed))
     rows: list[dict[str, Any]] = []
 
     def append(kind: str, entity_id: str, payload: Mapping[str, Any], *, origin: str = "sampled") -> None:
@@ -811,10 +814,13 @@ def _build_instance(
     scenario: ScenarioConfig,
     seed: int,
     generation_attempt: int = 0,
+    *,
+    validation_fixture: bool = False,
 ) -> FrozenInstance:
     """Materialize one complete instance, including all exogenous draws."""
 
-    instance_id = _instance_id(scenario.scenario_index, seed)
+    instance_id = (f"validation-{scenario.scenario_id}-s{scenario.scenario_index:02d}-seed{seed}"
+                   if validation_fixture else _instance_id(scenario.scenario_index, seed))
     block_weights = (
         config.peak_arrival_weights
         if scenario.regime == "peak"
@@ -866,6 +872,7 @@ def _build_instance(
         seed,
         generation_attempt,
         trucks,
+        validation_fixture=validation_fixture,
     )
     latent_by_kind_entity = {
         (str(row["latent_kind"]), str(row["entity_id"])): row

@@ -203,6 +203,72 @@ _POLICY_JUSTIFICATION_RULES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _valid_candidate_evidence(item: Mapping[str, Any]) -> bool:
+    if not {
+        "truck_id", "cargo_type", "arrival_time", "stage_entry_time", "arrived",
+        "eligible", "document_ok", "resource_id", "eligibility_reason", "operation",
+    }.issubset(item):
+        return False
+    for key in ("truck_id", "cargo_type"):
+        if not isinstance(item.get(key), str) or not item[key].strip():
+            return False
+    for key in ("arrival_time", "stage_entry_time"):
+        value = item.get(key)
+        if isinstance(value, bool) or not isinstance(value, (float, int)):
+            return False
+        if not math.isfinite(value) or value < 0:
+            return False
+    for key in ("arrived", "eligible", "document_ok"):
+        if not isinstance(item.get(key), bool):
+            return False
+    for key in ("resource_id", "eligibility_reason"):
+        value = item.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            return False
+    operation = item.get("operation")
+    return operation is None or (
+        isinstance(operation, str) and operation in _VALID_JUSTIFICATION_STAGES
+    )
+
+
+def _observed_exclusion(item: Mapping[str, Any], context: Mapping[str, Any]) -> str | None:
+    """Reconstruct hard constraints from persisted facts, independently of dispatch."""
+    if not item["arrived"]:
+        return "NOT_ARRIVED"
+    if item["arrival_time"] > context["now"]:
+        return "FUTURE_ARRIVAL"
+    if not item["eligible"]:
+        return "INELIGIBLE"
+    if not item["document_ok"]:
+        return "DOCUMENT_BLOCKED"
+    if context["operation"] is not None and item["operation"] is not None:
+        if item["operation"] != context["operation"]:
+            return "OPERATION_MISMATCH"
+    if item["resource_id"] is not None and item["resource_id"] != context["resource_id"]:
+        return "RESOURCE_MISMATCH"
+    if item["cargo_type"] not in context["allowed_cargo_types"]:
+        return "CARGO_INCOMPATIBLE"
+    return None
+
+
+def _validate_decision_observation(recommendation, event_time, truck_facts, resources, statuses) -> bool:
+    """Bind FIFO/cargo evidence to preceding events, not just to itself."""
+    context = recommendation["context"]
+    resource_id = context["resource_id"]
+    resource = resources.get(resource_id)
+    if resource is None or context["now"] != event_time:
+        return False
+    if (context["resource_status"] != statuses[resource_id]
+            or context["allowed_cargo_types"] != list(resource.allowed_cargo_types)):
+        return False
+    evidence = recommendation["candidate_order"] + [item["candidate"] for item in recommendation["excluded"]]
+    for candidate in evidence:
+        observed = truck_facts.get(candidate["truck_id"])
+        if observed is None or any(candidate[field] != observed[field] for field in observed):
+            return False
+    return True
+
+
 def _validate_decision_justification(
     recommendation: Mapping[str, Any],
 ) -> bool:
@@ -229,12 +295,41 @@ def _validate_decision_justification(
         return False
     if not isinstance(policy, str) or not policy.strip():
         return False
+    if type(recommendation.get("schema_version")) is not int or recommendation["schema_version"] != 2:
+        return False
+    context = recommendation.get("context")
+    if not isinstance(context, Mapping) or set(context) != {
+        "now", "resource_id", "resource_available", "resource_status", "operation",
+        "queue_length", "affinity_target", "allowed_cargo_types",
+    }:
+        return False
+    if context["resource_id"] != resource_id or context["now"] != recommendation.get("now"):
+        return False
+    now = context["now"]
+    if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now) or now < 0:
+        return False
+    if context["resource_available"] is not True or context["resource_status"] != "available":
+        return False
+    if type(context["queue_length"]) is not int or context["queue_length"] < 0:
+        return False
+    affinity_target = context["affinity_target"]
+    if affinity_target is not None and (not isinstance(affinity_target, str) or not affinity_target.strip()):
+        return False
+    cargo_types = context["allowed_cargo_types"]
+    if not isinstance(cargo_types, list) or not cargo_types:
+        return False
+    if any(not isinstance(value, str) or not value.strip() for value in cargo_types):
+        return False
+    if len(set(cargo_types)) != len(cargo_types):
+        return False
 
     selected_id = selected.get("truck_id")
     selected_stage = selected.get("operation")
     if not isinstance(selected_id, str) or not selected_id.strip():
         return False
     if not isinstance(selected_stage, str) or selected_stage not in _VALID_JUSTIFICATION_STAGES:
+        return False
+    if context["operation"] is not None and context["operation"] != selected_stage:
         return False
     truck_stage = justification.truck_stage
     if (
@@ -255,12 +350,20 @@ def _validate_decision_justification(
         if set(item) != {
             "truck_id",
             "arrival_time",
+            "stage_entry_time",
+            "cargo_type",
+            "eligible",
+            "eligibility_reason",
             "stable_order",
             "operation",
             "resource_id",
             "document_ok",
             "arrived",
         }:
+            return False
+        if not _valid_candidate_evidence(item) or _observed_exclusion(item, context) is not None:
+            return False
+        if item["stage_entry_time"] > now:
             return False
         item_id = item.get("truck_id")
         if not isinstance(item_id, str) or not item_id.strip():
@@ -294,7 +397,7 @@ def _validate_decision_justification(
 
     excluded_ids: set[str] = set()
     for item in excluded:
-        if not isinstance(item, Mapping) or set(item) != {"truck_id", "reason"}:
+        if not isinstance(item, Mapping) or set(item) != {"truck_id", "cause", "reason", "candidate"}:
             return False
         excluded_id = item.get("truck_id")
         exclusion_reason = item.get("reason")
@@ -307,6 +410,14 @@ def _validate_decision_justification(
             or not exclusion_reason.strip()
         ):
             return False
+        evidence = item.get("candidate")
+        if not isinstance(evidence, Mapping) or not _valid_candidate_evidence(evidence):
+            return False
+        if evidence["truck_id"] != excluded_id:
+            return False
+        observed_cause = _observed_exclusion(evidence, context)
+        if observed_cause is None or item["cause"] != observed_cause:
+            return False
         excluded_ids.add(excluded_id)
 
     selected_order = next(
@@ -315,14 +426,14 @@ def _validate_decision_justification(
     )
     if selected_order is None:
         return False
-    for key in ("arrival_time", "stable_order", "operation", "resource_id", "document_ok", "arrived"):
+    for key in ("arrival_time", "stage_entry_time", "cargo_type", "eligible", "eligibility_reason",
+                "stable_order", "operation", "resource_id", "document_ok", "arrived"):
         if selected.get(key) != selected_order.get(key):
             return False
     fifo_reference = min(
         candidate_order,
         key=lambda item: (
-            float(item["arrival_time"]),
-            item["stable_order"],
+            float(item["stage_entry_time"]),
             item["truck_id"],
         ),
     )["truck_id"]
@@ -348,15 +459,10 @@ def _validate_decision_justification(
     ]
     if any(item.get("operation") is not None for item in candidate_order):
         expected_rules.append("stage_compatibility")
-    has_resource_compatibility = any(
-        item.get("resource_id") is not None for item in candidate_order
-    )
-    exclusion_reasons = tuple(
-        item["reason"].casefold()
-        for item in excluded
-    )
-    has_resource_block = any("resource mismatch" in reason for reason in exclusion_reasons)
-    has_arrival_window = any("future" in reason for reason in exclusion_reasons)
+    has_resource_compatibility = context["resource_id"] is not None and bool(cargo_types)
+    exclusion_causes = tuple(item["cause"] for item in excluded)
+    has_resource_block = any(cause in {"RESOURCE_MISMATCH", "CARGO_INCOMPATIBLE"} for cause in exclusion_causes)
+    has_arrival_window = "FUTURE_ARRIVAL" in exclusion_causes
     if has_resource_compatibility or has_resource_block:
         expected_rules.append("resource_compatibility")
     if excluded:
@@ -467,7 +573,7 @@ def _validate_log_fields(
         for item in excluded:
             if not isinstance(item, Mapping):
                 return False
-            if set(item) != {"truck_id", "reason"}:
+            if set(item) != {"truck_id", "cause", "reason", "candidate"}:
                 return False
             identifier = item.get("truck_id")
             reason = item.get("reason")
@@ -743,7 +849,7 @@ def _derived_log_metrics(details: Any) -> dict[str, int | float]:
 
     waits: list[float] = []
     censored_wait = 0.0
-    for truck_id in final_snapshot.trucks:
+    for truck_id in sorted(final_snapshot.trucks):
         value = accumulated_wait[truck_id]
         if (
             truck_id in arrived_ids
@@ -812,6 +918,63 @@ def _validate_a2_manifest(manifest: Mapping[str, Any]) -> bool:
     if not isinstance(required_fields, list) or required_fields != list(LOG_REQUIRED_FIELDS):
         raise AuditError("manifest a2.required_fields do not match canonical log fields")
     return root_status == "pending"
+
+
+_INPUT_IDENTITY_FIELDS = (
+    "instance_id", "instance_hash", "execution_instance_hash", "dataset_root_hash", "control_hash",
+)
+
+
+def _require_digest(value: object, label: str) -> None:
+    if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise AuditError(f"invalid SHA-256 in input provenance: {label}")
+
+
+def _validate_input_provenance(manifest, expected_pairs):
+    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 2:
+        raise AuditError("run manifest schema_version must be 2")
+    provenance = _required_manifest_mapping(manifest, "input_provenance")
+    if provenance.get("kind") not in {"frozen_dataset", "validation_fixture"}:
+        raise AuditError("input provenance kind is invalid")
+    if provenance["kind"] == "validation_fixture" and manifest.get("phase") != "validation":
+        raise AuditError("validation fixture cannot supply a scientific phase")
+    for key in ("dataset_root_hash", "event_latents_sha256"):
+        _require_digest(provenance.get(key), key)
+    controls = _required_manifest_mapping(provenance, "controls")
+    if set(controls) != {
+        "ordinary_window", "buffer_capacity", "threshold_multiplier", "intensity",
+        "source_dataset_root_hash", "event_latents_sha256", "control_hash",
+    }:
+        raise AuditError("input provenance controls fields are invalid")
+    if (controls["source_dataset_root_hash"] != provenance["dataset_root_hash"]
+            or controls["event_latents_sha256"] != provenance["event_latents_sha256"]):
+        raise AuditError("input provenance controls disagree with source digests")
+    material = {key: value for key, value in controls.items() if key != "control_hash"}
+    digest = hashlib.sha256((_canonical_json(material) + "\n").encode("utf-8")).hexdigest()
+    if controls["control_hash"] != digest:
+        raise AuditError("input provenance control_hash does not match controls")
+    entries = provenance.get("instances")
+    if not isinstance(entries, list) or not entries:
+        raise AuditError("input provenance instances must be a non-empty list")
+    instances = {}
+    identifiers = set()
+    for entry in entries:
+        if not isinstance(entry, Mapping) or set(entry) != {"instance_id", "scenario_id", "seed", "instance_hash"}:
+            raise AuditError("input provenance instance descriptor is invalid")
+        identifier = entry["instance_id"]
+        if not isinstance(identifier, str) or not identifier.strip() or identifier in identifiers:
+            raise AuditError("input provenance instance_id is missing or duplicated")
+        if not isinstance(entry["scenario_id"], str) or type(entry["seed"]) is not int:
+            raise AuditError("input provenance instance scenario/seed is invalid")
+        _require_digest(entry["instance_hash"], identifier)
+        pair = (entry["scenario_id"], entry["seed"])
+        if pair in instances:
+            raise AuditError("input provenance instance scenario/seed is duplicated")
+        instances[pair] = entry
+        identifiers.add(identifier)
+    if set(instances) != expected_pairs:
+        raise AuditError("input provenance instances do not match matrix scenario/seed grid")
+    return provenance, instances
 
 
 @dataclass(frozen=True, slots=True)
@@ -912,6 +1075,9 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
     matrix_policies = matrix.get("policies")
     if not isinstance(matrix_seeds, list) or not isinstance(matrix_policies, list):
         raise AuditError("manifest matrix seeds and policies must be lists")
+    provenance, instances = _validate_input_provenance(
+        manifest, {(scenario_id, seed) for scenario_id in scenarios for seed in matrix_seeds},
+    )
     # ``decision_logs`` is the canonical manifest field.  A secondary alias
     # must not become a recovery path if the canonical inventory is damaged.
     log_mapping_value = manifest.get("decision_logs")
@@ -935,6 +1101,7 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
     a1_violations: list[str] = []
     diagnostics: list[str] = []
     row_by_log: dict[str, Mapping[str, Any]] = {}
+    execution_hashes: dict[tuple[str, int], str] = {}
     for index, row in enumerate(rows, start=1):
         row_key = _pair_key(row.get("scenario_id"), row.get("seed"), row.get("policy"))
         row_keys.append(row_key)
@@ -949,6 +1116,22 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
             raise AuditError(
                 f"result row {index} config hash differs from manifest: {row.get('config_hash')}"
             )
+        pair = (row.get("scenario_id"), row.get("seed"))
+        instance = instances.get(pair)
+        if instance is None:
+            raise AuditError(f"result row {index} has no input provenance instance")
+        for field, expected in (
+            ("instance_id", instance["instance_id"]),
+            ("instance_hash", instance["instance_hash"]),
+            ("dataset_root_hash", provenance["dataset_root_hash"]),
+            ("control_hash", provenance["controls"]["control_hash"]),
+        ):
+            if row.get(field) != expected:
+                raise AuditError(f"result input provenance mismatch: row={index} field={field}")
+        execution_hash = row.get("execution_instance_hash")
+        _require_digest(execution_hash, f"row {index} execution_instance_hash")
+        if execution_hashes.setdefault(pair, execution_hash) != execution_hash:
+            raise AuditError(f"paired policies consumed different execution instances: {pair}")
         if not row.get("a1_pass") or int(row.get("hard_constraint_violations", 0)) != 0:
             a1_violations.append(
                 f"{row_key}: hard_constraint_violations={row.get('hard_constraint_violations')}"
@@ -1008,6 +1191,7 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
             ("seed", row.get("seed")),
             ("policy", row.get("policy")),
             ("config_hash", config_checksum),
+            *((field, row.get(field)) for field in _INPUT_IDENTITY_FIELDS),
         ):
             if descriptor.get(field) != expected:
                 raise AuditError(
@@ -1053,12 +1237,48 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
         ):
             raise AuditError(f"decision log identity does not match persisted receipts: {log_name}")
         previous_time = -float("inf")
+        truck_facts = {
+            identifier: {"arrival_time": truck.arrival_time, "cargo_type": truck.cargo_type,
+                         "stage_entry_time": truck.stage_entry_time}
+            for identifier, truck in details.initial_snapshot.trucks.items()
+        }
+        observed_resources = details.initial_snapshot.resources
+        resource_statuses = {identifier: resource.status for identifier, resource in observed_resources.items()}
         for line_number, (line, event) in enumerate(zip(details.lines, details.events), start=1):
+            for field in _INPUT_IDENTITY_FIELDS:
+                if line.get(field) != row[field]:
+                    raise AuditError(f"log input provenance mismatch: {log_name} line={line_number} field={field}")
+            if event.kind == "RUN_STARTED":
+                for field in _INPUT_IDENTITY_FIELDS:
+                    if event.payload.get(field) != row[field]:
+                        raise AuditError(f"RUN_STARTED input provenance mismatch: {log_name} field={field}")
+                if event.payload.get("event_latents_sha256") != provenance["event_latents_sha256"]:
+                    raise AuditError(f"RUN_STARTED event-latent provenance mismatch: {log_name}")
             if not _validate_log_fields(line, event, line_number):
                 a2_fields_pass = False
                 raise AuditError(
                     f"A2 decision fields are incoherent: {log_name} line {line_number}"
                 )
+            if event.kind in {"DECISION_RECORDED", "OPERATOR_DECISION"}:
+                recommendation = event.to_dict()["payload"][
+                    "decision" if event.kind == "DECISION_RECORDED" else "recommendation"
+                ]
+                if not _validate_decision_observation(
+                    recommendation, event.time, truck_facts, observed_resources, resource_statuses,
+                ):
+                    raise AuditError(f"A2 decision observation disagrees with events: {log_name} line={line_number}")
+            elif event.kind == "TRUCK_ARRIVED":
+                truck_facts[event.payload["truck_id"]] = {
+                    "arrival_time": event.payload["arrival_time"], "cargo_type": event.payload["cargo_type"],
+                    "stage_entry_time": event.time,
+                }
+            elif event.kind in {"DOCUMENT_RELEASED", "SERVICE_STARTED", "SERVICE_COMPLETED"}:
+                truck_facts[event.payload["truck_id"]]["stage_entry_time"] = event.time
+            if event.kind in {"SERVICE_STARTED", "SERVICE_COMPLETED", "RESOURCE_FAILED", "RESOURCE_RECOVERED"}:
+                resource_statuses[event.payload["resource_id"]] = {
+                    "SERVICE_STARTED": "busy", "SERVICE_COMPLETED": "available",
+                    "RESOURCE_FAILED": "failed", "RESOURCE_RECOVERED": "available",
+                }[event.kind]
             if event.time < previous_time:
                 monotonic_pass = False
                 raise AuditError(

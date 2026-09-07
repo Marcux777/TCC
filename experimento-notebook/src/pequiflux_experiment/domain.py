@@ -675,13 +675,29 @@ def _validate_event_latent_scenario_contract(
         seed = row["seed"]
         if scenario_index < 0 or scenario_index >= len(factors):
             raise ValueError(f"event latent row {ordinal} scenario_index is not canonical")
-        truck_count, hopper_count, scale_count, regime = factors[scenario_index]
+        # This reserved namespace permits small explicit engineering fixtures.
+        # Public dataset loading still requires the complete canonical plan and
+        # its sXX-seedYYY identities, so these rows cannot form a public freeze.
+        engineering = instance_id.startswith("validation-")
+        if engineering:
+            try:
+                n, m, b, regime = scenario_id.split("-", 3)
+                truck_count, hopper_count, scale_count = int(n[1:]), int(m[1:]), int(b[1:])
+            except (ValueError, TypeError) as exc:
+                raise ValueError("validation fixture scenario_id is malformed") from exc
+            if (truck_count <= 0 or hopper_count not in (1, 2, 3)
+                    or scale_count not in (1, 2)
+                    or regime not in {"nominal", "peak", "critical_failure", "priority_shift"}):
+                raise ValueError("validation fixture scenario factors are invalid")
+        else:
+            truck_count, hopper_count, scale_count, regime = factors[scenario_index]
         expected_scenario_id = f"n{truck_count}-m{hopper_count}-b{scale_count}-{regime}"
         if scenario_id != expected_scenario_id:
             raise ValueError(f"event latent row {ordinal} scenario_id diverges from scenario_index")
-        if seed < 101 or seed > 150:
+        if not engineering and (seed < 101 or seed > 150):
             raise ValueError(f"event latent row {ordinal} seed is outside the confirmatory range")
-        expected_instance_id = f"s{scenario_index:02d}-seed{seed}"
+        expected_instance_id = (f"validation-{scenario_id}-s{scenario_index:02d}-seed{seed}" if engineering
+                                else f"s{scenario_index:02d}-seed{seed}")
         if instance_id != expected_instance_id:
             raise ValueError(f"event latent row {ordinal} instance_id diverges from scenario identity")
         grouped.setdefault(instance_id, []).append(row)
@@ -721,7 +737,11 @@ def _validate_event_latent_scenario_contract(
 
     for instance_id, instance_rows in grouped.items():
         scenario_index = instance_rows[0]["scenario_index"]
-        truck_count, hopper_count, _scale_count, regime = factors[scenario_index]
+        if instance_id.startswith("validation-"):
+            n, m, _b, regime = instance_rows[0]["scenario_id"].split("-", 3)
+            truck_count, hopper_count = int(n[1:]), int(m[1:])
+        else:
+            truck_count, hopper_count, _scale_count, regime = factors[scenario_index]
         observed = {kind: 0 for kind in EVENT_LATENT_KINDS}
         for row in instance_rows:
             observed[row["latent_kind"]] += 1
