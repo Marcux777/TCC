@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "generated_at": "2026-09-07T23:05:26.619142+00:00",
+  "cwd": "C:\\p\\PequiFlux\\TCC",
+  "checks": [
+    {
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "-C",
+        "C:\\p\\PequiFlux\\TCC",
+        "status",
+        "-sb"
+      ],
+      "exit_code": 0,
+      "stdout": "## main...origin/main [ahead 11]\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "-C",
+        "C:\\p\\PequiFlux\\TCC",
+        "branch",
+        "--show-current"
+      ],
+      "exit_code": 0,
+      "stdout": "main\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "-C",
+        "C:\\p\\PequiFlux\\TCC",
+        "rev-parse",
+        "--show-toplevel"
+      ],
+      "exit_code": 0,
+      "stdout": "C:/p/PequiFlux/TCC\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "-C",
+        "C:\\p\\PequiFlux\\TCC",
+        "worktree",
+        "list",
+        "--porcelain"
+      ],
+      "exit_code": 0,
+      "stdout": "worktree C:/p/PequiFlux/TCC\nHEAD 652bee7fb0ae56b012b3261e2ad249b506dbd163\nbranch refs/heads/main\n\n",
+      "stderr": ""
+    }
+  ],
+  "branch": "main",
+  "repository_root": "C:/p/PequiFlux/TCC",
+  "limitations": [
+    "Read-only snapshot; not a lock or proof of ownership. Recheck before mutation if state changes.",
+    "Detached HEAD and dirty/staged files are reported, never modified."
+  ]
+}

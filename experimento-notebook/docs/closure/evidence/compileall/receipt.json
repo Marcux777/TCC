@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-compileall",
+  "status": "completed",
+  "cwd": "C:\\p\\PequiFlux\\TCC\\experimento-notebook",
+  "started_at": "2026-09-07T23:34:53.518019+00:00",
+  "manifest": {
+    "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-compileall-3a935a96d17a48cc9631ee7bcbe9e2c8\\manifest.json",
+    "bytes": 268,
+    "sha256": "ee43caba1be24307a6bf3ad77c756f68de41cff714cd20ebe09b05eed34480d4"
+  },
+  "source_manifest": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\compile.json",
+  "inputs": [],
+  "runtime": {
+    "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+    "executable": "C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "engine_files": [
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\audit.py",
+        "bytes": 5394,
+        "sha256": "0ddc0a088e920cdc380afc56406a6c540f799aaecec7924eb0138b22697be488"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\common.py",
+        "bytes": 1721,
+        "sha256": "356c7084431ec2f87f1a75bbd039d1c93ea99c1bbd4c978b273904ae9bd1bb0f"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\harness.py",
+        "bytes": 2216,
+        "sha256": "88d59aa6253614f1458827846eaaf76eec77cba0ac32bc40d4f72cc545be649d"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\runner.py",
+        "bytes": 10739,
+        "sha256": "bcc339905bdca951e171fd7a91edfd0555e5b7d3af718d9f42275669dd434f05"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "compileall",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-m",
+        "compileall",
+        "-q",
+        "src"
+      ],
+      "started_at": "2026-09-07T23:34:53.529223+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-compileall-3a935a96d17a48cc9631ee7bcbe9e2c8\\logs\\compileall.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-compileall-3a935a96d17a48cc9631ee7bcbe9e2c8\\logs\\compileall.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:34:53.626513+00:00",
+      "duration_seconds": 0.0973,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-compileall-3a935a96d17a48cc9631ee7bcbe9e2c8\\logs\\compileall.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-compileall-3a935a96d17a48cc9631ee7bcbe9e2c8\\logs\\compileall.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "finished_at": "2026-09-07T23:34:53.629489+00:00"
+}

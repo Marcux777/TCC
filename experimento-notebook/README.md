@@ -7,18 +7,24 @@ módulos em `src/`.
 
 ## Ambiente deliberado
 
-O projeto requer Python 3.12 ou superior: os pins de NumPy e SciPy no lock
-exigem esse mínimo. O interpretador escolhido para a instalação local é
-CPython 3.13.3 (Windows x64). O `pyproject.toml` declara as
-dependências com intervalos de versão; `requirements.lock` fixa as versões
-aprovadas para o experimento. Prepare o ambiente isolado com o lock:
+O ambiente suportado deste fechamento é CPython 3.13.x em Windows x64;
+`requires-python = ">=3.13,<3.14"`. Python 3.11 não é suportado. Outras séries
+não são cobertas por esta verificação. A instalação limpa, a versão exata,
+o kernel e o resultado atual da suíte estão registrados em
+[closure/baseline.md](docs/closure/baseline.md).
 
-```text
+O `pyproject.toml` declara intervalos de dependências e `requirements.lock`
+fixa as versões do ambiente. Em PowerShell, a partir deste diretório,
+confirme o interpretador e use uma `.venv` nova. Se ela já existir, preserve-a
+e escolha outro caminho vazio, ajustando os comandos seguintes:
+
+```powershell
 rtk proxy py -3.13 --version
 rtk proxy py -3.13 -m venv .venv
 rtk proxy .\.venv\Scripts\python.exe -m pip install -r requirements.lock
 rtk proxy .\.venv\Scripts\python.exe -m pip check
 rtk proxy .\.venv\Scripts\python.exe -m ipykernel install --sys-prefix --name python3 --display-name "PequiFlux (Python 3.13)"
+rtk proxy .\.venv\Scripts\python.exe -m jupyter kernelspec list --json
 ```
 
 `requirements.lock` reproduz as versões exatas do ambiente validado e já inclui
@@ -32,8 +38,9 @@ o notebook não instala dependências durante a execução.
 
 No diretório `experimento-notebook/`, o comando de teste é:
 
-```text
-rtk .\.venv\Scripts\python.exe -m pytest -q
+```powershell
+rtk proxy .\.venv\Scripts\python.exe -m pytest -q
+rtk proxy .\.venv\Scripts\python.exe -m compileall -q src
 ```
 
 `tests/test_notebook.py` sempre valida a estrutura JSON com a biblioteca padrão.
@@ -47,6 +54,8 @@ O notebook executa uma seleção explícita de testes rápidos das seis áreas d
 pacote, seguida de sua própria demonstração, matriz de validação, replay e
 auditoria persistida. A seleção não repete os testes de materialização e
 proveniência de datasets; esses permanecem na suíte completa do comando acima.
+Os números históricos abaixo descrevem rodadas anteriores. O baseline desta
+auditoria e os logs integrais ficam em [closure/baseline.md](docs/closure/baseline.md).
 
 ## Execução limpa canônica
 

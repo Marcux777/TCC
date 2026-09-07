@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-clean-lock-install",
+  "status": "completed",
+  "cwd": "C:\\p\\PequiFlux\\TCC\\experimento-notebook",
+  "started_at": "2026-09-07T23:06:43.570015+00:00",
+  "manifest": {
+    "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\manifest.json",
+    "bytes": 1031,
+    "sha256": "5708da66e2edc07abf8ec08fc8fd38b69f4d8f4f056955da6b002832b93222b2"
+  },
+  "source_manifest": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\install.json",
+  "inputs": [
+    {
+      "path": "C:\\p\\PequiFlux\\TCC\\experimento-notebook\\pyproject.toml",
+      "bytes": 687,
+      "sha256": "f5173c9960b73209707b7a39910dc4bf7499b6fe9760f2f822d95a99b9eae5a9"
+    },
+    {
+      "path": "C:\\p\\PequiFlux\\TCC\\experimento-notebook\\requirements.lock",
+      "bytes": 1287,
+      "sha256": "f8638a96c72a98ade43de388f4b80f1ea3ff456945b4558674ea71713af67b16"
+    }
+  ],
+  "runtime": {
+    "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+    "executable": "C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "engine_files": [
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\audit.py",
+        "bytes": 5394,
+        "sha256": "0ddc0a088e920cdc380afc56406a6c540f799aaecec7924eb0138b22697be488"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\common.py",
+        "bytes": 1721,
+        "sha256": "356c7084431ec2f87f1a75bbd039d1c93ea99c1bbd4c978b273904ae9bd1bb0f"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\harness.py",
+        "bytes": 2216,
+        "sha256": "88d59aa6253614f1458827846eaaf76eec77cba0ac32bc40d4f72cc545be649d"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\runner.py",
+        "bytes": 10739,
+        "sha256": "bcc339905bdca951e171fd7a91edfd0555e5b7d3af718d9f42275669dd434f05"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "pip-before",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-m",
+        "pip",
+        "list",
+        "--format=json"
+      ],
+      "started_at": "2026-09-07T23:06:43.582237+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-before.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-before.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:06:43.950644+00:00",
+      "duration_seconds": 0.3684,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-before.stdout.log",
+        "bytes": 40,
+        "sha256": "1daa89099b9ac9f9efd85accd1a0bd96e66b37a574559d6e016594672ebba55a",
+        "format": "json"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-before.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "install-lock",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        "requirements.lock"
+      ],
+      "started_at": "2026-09-07T23:06:43.960094+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\install-lock.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\install-lock.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:08:08.027651+00:00",
+      "duration_seconds": 84.0692,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\install-lock.stdout.log",
+        "bytes": 15783,
+        "sha256": "e95dba569c27a5d40a56b5f8e469c7e2aa26ee29f43a2aac773d684e6d1d3c77"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\install-lock.stderr.log",
+        "bytes": 183,
+        "sha256": "603585004206df5bb143df7285187686b66ab39f7b0bf2927bf2d25600c76021"
+      }
+    },
+    {
+      "id": "pip-check",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-m",
+        "pip",
+        "check"
+      ],
+      "started_at": "2026-09-07T23:08:08.043727+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-check.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-check.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:08:09.132977+00:00",
+      "duration_seconds": 1.0892,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-check.stdout.log",
+        "bytes": 31,
+        "sha256": "672aec65a45bed50e70229c70934a7eebf0462595c459b83023027645d57cccf"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\pip-check.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "installed-versions",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-m",
+        "pip",
+        "freeze",
+        "--all"
+      ],
+      "started_at": "2026-09-07T23:08:09.142891+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\installed-versions.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\installed-versions.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:08:09.720528+00:00",
+      "duration_seconds": 0.5776,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\installed-versions.stdout.log",
+        "bytes": 1377,
+        "sha256": "b7a44122278116892a9c8ecb94342538ca85b6aa5ce326cf17d3253096fcdb47"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\installed-versions.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "register-kernel",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-m",
+        "ipykernel",
+        "install",
+        "--sys-prefix",
+        "--name",
+        "python3",
+        "--display-name",
+        "PequiFlux baseline (Python 3.13)"
+      ],
+      "started_at": "2026-09-07T23:08:09.731798+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\register-kernel.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\register-kernel.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:08:10.199099+00:00",
+      "duration_seconds": 0.4673,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\register-kernel.stdout.log",
+        "bytes": 108,
+        "sha256": "fd200d34b048116fba0e44a7d80f98b504dcf50f3428347fb0e1725114546be1"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-clean-lock-install-3617b1621d1e437eb4f989e40d41192f\\logs\\register-kernel.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "finished_at": "2026-09-07T23:08:10.207888+00:00"
+}

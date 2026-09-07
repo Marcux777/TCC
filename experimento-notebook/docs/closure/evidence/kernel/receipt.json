@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-kernel-and-runtime",
+  "status": "completed",
+  "cwd": "C:\\p\\PequiFlux\\TCC\\experimento-notebook",
+  "started_at": "2026-09-07T23:08:56.335928+00:00",
+  "manifest": {
+    "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\manifest.json",
+    "bytes": 766,
+    "sha256": "505bb6d067c96fb22243d6cc45e949e920faf8c5aaf50634c0875cbe81223231"
+  },
+  "source_manifest": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\verify.json",
+  "inputs": [
+    {
+      "path": "C:\\p\\PequiFlux\\TCC\\experimento-notebook\\pyproject.toml",
+      "bytes": 687,
+      "sha256": "f5173c9960b73209707b7a39910dc4bf7499b6fe9760f2f822d95a99b9eae5a9"
+    },
+    {
+      "path": "C:\\p\\PequiFlux\\TCC\\experimento-notebook\\requirements.lock",
+      "bytes": 1287,
+      "sha256": "f8638a96c72a98ade43de388f4b80f1ea3ff456945b4558674ea71713af67b16"
+    },
+    {
+      "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\verify_environment.py",
+      "bytes": 3684,
+      "sha256": "fb896c44169f3faa2478bbf715e0e45ae9fed396ee9a3604f0c85fa5d8b826d2"
+    }
+  ],
+  "runtime": {
+    "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+    "executable": "C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "engine_files": [
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\audit.py",
+        "bytes": 5394,
+        "sha256": "0ddc0a088e920cdc380afc56406a6c540f799aaecec7924eb0138b22697be488"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\common.py",
+        "bytes": 1721,
+        "sha256": "356c7084431ec2f87f1a75bbd039d1c93ea99c1bbd4c978b273904ae9bd1bb0f"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\harness.py",
+        "bytes": 2216,
+        "sha256": "88d59aa6253614f1458827846eaaf76eec77cba0ac32bc40d4f72cc545be649d"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\runner.py",
+        "bytes": 10739,
+        "sha256": "bcc339905bdca951e171fd7a91edfd0555e5b7d3af718d9f42275669dd434f05"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "kernelspec-list",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-m",
+        "jupyter",
+        "kernelspec",
+        "list",
+        "--json"
+      ],
+      "started_at": "2026-09-07T23:08:56.348290+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\kernelspec-list.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\kernelspec-list.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:08:56.948112+00:00",
+      "duration_seconds": 0.5998,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\kernelspec-list.stdout.log",
+        "bytes": 741,
+        "sha256": "771d5c1a96118115b9bcb27df1bb92fa3b3568d8bae8c3300df0ca57e7171d4c",
+        "format": "json"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\kernelspec-list.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "live-kernel-and-lock",
+      "status": "completed",
+      "argv": [
+        "C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts\\python.exe",
+        "-X",
+        "utf8",
+        "../tmp/closure-baseline/verify_environment.py",
+        "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a/artifacts/environment.json"
+      ],
+      "started_at": "2026-09-07T23:08:56.957727+00:00",
+      "artifacts": [
+        {
+          "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\artifacts\\environment.json",
+          "bytes": 11385,
+          "sha256": "15acf12d515e30c52732c7aa85ff6e27a87de600a5faf647f3e00e53f9889573",
+          "format": "json"
+        }
+      ],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\live-kernel-and-lock.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\live-kernel-and-lock.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:09:00.264475+00:00",
+      "duration_seconds": 3.3066,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\live-kernel-and-lock.stdout.log",
+        "bytes": 642,
+        "sha256": "65f52ffb5e331dcfbbdec6f1e9d77af440c2bdcdb133f74e38378942f58d5da2",
+        "format": "json"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-kernel-and-runtime-240cabcaec1641da8d9ac9003868356a\\logs\\live-kernel-and-lock.stderr.log",
+        "bytes": 284,
+        "sha256": "c9e029ec94bb85d857cca970e0d2cc8029a3aa2f569bc615da22b45cb9690521"
+      }
+    }
+  ],
+  "finished_at": "2026-09-07T23:09:00.281701+00:00"
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-create-environment",
+  "cwd": "C:/p/PequiFlux/TCC/experimento-notebook",
+  "steps": [
+    {"id": "require-new-directory", "argv": ["py", "-3.13", "-c", "from pathlib import Path; p=Path('../tmp/closure-baseline/venv'); assert not p.exists(), f'Environment already exists: {p.resolve()}'; print('New environment directory confirmed absent:', p.resolve())"]},
+    {"id": "venv", "argv": ["py", "-3.13", "-m", "venv", "../tmp/closure-baseline/venv"]}
+  ]
+}

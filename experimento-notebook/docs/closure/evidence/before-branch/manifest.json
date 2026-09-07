@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-before-branch",
+  "cwd": "C:/p/PequiFlux/TCC",
+  "steps": [
+    {"id": "head", "argv": ["git", "rev-parse", "HEAD"]},
+    {"id": "status", "argv": ["git", "status", "--short"]},
+    {"id": "local-diff", "argv": ["git", "diff", "--binary"]},
+    {"id": "staged-diff", "argv": ["git", "diff", "--cached", "--binary"]},
+    {"id": "untracked", "argv": ["git", "ls-files", "--others", "--exclude-standard"]},
+    {"id": "interpreter", "argv": ["py", "-3.13", "-c", "import sys, platform; print(sys.version); print(sys.executable); print(platform.platform())"]}
+  ]
+}

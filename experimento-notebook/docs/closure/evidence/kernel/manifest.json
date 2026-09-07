@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-kernel-and-runtime",
+  "cwd": "C:/p/PequiFlux/TCC/experimento-notebook",
+  "inputs": [{"path": "pyproject.toml"}, {"path": "requirements.lock"}, {"path": "../tmp/closure-baseline/verify_environment.py"}],
+  "steps": [
+    {"id": "kernelspec-list", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-m", "jupyter", "kernelspec", "list", "--json"], "stdout_format": "json"},
+    {"id": "live-kernel-and-lock", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-X", "utf8", "../tmp/closure-baseline/verify_environment.py", "{run_dir}/artifacts/environment.json"], "stdout_format": "json", "outputs": [{"path": "artifacts/environment.json", "format": "json"}]}
+  ]
+}

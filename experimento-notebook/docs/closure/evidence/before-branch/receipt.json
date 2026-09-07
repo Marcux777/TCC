@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-before-branch",
+  "status": "completed",
+  "cwd": "C:\\p\\PequiFlux\\TCC",
+  "started_at": "2026-09-07T23:05:56.812426+00:00",
+  "manifest": {
+    "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\manifest.json",
+    "bytes": 612,
+    "sha256": "d195d065f5c0c2bc6320b8b559f42e973a6111fea8dcf113c1af1ab2eb80759f"
+  },
+  "source_manifest": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\capture.json",
+  "inputs": [],
+  "runtime": {
+    "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+    "executable": "C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+    "engine_files": [
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\audit.py",
+        "bytes": 5394,
+        "sha256": "0ddc0a088e920cdc380afc56406a6c540f799aaecec7924eb0138b22697be488"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\common.py",
+        "bytes": 1721,
+        "sha256": "356c7084431ec2f87f1a75bbd039d1c93ea99c1bbd4c978b273904ae9bd1bb0f"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\harness.py",
+        "bytes": 2216,
+        "sha256": "88d59aa6253614f1458827846eaaf76eec77cba0ac32bc40d4f72cc545be649d"
+      },
+      {
+        "path": "C:\\Users\\marcu\\.codex\\tools\\workflow-harness\\runner.py",
+        "bytes": 10739,
+        "sha256": "bcc339905bdca951e171fd7a91edfd0555e5b7d3af718d9f42275669dd434f05"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "head",
+      "status": "completed",
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "rev-parse",
+        "HEAD"
+      ],
+      "started_at": "2026-09-07T23:05:56.823874+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\head.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\head.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:05:56.856983+00:00",
+      "duration_seconds": 0.0331,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\head.stdout.log",
+        "bytes": 41,
+        "sha256": "17865f65d082d87b220506f5d3316eeeddd8820da81efb64c1cb67277f5e452e"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\head.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "status",
+      "status": "completed",
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "status",
+        "--short"
+      ],
+      "started_at": "2026-09-07T23:05:56.865342+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\status.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\status.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:05:56.902332+00:00",
+      "duration_seconds": 0.037,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\status.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\status.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "local-diff",
+      "status": "completed",
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "diff",
+        "--binary"
+      ],
+      "started_at": "2026-09-07T23:05:56.906739+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\local-diff.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\local-diff.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:05:56.941615+00:00",
+      "duration_seconds": 0.0348,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\local-diff.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\local-diff.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "staged-diff",
+      "status": "completed",
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "diff",
+        "--cached",
+        "--binary"
+      ],
+      "started_at": "2026-09-07T23:05:56.946074+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\staged-diff.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\staged-diff.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:05:56.980180+00:00",
+      "duration_seconds": 0.0341,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\staged-diff.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\staged-diff.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "untracked",
+      "status": "completed",
+      "argv": [
+        "C:\\Program Files\\Git\\cmd\\git.EXE",
+        "ls-files",
+        "--others",
+        "--exclude-standard"
+      ],
+      "started_at": "2026-09-07T23:05:56.984609+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\untracked.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\untracked.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:05:57.018500+00:00",
+      "duration_seconds": 0.0339,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\untracked.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\untracked.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "interpreter",
+      "status": "completed",
+      "argv": [
+        "C:\\WINDOWS\\py.EXE",
+        "-3.13",
+        "-c",
+        "import sys, platform; print(sys.version); print(sys.executable); print(platform.platform())"
+      ],
+      "started_at": "2026-09-07T23:05:57.022667+00:00",
+      "artifacts": [],
+      "stdout": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\interpreter.stdout.log",
+      "stderr": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\interpreter.stderr.log",
+      "exit_code": 0,
+      "finished_at": "2026-09-07T23:05:57.169747+00:00",
+      "duration_seconds": 0.1471,
+      "stdout_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\interpreter.stdout.log",
+        "bytes": 176,
+        "sha256": "57fda288d2268376ab71dc149b2b5d8debecd07ebcb7dfbd6958de9254ce5bf4"
+      },
+      "stderr_evidence": {
+        "path": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\runs\\tcc-baseline-before-branch-16e8495a8acb45198a8a303e5e85a567\\logs\\interpreter.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "finished_at": "2026-09-07T23:05:57.177886+00:00"
+}

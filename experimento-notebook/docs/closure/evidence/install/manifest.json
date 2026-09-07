@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-clean-lock-install",
+  "cwd": "C:/p/PequiFlux/TCC/experimento-notebook",
+  "inputs": [{"path": "pyproject.toml"}, {"path": "requirements.lock"}],
+  "steps": [
+    {"id": "pip-before", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-m", "pip", "list", "--format=json"], "stdout_format": "json"},
+    {"id": "install-lock", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-m", "pip", "install", "-r", "requirements.lock"]},
+    {"id": "pip-check", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-m", "pip", "check"]},
+    {"id": "installed-versions", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-m", "pip", "freeze", "--all"]},
+    {"id": "register-kernel", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-m", "ipykernel", "install", "--sys-prefix", "--name", "python3", "--display-name", "PequiFlux baseline (Python 3.13)"]}
+  ]
+}

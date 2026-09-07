@@ -73,7 +73,16 @@ Ainda necessário no TCC II:
 - substituir resultados previstos por resultados observados;
 - congelar e publicar o pacote final com URL, tag ou hash de commit.
 
-## Compilação
+## Ambiente experimental
+
+O pacote experimental local está em [experimento-notebook](experimento-notebook/README.md).
+Seu ambiente suportado é CPython 3.13.x em Windows x64, instalado em ambiente
+isolado pelo `requirements.lock`; Python 3.11 não é suportado. Os comandos
+PowerShell, a verificação do kernel e o baseline atual estão documentados no
+[README do pacote](experimento-notebook/README.md) e no
+[registro de fechamento](experimento-notebook/docs/closure/baseline.md).
+
+## Compilação do texto
 
 O documento usa `fontspec` e deve ser compilado com XeLaTeX:
 

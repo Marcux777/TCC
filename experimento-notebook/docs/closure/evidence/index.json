@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "description": "Byte-preserving local archive. Original receipts retain their original absolute paths.",
+  "full_suite_runs": 1,
+  "source_inputs_unchanged_since_kernel_verification": true,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 9,
+      "sha256": "8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992"
+    },
+    {
+      "path": "before-branch/logs/head.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/head.stdout.log",
+      "bytes": 41,
+      "sha256": "17865f65d082d87b220506f5d3316eeeddd8820da81efb64c1cb67277f5e452e"
+    },
+    {
+      "path": "before-branch/logs/interpreter.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/interpreter.stdout.log",
+      "bytes": 176,
+      "sha256": "57fda288d2268376ab71dc149b2b5d8debecd07ebcb7dfbd6958de9254ce5bf4"
+    },
+    {
+      "path": "before-branch/logs/local-diff.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/local-diff.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/staged-diff.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/staged-diff.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/status.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/status.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/untracked.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/logs/untracked.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before-branch/manifest.json",
+      "bytes": 612,
+      "sha256": "d195d065f5c0c2bc6320b8b559f42e973a6111fea8dcf113c1af1ab2eb80759f"
+    },
+    {
+      "path": "before-branch/receipt.json",
+      "bytes": 9497,
+      "sha256": "7b9edadd3ea7285c9a4c307dea1ebce2cae4f391eabc4d038ee14cf6e657abed"
+    },
+    {
+      "path": "compileall/logs/compileall.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "compileall/logs/compileall.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "compileall/manifest.json",
+      "bytes": 268,
+      "sha256": "ee43caba1be24307a6bf3ad77c756f68de41cff714cd20ebe09b05eed34480d4"
+    },
+    {
+      "path": "compileall/receipt.json",
+      "bytes": 3019,
+      "sha256": "8262182cac83a384cce0125a9c96fcae9b001f3e133b680699a9d566c6eccd56"
+    },
+    {
+      "path": "create-environment/logs/require-new-directory.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "create-environment/logs/require-new-directory.stdout.log",
+      "bytes": 90,
+      "sha256": "50ba052fbadc0b8c1c5c86ab6527ed456c95b0816821c0eb3620ff698ed88414"
+    },
+    {
+      "path": "create-environment/logs/venv.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "create-environment/logs/venv.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "create-environment/manifest.json",
+      "bytes": 503,
+      "sha256": "a7c6f7de7f0e8d42223d4ba595a375757825784143321c5a45a8a2d762c5f4d2"
+    },
+    {
+      "path": "create-environment/receipt.json",
+      "bytes": 4572,
+      "sha256": "8b0339144ee3f5141495eacfd41eb38c0d3f1e1193ce32c958b49eca616975b1"
+    },
+    {
+      "path": "git-before-branch.json",
+      "bytes": 1538,
+      "sha256": "76b25ea9ec00ab99c2dad8088c6ddf0104d11acf89a02020a79ca4ddabd1f7cf"
+    },
+    {
+      "path": "install/logs/install-lock.stderr.log",
+      "bytes": 183,
+      "sha256": "603585004206df5bb143df7285187686b66ab39f7b0bf2927bf2d25600c76021"
+    },
+    {
+      "path": "install/logs/install-lock.stdout.log",
+      "bytes": 15783,
+      "sha256": "e95dba569c27a5d40a56b5f8e469c7e2aa26ee29f43a2aac773d684e6d1d3c77"
+    },
+    {
+      "path": "install/logs/installed-versions.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "install/logs/installed-versions.stdout.log",
+      "bytes": 1377,
+      "sha256": "b7a44122278116892a9c8ecb94342538ca85b6aa5ce326cf17d3253096fcdb47"
+    },
+    {
+      "path": "install/logs/pip-before.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "install/logs/pip-before.stdout.log",
+      "bytes": 40,
+      "sha256": "1daa89099b9ac9f9efd85accd1a0bd96e66b37a574559d6e016594672ebba55a"
+    },
+    {
+      "path": "install/logs/pip-check.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "install/logs/pip-check.stdout.log",
+      "bytes": 31,
+      "sha256": "672aec65a45bed50e70229c70934a7eebf0462595c459b83023027645d57cccf"
+    },
+    {
+      "path": "install/logs/register-kernel.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "install/logs/register-kernel.stdout.log",
+      "bytes": 108,
+      "sha256": "fd200d34b048116fba0e44a7d80f98b504dcf50f3428347fb0e1725114546be1"
+    },
+    {
+      "path": "install/manifest.json",
+      "bytes": 1031,
+      "sha256": "5708da66e2edc07abf8ec08fc8fd38b69f4d8f4f056955da6b002832b93222b2"
+    },
+    {
+      "path": "install/receipt.json",
+      "bytes": 9165,
+      "sha256": "aef3eaf81c42ae4e04eb8bfecc3fa4ac203fba3482ba150cb9c679dc199b53c8"
+    },
+    {
+      "path": "kernel/artifacts/environment.json",
+      "bytes": 11385,
+      "sha256": "15acf12d515e30c52732c7aa85ff6e27a87de600a5faf647f3e00e53f9889573"
+    },
+    {
+      "path": "kernel/logs/kernelspec-list.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "kernel/logs/kernelspec-list.stdout.log",
+      "bytes": 741,
+      "sha256": "771d5c1a96118115b9bcb27df1bb92fa3b3568d8bae8c3300df0ca57e7171d4c"
+    },
+    {
+      "path": "kernel/logs/live-kernel-and-lock.stderr.log",
+      "bytes": 284,
+      "sha256": "c9e029ec94bb85d857cca970e0d2cc8029a3aa2f569bc615da22b45cb9690521"
+    },
+    {
+      "path": "kernel/logs/live-kernel-and-lock.stdout.log",
+      "bytes": 642,
+      "sha256": "65f52ffb5e331dcfbbdec6f1e9d77af440c2bdcdb133f74e38378942f58d5da2"
+    },
+    {
+      "path": "kernel/manifest.json",
+      "bytes": 766,
+      "sha256": "505bb6d067c96fb22243d6cc45e949e920faf8c5aaf50634c0875cbe81223231"
+    },
+    {
+      "path": "kernel/receipt.json",
+      "bytes": 5695,
+      "sha256": "4c4737ac790a24b3dd6bbb804b0751942557e0b2a4a213e7ef093355e2d5f430"
+    },
+    {
+      "path": "suite/logs/pytest-full-once.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "suite/logs/pytest-full-once.stdout.log",
+      "bytes": 1062,
+      "sha256": "a8862c07983b5956b2641b1fb2da769d0063c273078b362a14e7a543d38b5c77"
+    },
+    {
+      "path": "suite/manifest.json",
+      "bytes": 375,
+      "sha256": "9d150ec10b86abf9a5eef1b466302b97e710bcaac80124c86184ac4e68f6b15f"
+    },
+    {
+      "path": "suite/receipt.json",
+      "bytes": 3647,
+      "sha256": "ea3d48c6917719009ad573233a7ae4eec9be0b312e859c5665ee8e6be1966c58"
+    },
+    {
+      "path": "verify_environment.py.txt",
+      "bytes": 3684,
+      "sha256": "fb896c44169f3faa2478bbf715e0e45ae9fed396ee9a3604f0c85fa5d8b826d2"
+    }
+  ]
+}

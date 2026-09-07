@@ -1,0 +1,78 @@
+import hashlib
+import importlib.metadata as metadata
+import json
+import os
+import platform
+import sys
+from pathlib import Path
+
+import psutil
+from jupyter_client import KernelManager
+from jupyter_client.kernelspec import KernelSpecManager
+from packaging.specifiers import SpecifierSet
+
+project = Path.cwd()
+cfg = (Path(sys.prefix) / 'pyvenv.cfg').read_text(encoding='utf-8')
+assert sys.prefix != sys.base_prefix
+assert 'include-system-site-packages = false' in cfg
+assert sys.version_info[:2] == (3, 13)
+packages = {}
+for line in (project / 'requirements.lock').read_text(encoding='utf-8').splitlines():
+    if line.startswith('#') or '==' not in line:
+        continue
+    name, expected = line.split('==')
+    dist = metadata.distribution(name)
+    assert dist.version == expected, (name, expected, dist.version)
+    requirement = dist.metadata.get('Requires-Python')
+    assert requirement is None or platform.python_version() in SpecifierSet(requirement), (name, requirement)
+    packages[name] = {'version': dist.version, 'requires_python': requirement}
+assert platform.python_version() in SpecifierSet(metadata.metadata('pequiflux-experiment')['Requires-Python'])
+
+specs = KernelSpecManager()
+manager = KernelManager(kernel_name='python3', kernel_spec_manager=specs)
+kernel_argv = manager.kernel_spec.argv
+assert Path(kernel_argv[0]).resolve() == Path(sys.executable).resolve(), kernel_argv
+manager.start_kernel(cwd=str(project))
+client = manager.client()
+client.start_channels()
+streams = []
+try:
+    client.wait_for_ready(timeout=30)
+    msg_id = client.execute('import sys, numpy, scipy, ipykernel, pequiflux_experiment; print(sys.executable); print(numpy.__version__, scipy.__version__, ipykernel.__version__)')
+    while True:
+        msg = client.get_iopub_msg(timeout=30)
+        if msg.get('parent_header', {}).get('msg_id') != msg_id:
+            continue
+        kind, content = msg['msg_type'], msg['content']
+        if kind == 'error':
+            raise RuntimeError(content)
+        if kind == 'stream':
+            streams.append(content['text'])
+        if kind == 'status' and content['execution_state'] == 'idle':
+            break
+    while True:
+        reply = client.get_shell_msg(timeout=30)
+        if reply['parent_header'].get('msg_id') == msg_id:
+            break
+    assert reply['content']['status'] == 'ok', reply
+    assert os.path.normcase(sys.executable) in os.path.normcase(''.join(streams))
+finally:
+    client.stop_channels()
+    manager.shutdown_kernel(now=True)
+
+files = [*project.joinpath('src').rglob('*.py'), *project.joinpath('tests').rglob('*.py')]
+files += [project / name for name in ('TCC_experimentos.ipynb', 'pyproject.toml', 'requirements.lock')]
+report = {
+    'status': 'PASS', 'python': sys.version, 'platform': platform.platform(),
+    'executable': sys.executable, 'prefix': sys.prefix, 'base_prefix': sys.base_prefix,
+    'pyvenv_cfg': cfg, 'kernel_name': 'python3', 'kernel_argv': kernel_argv,
+    'kernel_search_paths': specs.kernel_dirs, 'kernel_output': ''.join(streams),
+    'packages': packages,
+    'cpu_logical': psutil.cpu_count(), 'cpu_load_percent': psutil.cpu_percent(interval=1),
+    'ram_available_bytes': psutil.virtual_memory().available,
+    'disk_free_bytes': psutil.disk_usage(str(project)).free,
+    'input_sha256': {str(p.relative_to(project)): hashlib.sha256(p.read_bytes()).hexdigest()
+                     for p in sorted(files)},
+}
+Path(sys.argv[1]).write_text(json.dumps(report, indent=2), encoding='utf-8')
+print(json.dumps({key: report[key] for key in ('status', 'python', 'executable', 'kernel_argv', 'kernel_output', 'cpu_load_percent', 'ram_available_bytes', 'disk_free_bytes')}, indent=2))

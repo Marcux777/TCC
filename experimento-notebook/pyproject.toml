@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pequiflux-experiment"
 version = "0.1.0"
 description = "Reproducible experiment support for PequiFlux"
-requires-python = ">=3.12"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "numpy>=2.5,<3",
     "pandas>=3.0,<4",

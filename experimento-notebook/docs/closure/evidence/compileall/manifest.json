@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "tcc-baseline-compileall",
+  "cwd": "C:/p/PequiFlux/TCC/experimento-notebook",
+  "steps": [
+    {"id": "compileall", "argv": ["C:/p/PequiFlux/TCC/tmp/closure-baseline/venv/Scripts/python.exe", "-m", "compileall", "-q", "src"]}
+  ]
+}

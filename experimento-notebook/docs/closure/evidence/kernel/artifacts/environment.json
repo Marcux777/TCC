@@ -1,0 +1,323 @@
+{
+  "status": "PASS",
+  "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "executable": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\Scripts\\python.exe",
+  "prefix": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv",
+  "base_prefix": "C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313",
+  "pyvenv_cfg": "home = C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313\ninclude-system-site-packages = false\nversion = 3.13.3\nexecutable = C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313\\python.exe\ncommand = C:\\Users\\marcu\\AppData\\Local\\Programs\\Python\\Python313\\python.exe -m venv C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\n",
+  "kernel_name": "python3",
+  "kernel_argv": [
+    "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\Scripts\\python.exe",
+    "-Xfrozen_modules=off",
+    "-m",
+    "ipykernel_launcher",
+    "-f",
+    "{connection_file}"
+  ],
+  "kernel_search_paths": [
+    "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\share\\jupyter\\kernels",
+    "C:\\Users\\marcu\\AppData\\Roaming\\jupyter\\kernels",
+    "C:\\Users\\marcu\\.ipython\\kernels"
+  ],
+  "kernel_output": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\Scripts\\python.exe\n2.5.2 1.18.1 7.3.0\n",
+  "packages": {
+    "asttokens": {
+      "version": "3.0.2",
+      "requires_python": ">=3.8"
+    },
+    "attrs": {
+      "version": "26.1.0",
+      "requires_python": ">=3.9"
+    },
+    "beautifulsoup4": {
+      "version": "4.15.0",
+      "requires_python": ">=3.7.0"
+    },
+    "bleach": {
+      "version": "6.4.0",
+      "requires_python": ">=3.10"
+    },
+    "colorama": {
+      "version": "0.4.6",
+      "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
+    },
+    "comm": {
+      "version": "0.2.3",
+      "requires_python": ">=3.8"
+    },
+    "contourpy": {
+      "version": "1.3.3",
+      "requires_python": ">=3.11"
+    },
+    "cycler": {
+      "version": "0.12.1",
+      "requires_python": ">=3.8"
+    },
+    "debugpy": {
+      "version": "1.8.21",
+      "requires_python": ">=3.8"
+    },
+    "defusedxml": {
+      "version": "0.7.1",
+      "requires_python": ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+    },
+    "executing": {
+      "version": "2.2.1",
+      "requires_python": ">=3.8"
+    },
+    "fastjsonschema": {
+      "version": "2.22.2",
+      "requires_python": ">=3.10"
+    },
+    "fonttools": {
+      "version": "4.64.0",
+      "requires_python": ">=3.10"
+    },
+    "iniconfig": {
+      "version": "2.3.0",
+      "requires_python": ">=3.10"
+    },
+    "ipykernel": {
+      "version": "7.3.0",
+      "requires_python": ">=3.10"
+    },
+    "ipython": {
+      "version": "9.17.1",
+      "requires_python": ">=3.11"
+    },
+    "ipython_pygments_lexers": {
+      "version": "1.1.1",
+      "requires_python": ">=3.8"
+    },
+    "jedi": {
+      "version": "0.20.0",
+      "requires_python": ">=3.10"
+    },
+    "Jinja2": {
+      "version": "3.1.6",
+      "requires_python": ">=3.7"
+    },
+    "jsonschema": {
+      "version": "4.26.0",
+      "requires_python": ">=3.10"
+    },
+    "jsonschema-specifications": {
+      "version": "2025.9.1",
+      "requires_python": ">=3.9"
+    },
+    "jupyter_client": {
+      "version": "8.10.0",
+      "requires_python": ">=3.10"
+    },
+    "jupyter_core": {
+      "version": "5.9.1",
+      "requires_python": ">=3.10"
+    },
+    "jupyterlab_pygments": {
+      "version": "0.3.0",
+      "requires_python": ">=3.8"
+    },
+    "kiwisolver": {
+      "version": "1.5.1",
+      "requires_python": ">=3.10"
+    },
+    "MarkupSafe": {
+      "version": "3.0.3",
+      "requires_python": ">=3.9"
+    },
+    "matplotlib": {
+      "version": "3.11.1",
+      "requires_python": ">=3.11"
+    },
+    "matplotlib-inline": {
+      "version": "0.2.2",
+      "requires_python": ">=3.9"
+    },
+    "mistune": {
+      "version": "3.3.4",
+      "requires_python": ">=3.8"
+    },
+    "nbclient": {
+      "version": "0.11.0",
+      "requires_python": ">=3.10.0"
+    },
+    "nbconvert": {
+      "version": "7.17.1",
+      "requires_python": ">=3.9"
+    },
+    "nbformat": {
+      "version": "5.11.1",
+      "requires_python": ">=3.10"
+    },
+    "nest-asyncio2": {
+      "version": "1.7.2",
+      "requires_python": ">=3.5"
+    },
+    "numpy": {
+      "version": "2.5.2",
+      "requires_python": ">=3.12"
+    },
+    "packaging": {
+      "version": "26.3",
+      "requires_python": ">=3.9"
+    },
+    "pandas": {
+      "version": "3.0.5",
+      "requires_python": ">=3.11"
+    },
+    "pandocfilters": {
+      "version": "1.5.1",
+      "requires_python": ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+    },
+    "parso": {
+      "version": "0.8.7",
+      "requires_python": ">=3.6"
+    },
+    "pillow": {
+      "version": "12.3.0",
+      "requires_python": ">=3.10"
+    },
+    "platformdirs": {
+      "version": "4.11.7",
+      "requires_python": ">=3.10"
+    },
+    "pluggy": {
+      "version": "1.6.0",
+      "requires_python": ">=3.9"
+    },
+    "prompt_toolkit": {
+      "version": "3.0.53",
+      "requires_python": ">=3.10"
+    },
+    "psutil": {
+      "version": "7.2.2",
+      "requires_python": ">=3.6"
+    },
+    "pure_eval": {
+      "version": "0.2.3",
+      "requires_python": null
+    },
+    "pyarrow": {
+      "version": "25.0.1",
+      "requires_python": ">=3.10"
+    },
+    "Pygments": {
+      "version": "2.21.0",
+      "requires_python": ">=3.9"
+    },
+    "pyparsing": {
+      "version": "3.3.2",
+      "requires_python": ">=3.9"
+    },
+    "pytest": {
+      "version": "9.1.1",
+      "requires_python": ">=3.10"
+    },
+    "python-dateutil": {
+      "version": "2.9.0.post0",
+      "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
+    },
+    "pyzmq": {
+      "version": "27.2.0",
+      "requires_python": ">=3.9"
+    },
+    "referencing": {
+      "version": "0.37.0",
+      "requires_python": ">=3.10"
+    },
+    "rpds-py": {
+      "version": "2026.6.3",
+      "requires_python": ">=3.11"
+    },
+    "scipy": {
+      "version": "1.18.1",
+      "requires_python": ">=3.12"
+    },
+    "setuptools": {
+      "version": "80.10.1",
+      "requires_python": ">=3.9"
+    },
+    "six": {
+      "version": "1.17.0",
+      "requires_python": ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"
+    },
+    "soupsieve": {
+      "version": "2.9.2",
+      "requires_python": ">=3.10"
+    },
+    "stack-data": {
+      "version": "0.6.3",
+      "requires_python": null
+    },
+    "tinycss2": {
+      "version": "1.5.1",
+      "requires_python": ">=3.10"
+    },
+    "tornado": {
+      "version": "6.5.8",
+      "requires_python": ">= 3.9"
+    },
+    "traitlets": {
+      "version": "5.16.1",
+      "requires_python": ">=3.10"
+    },
+    "typing_extensions": {
+      "version": "4.16.0",
+      "requires_python": ">=3.9"
+    },
+    "tzdata": {
+      "version": "2026.3",
+      "requires_python": ">=2"
+    },
+    "wcwidth": {
+      "version": "0.8.3",
+      "requires_python": ">=3.8"
+    },
+    "webencodings": {
+      "version": "0.6.1",
+      "requires_python": ">=3.10"
+    }
+  },
+  "cpu_logical": 8,
+  "cpu_load_percent": 8.7,
+  "ram_available_bytes": 7771807744,
+  "disk_free_bytes": 59424444416,
+  "input_sha256": {
+    "pyproject.toml": "f5173c9960b73209707b7a39910dc4bf7499b6fe9760f2f822d95a99b9eae5a9",
+    "requirements.lock": "f8638a96c72a98ade43de388f4b80f1ea3ff456945b4558674ea71713af67b16",
+    "src\\pequiflux_experiment\\__init__.py": "84b276e0cbb2eb8483ac86777ed7ffe73e95b88ecdf1ce533980bd1122e43998",
+    "src\\pequiflux_experiment\\audit.py": "ea483ec3d6fe82a5b4e6421f011bfb8ccb5abd17d348b80ef719b194395583ed",
+    "src\\pequiflux_experiment\\capacity.py": "525b3b3fecf219d6a762096eaf8bdfd3326bf23dafdb779776f5aa4e7dc8efec",
+    "src\\pequiflux_experiment\\config.py": "123d8572a3671bd6bb4c74cc3271b4584463e15d15d932ed18dd2d8753516f89",
+    "src\\pequiflux_experiment\\dataset.py": "29eb93b38b455c960a60e64f885a87687128074729c3020db78bc8d728a5f97d",
+    "src\\pequiflux_experiment\\digital_model.py": "ef7aa151d508f4ef4da3eb9ded7999b60c573a1caa0f46d865cb55a1233749c2",
+    "src\\pequiflux_experiment\\dispatch.py": "d351f24a20360873c0dde4ea47f6015b28cb9d96beaf54a2a790b67272a164f8",
+    "src\\pequiflux_experiment\\domain.py": "f1060c4b6a8e6e82d9494ef506d7b14017a68bfe22844348f789acad0439f2bb",
+    "src\\pequiflux_experiment\\emulator.py": "7d4b44a4ba10ebe434c295f7ef743363561f457496f6c04ddefe2c1869ea5d83",
+    "src\\pequiflux_experiment\\events.py": "61a87e59e6fc12ee90facd42814a83f8df6952471ef5aa42b8078d6602b43073",
+    "src\\pequiflux_experiment\\experiment.py": "d4c8a7008ed233c123e4c469e1c9d996ceacfc2f0563c0709f8bbd561fb3e2ec",
+    "src\\pequiflux_experiment\\export.py": "a5635e38dc902cdd326a18827237131b8439eb8a083462928d578c4cd025aa80",
+    "src\\pequiflux_experiment\\face_validation.py": "320824435d1830e0e5032039453cd7062eb6ba8e799c9681ab177401d2fe4ab5",
+    "src\\pequiflux_experiment\\manifest.py": "5033b4e91a07b8d02de6f3e24a0d6b1bf1606bfa397b3a1bf9dbcb4165e18101",
+    "src\\pequiflux_experiment\\metrics.py": "78bd4ca01c48a20a909eb45891e220ff6122089577eb594fb8a3861b78035589",
+    "src\\pequiflux_experiment\\operator.py": "f8d4580a5f8236f7674d3daf27999b2ad0b5537285f3091ff03daf2b49b321d7",
+    "src\\pequiflux_experiment\\policies.py": "2875534d1d210cd510b3c161fa337cd4ba087c34e4e395875557d12d954e0aa7",
+    "src\\pequiflux_experiment\\profiles.py": "9845479504ede55e26921ee643eea40525718fe347407e95507153aa0c9b702d",
+    "src\\pequiflux_experiment\\replay.py": "54cde65d419ff76915e753aae0206da4d9bde6d06dbfd7a8b519596baaaaacef",
+    "src\\pequiflux_experiment\\statistics.py": "0b34c7734e58a15a78ad8519e16890f6417991cc65009e7a7da340f06b79caa0",
+    "src\\pequiflux_experiment\\validation_fixtures.py": "cb1f68e7e72ca87054eb25d6a07a76ae38ea1f95083c72d6a9ae54896bdbca97",
+    "TCC_experimentos.ipynb": "05f423cedfc39c42b36c6d72c45228432d43225c4a1a4eb7aa0219816db497df",
+    "tests\\test_a2_structural.py": "1ddd4f2353216dc80e9c8afd713fee8d59031bed675f0d56aad2e42b40e6e144",
+    "tests\\test_capacity.py": "c95e30247b238bed8d199288de519c7498f18a4ad7a15d3ce4340f92d0d76e87",
+    "tests\\test_config_manifest.py": "6614ebcea6367de9a6284e371f4ab5260e205c9c205a1519d11adee4a3d31f5a",
+    "tests\\test_digital_model_replay.py": "c7c15dc10e10313dd02d7d4b88f55dcb7ef8d22614d03173d074810ac9ddc24f",
+    "tests\\test_dispatch_emulator.py": "fa2be8d777c6cc523eea3d4e9863b39a03316f1c1f96a3cff086fe915c3db0ae",
+    "tests\\test_experiment_audit.py": "415ef11771aba4071b45ddd906f100ab549a8e7bf7358aa0f0e3d4dbd656b51a",
+    "tests\\test_manifest_io.py": "4f723e6ffdb125db4396a6d4c9573811c88a64cb778bb8b68670d959854b34c7",
+    "tests\\test_metrics.py": "cc2010d6cfcb8aea6d6e6938168c73cb7085a1873011b60ff38daa6d45374b59",
+    "tests\\test_notebook.py": "763f55ae4ede807dd5d30511fbecfbf4b0e30acd2f509c68a41faaf87e0e2f40",
+    "tests\\test_operator_interventions.py": "c0e5a4f7426799cde4771cf1fbf2aad424a1f4f01f03d24d5c18c98099fac40f",
+    "tests\\test_statistics_export.py": "e54a5478e7ed218bb05cda9018031f0b629bef50c8db0f0f3c242760e9200db5"
+  }
+}

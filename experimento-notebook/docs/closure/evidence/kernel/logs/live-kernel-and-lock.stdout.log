@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+  "executable": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\Scripts\\python.exe",
+  "kernel_argv": [
+    "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\Scripts\\python.exe",
+    "-Xfrozen_modules=off",
+    "-m",
+    "ipykernel_launcher",
+    "-f",
+    "{connection_file}"
+  ],
+  "kernel_output": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\Scripts\\python.exe\n2.5.2 1.18.1 7.3.0\n",
+  "cpu_load_percent": 8.7,
+  "ram_available_bytes": 7771807744,
+  "disk_free_bytes": 59424444416
+}

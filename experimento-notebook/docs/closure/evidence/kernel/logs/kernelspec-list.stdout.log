@@ -1,0 +1,26 @@
+{
+  "kernelspecs": {
+    "python3": {
+      "resource_dir": "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\share\\jupyter\\kernels\\python3",
+      "spec": {
+        "argv": [
+          "C:\\p\\PequiFlux\\TCC\\tmp\\closure-baseline\\venv\\Scripts\\python.exe",
+          "-Xfrozen_modules=off",
+          "-m",
+          "ipykernel_launcher",
+          "-f",
+          "{connection_file}"
+        ],
+        "env": {},
+        "display_name": "PequiFlux baseline (Python 3.13)",
+        "language": "python",
+        "interrupt_mode": "signal",
+        "metadata": {
+          "debugger": true,
+          "supported_encryption": "curve"
+        },
+        "kernel_protocol_version": "5.5"
+      }
+    }
+  }
+}
