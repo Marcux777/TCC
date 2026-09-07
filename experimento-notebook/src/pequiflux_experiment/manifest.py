@@ -14,11 +14,14 @@ import subprocess
 import tomllib
 from typing import Any, Mapping
 
+import psutil
+
 from .config import ExperimentConfig, canonical_bytes, config_as_dict, config_hash
 
 
 _DEPENDENCY_NAME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*)")
 _LOCK_PIN_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*)==([^=\s]+)$")
+_SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
 
 
 def _normalise_distribution_name(name: str) -> str:
@@ -56,6 +59,11 @@ def _declared_distribution_names() -> tuple[str, ...]:
     if not isinstance(raw_dependencies, list) or not raw_dependencies:
         raise RuntimeError("pyproject.toml project.dependencies must be a non-empty list")
 
+    locked_names = {
+        _normalise_distribution_name(pin.group(1))
+        for line in lock_lines
+        if (pin := _LOCK_PIN_RE.fullmatch(line.strip())) is not None
+    }
     names: list[str] = []
     for requirement in raw_dependencies:
         if not isinstance(requirement, str):
@@ -64,11 +72,7 @@ def _declared_distribution_names() -> tuple[str, ...]:
         if match is None:
             raise RuntimeError(f"project dependency has no distribution name: {requirement!r}")
         name = match.group(1)
-        if _normalise_distribution_name(name) not in {
-            _normalise_distribution_name(pin.group(1))
-            for line in lock_lines
-            if (pin := _LOCK_PIN_RE.fullmatch(line.strip())) is not None
-        }:
+        if _normalise_distribution_name(name) not in locked_names:
             raise RuntimeError(
                 "dependency declaration has no lock pin: "
                 f"distribution={name} lock={lock_path}"
@@ -79,11 +83,7 @@ def _declared_distribution_names() -> tuple[str, ...]:
     project_name = project.get("name")
     if not isinstance(project_name, str) or not project_name.strip():
         raise RuntimeError("pyproject.toml project.name must be a non-empty string")
-    if _normalise_distribution_name(project_name) not in {
-        _normalise_distribution_name(pin.group(1))
-        for line in lock_lines
-        if (pin := _LOCK_PIN_RE.fullmatch(line.strip())) is not None
-    }:
+    if _normalise_distribution_name(project_name) not in locked_names:
         # Editable local projects are represented by ``-e .`` rather than a
         # ``name==version`` line.  The local distribution is still required
         # in the resolved manifest and is resolved through importlib.metadata.
@@ -128,11 +128,6 @@ def _resolved_dependency_versions(
     for name in names:
         try:
             version = importlib_metadata.version(name)
-        except importlib_metadata.PackageNotFoundError as exc:
-            raise RuntimeError(
-                "dependency version resolution failed: "
-                f"distribution={name} operation=manifest"
-            ) from exc
         except Exception as exc:
             raise RuntimeError(
                 "dependency version resolution failed: "
@@ -210,16 +205,10 @@ def create_run_directory(
     return run_dir
 
 
-def _memory_total_bytes() -> int | None:
-    """Read total physical memory when the platform exposes it directly."""
+def _memory_total_bytes() -> int:
+    """Read physical memory on every platform supported by psutil."""
 
-    if hasattr(os, "sysconf"):
-        names = getattr(os, "sysconf_names", {})
-        page_size_name = names.get("SC_PAGE_SIZE")
-        page_count_name = names.get("SC_PHYS_PAGES")
-        if page_size_name is not None and page_count_name is not None:
-            return int(os.sysconf(page_size_name)) * int(os.sysconf(page_count_name))
-    return None
+    return psutil.virtual_memory().total
 
 
 def _memory_inventory() -> dict[str, Any]:
@@ -227,12 +216,6 @@ def _memory_inventory() -> dict[str, Any]:
         total_bytes = _memory_total_bytes()
     except Exception as exc:
         raise RuntimeError("memory inventory failed") from exc
-    if total_bytes is None:
-        return {
-            "status": "unavailable",
-            "reason": "physical memory detection is unsupported on this platform",
-            "total_bytes": None,
-        }
     if total_bytes <= 0:
         cause = ValueError(f"physical memory detector returned {total_bytes}")
         raise RuntimeError("memory inventory failed") from cause
@@ -419,10 +402,7 @@ def write_manifest(path: str | Path, manifest: Mapping[str, Any]) -> Path:
 
     if not isinstance(manifest, Mapping):
         raise TypeError("manifest must be a mapping")
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(canonical_bytes(dict(manifest)))
-    return destination
+    return write_canonical_json(path, manifest)
 
 
 def write_canonical_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
@@ -463,12 +443,8 @@ def canonical_checksum_bytes(entries: Mapping[str, str] | list[tuple[str, str]] 
     for name, digest in rows:
         if not isinstance(name, str) or not isinstance(digest, str):
             raise TypeError("checksum entries must be string pairs")
-        if len(digest) != 64:
+        if _SHA256_RE.fullmatch(digest) is None:
             raise ValueError(f"checksum for {name} must be a SHA-256 digest")
-        try:
-            int(digest, 16)
-        except ValueError as exc:
-            raise ValueError(f"checksum for {name} must be hexadecimal") from exc
         lines.append(f"{name}\t{digest.lower()}")
     return ("\n".join(lines) + "\n").encode("utf-8")
 
@@ -485,8 +461,8 @@ def write_checksums(path: str | Path, entries: Mapping[str, str] | list[tuple[st
 def dataset_root_hash(manifest_hash: str, checksums_hash: str) -> str:
     """Compute the cycle-free root digest from manifest/checksum hashes."""
 
-    if not isinstance(manifest_hash, str) or len(manifest_hash) != 64:
+    if not isinstance(manifest_hash, str) or _SHA256_RE.fullmatch(manifest_hash) is None:
         raise ValueError("manifest_hash must be a SHA-256 digest")
-    if not isinstance(checksums_hash, str) or len(checksums_hash) != 64:
+    if not isinstance(checksums_hash, str) or _SHA256_RE.fullmatch(checksums_hash) is None:
         raise ValueError("checksums_hash must be a SHA-256 digest")
     return hashlib.sha256(f"{manifest_hash}:{checksums_hash}".encode("ascii")).hexdigest()
