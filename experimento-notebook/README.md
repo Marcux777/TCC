@@ -144,6 +144,37 @@ de uma grade confirmatória persistida e auditada.
 
 ## Fronteiras científicas
 
+O esquema de execução 3 deriva `results.csv` exclusivamente de logs já
+persistidos por `compute_policy_day_metrics`. Cada dia inclui `metrics/*.json`
+com SHA-256, definições e detalhes por recurso/caminhão; a auditoria recalcula
+e reconcilia todos os valores. `scale_occupancy_peak` mede ocupação simultânea.
+Utilização bruta/líquida e ociosidade são temporais, com paradas sobrepostas
+contadas uma vez. Espera, tempo total e censura, estabilidade entre filas,
+quebras de FIFO, comandos e intervenções também são derivados dos eventos.
+CO2 é exploratório: espera acumulada em horas × 0,8 gal/h × 10,18 kg/gal,
+com sensibilidade de 0,5 a 1,0 gal/h; não representa emissões medidas.
+
+`export_metrics` publica `table_metrics.csv`, detalhes por recurso e caminhão,
+agregados por classe e médias aritméticas de dias por cenário/estrato
+(`_day_mean`). As utilizações agregadas (`_pooled`) dividem somas de
+recurso-minutos, preservando a ponderação por capacidade. `export_analysis` inclui
+essas tabelas na publicação confirmatória. Na validação, os dados descritivos
+são de fixtures e ficam em `descriptive_metrics/`. Valores ausentes ou
+indefinidos interrompem a derivação; não recebem zero ou NaN.
+
+O DES usa `operator_mode=synthetic_auto_accept`; `operator_decision` no log
+não representa uma pessoa. `overall_pass` cobre somente verificações
+automáticas, e `global_acceptance_status` permanece `pending`. O executor
+não transforma `human_audit_status` em `complete`. A aprovação real de face,
+a revisão humana de A2, rejeição/override no DES e o consumidor Unreal
+continuam pendentes; testes isolados de rejeição não demonstram esses fluxos
+na campanha. Veja [governança](docs/governance-status.md).
+
+Os intervalos pareados usam 5.000 reamostragens e registram a quantidade.
+A matriz RHFS e seus hashes estão em `../data/`; a análise auxiliar é uma
+âncora exploratória de um Wilcoxon isolado, sem comprovar poder da regra
+completa de H1. Veja [proveniência](../data/power_analysis_provenance.md).
+
 O artefato é chamado de **modelo digital**. Não há ativo físico individual
 pareado, telemetria contínua ou sincronização bidirecional operacional; portanto
 “gêmeo digital” não é uma conclusão válida. H1 continua sendo uma hipótese

@@ -191,7 +191,7 @@
   como problema de \textbf{despacho online sob restri\c{c}\~oes} com reavalia\c{c}\~ao
   cont\'inua do estado operacional. O motor combina filtro de factibilidade por
   restri\c{c}\~oes r\'igidas, ranqueamento lexicogr\'afico local com horizonte curto e
-  registro audit\'avel de cada decis\~ao, preservando a supervis\~ao humana. A metodologia
+  registro audit\'avel de cada decis\~ao, com supervis\~ao humana prevista no desenho. A metodologia
   adotada \'e o Design Science Research, com desenvolvimento e avalia\c{c}\~ao de artefato
   computacional em cen\'arios sint\'eticos controlados via simula\c{c}\~ao de eventos
   discretos. A compara\c{c}\~ao ser\'a pareada contra quatro pol\'iticas de refer\^encia ---
@@ -204,7 +204,9 @@
   (A1) e rastreabilidade integral das decis\~oes e interven\c{c}\~oes humanas (A2). Esta
   etapa (TCC~I) entrega a modelagem formal, o protocolo experimental completo, os artefatos
   preliminares de reprodutibilidade e os comparadores congelados; a execu\c{c}\~ao dos experimentos
-  comparativos \'e prevista para o TCC~II. Como camada de representa\c{c}\~ao, ser\'a
+  comparativos \'e prevista para o TCC~II. A valida\c{c}\~ao de face e a auditoria humana
+  de A2 permanecem pendentes; a demonstra\c{c}\~ao do DES usa aceita\c{c}\~ao sint\'etica autom\'atica.
+  Como camada de representa\c{c}\~ao ainda n\~ao entregue, ser\'a
   desenvolvido no Unreal Engine~5.8 um \textbf{modelo digital} tridimensional do p\'atio,
   alimentado por exporta\c{c}\~oes e replays do simulador. O termo g\^emeo digital n\~ao \'e
   adotado, pois n\~ao existe, nesta etapa, um ativo f\'isico individual pareado nem
@@ -225,7 +227,7 @@
   orchestration of trucks in agro-industrial yards, formulated as an online constrained
   dispatching problem with continuous reassessment of the operational state. The engine combines
   a feasibility filter for hard constraints, local lexicographic ranking with a short horizon and
-  auditable records for each decision while preserving human supervision. The methodology follows
+  auditable records for each decision, with human supervision specified in the design. The methodology follows
   Design Science Research, with the development and evaluation of a computational artifact in
   controlled synthetic scenarios through discrete-event simulation. The comparison will use
   FIFO strict, FIFO \textit{flow-faithful}, priority with local feasibility and fixed-score
@@ -237,7 +239,9 @@
   constraints (A1) and full traceability of decisions and human interventions (A2). This
   TCC~I stage delivers the formal model, the experimental protocol, preliminary
   reproducibility artifacts and frozen comparators; the main comparative experiments are
-  planned for TCC~II. A three-dimensional \textbf{digital model} of the yard will be
+  planned for TCC~II. Face validation and human A2 review remain pending; the DES
+  demonstration uses synthetic automatic acceptance. A three-dimensional \textbf{digital model}
+  of the yard, which has not yet been delivered, will be
   developed in Unreal Engine~5.8 as a representation layer fed by simulator exports and
   replays. The term digital twin is not used because this stage has neither a paired
   individual physical asset nor real-time bidirectional synchronization.
@@ -314,6 +318,8 @@ Uma abordagem de orquestra\c{c}\~ao din\^amica baseada em despacho online sob re
   \item \textbf{A2 -- crit\'erio de governan\c{c}a:} no artefato proposto, toda recomenda\c{c}\~ao e toda interven\c{c}\~ao humana devem ter justificativa leg\'ivel, registro audit\'avel e rastreabilidade suficiente para reconstru\c{c}\~ao posterior.
 \end{itemize}
 Somente \textbf{H1} ser\'a tratada como hip\'otese comparativa entre pol\'iticas. Os crit\'erios \textbf{A1} e \textbf{A2} funcionam como balizadores bin\'arios de aceita\c{c}\~ao do artefato, verificados por log e por auditoria independente, e n\~ao usados para alegar superioridade cient\'ifica sobre as pol\'iticas de refer\^encia. Os limiares quantitativos de H1, A1 e A2 s\~ao detalhados no Cap\'itulo~\ref{ch:metodologia}.
+
+A completude estrutural de A2 \'e verificada automaticamente; a avalia\c{c}\~ao humana da legibilidade e das interven\c{c}\~oes constitui uma etapa distinta. Um log completo ou uma aceita\c{c}\~ao simulada n\~ao aprova A2 em seu escopo humano.
 
 \section{Organização do trabalho}
 
@@ -573,7 +579,7 @@ Disponibilidade operacional & recurso bloqueado, em falha ou destino fechado por
 \addlinespace
 Preced\^encia mandat\'oria & prioridade operacional validada & antecede FIFO e crit\'erios de escore \\
 \addlinespace
-Governan\c{c}a humana & interven\c{c}\~ao autorizada e registrada & permite sobreposi\c{c}\~ao audit\'avel sem violar restri\c{c}\~oes r\'igidas \\
+Governan\c{c}a humana & requisito de interven\c{c}\~ao autorizada e registrada & dever\'a permitir sobreposi\c{c}\~ao audit\'avel; demonstra\c{c}\~ao humana pendente \\
 \bottomrule
 \end{tabularx}
 \caption[Taxonomia de restri\c{c}\~oes do artefato]{Taxonomia enxuta das restri\c{c}\~oes usadas pelo artefato. Os eventos que atualizam estado ficam consolidados na Tabela~\ref{tab:eventos-des}.}
@@ -592,7 +598,9 @@ continuar\'a no ambiente experimental, a partir dos logs can\^onicos; o modelo d
 recalcula m\'etricas nem altera resultados.
 
 O projeto Unreal j\'a est\'a inicializado na vers\~ao~5.8, mas a cena de dom\'inio, os ativos,
-o importador de eventos e os controles de replay ainda constituem trabalho do TCC~II. A
+o importador de eventos e os controles de replay ainda constituem trabalho do TCC~II.
+O estado dessa entrega \'e \textbf{N\~AO ENTREGUE / PENDENTE}: o objetivo de visualiza\c{c}\~ao
+tridimensional permanece no escopo e n\~ao \'e satisfeito pelo replay Python. A
 interface m\'inima entre simulador e modelo digital ser\'a JSONL com esquema versionado e
 identifica\c{c}\~ao de cen\'ario, semente, pol\'itica e checksum dos par\^ametros. Essa
 separa\c{c}\~ao permite validar os dados antes da visualiza\c{c}\~ao e evita acoplamento do
@@ -682,7 +690,7 @@ In\'icio ou fim de chuva & altera disponibilidade de destinos abertos sens\'ivei
 \addlinespace
 Falha ou retorno de recurso & altera capacidade do recurso e, se necess\'ario, interrompe novas aloca\c{c}\~oes & registro de indisponibilidade; reprograma\c{c}\~ao de candidatos ainda n\~ao atendidos \\
 \addlinespace
-Interven\c{c}\~ao humana & tenta substituir ou confirmar a recomenda\c{c}\~ao do sistema & aceita se respeitar restri\c{c}\~oes r\'igidas; caso contr\'ario, registra bloqueio da interven\c{c}\~ao \\
+Interven\c{c}\~ao humana (prevista) & tenta substituir ou confirmar a recomenda\c{c}\~ao do sistema & dever\'a ser aceita somente se respeitar restri\c{c}\~oes r\'igidas, com registro do motivo e de eventual bloqueio \\
 \bottomrule
 \end{tabularx}
 \caption[Eventos do simulador DES]{Tipos de evento processados pelo simulador DES e suas consequ\^encias operacionais.}
@@ -924,7 +932,7 @@ Operacionalmente, o motor atualiza $S_k$ com chegadas, libera\c{c}\~oes, falhas,
 No painel confirmat\'orio de H1, a forma\c{c}\~ao de $C^{adm}_{k,r}$ --- filtro de factibilidade, redu\c{c}\~ao por prioridade mandat\'oria e expans\~ao por press\~ao positiva --- pertence \`a plataforma experimental compartilhada: todas as pol\'iticas comparadas observam o mesmo dom\'inio admiss\'ivel, sob a mesma semente e o mesmo estado. Varia exclusivamente a regra de sele\c{c}\~ao sobre $C^{adm}_{k,r}$. Assim, eventuais ganhos do artefato em~H1 s\~ao atribu\'iveis ao ranqueamento lexicogr\'afico, e n\~ao a uma regra de admiss\~ao privativa do motor.
 
 \subsection{Pseudocódigo do motor de despacho}
-O pseudoc\'odigo da Figura~\ref{fig:motor-despacho} traduz a modelagem em fluxo execut\'avel, com ordem determin\'istica dos eventos, forma\c{c}\~ao de candidatos, restri\c{c}\~oes r\'igidas, dom\'inio admiss\'ivel, desempate e registro audit\'avel.
+O pseudoc\'odigo da Figura~\ref{fig:motor-despacho} descreve o fluxo previsto para o artefato completo, com ordem determin\'istica dos eventos, forma\c{c}\~ao de candidatos, restri\c{c}\~oes r\'igidas, dom\'inio admiss\'ivel, desempate e registro audit\'avel. O ramo de interven\c{c}\~ao humana nas linhas 42--46 permanece um requisito; sua execu\c{c}\~ao n\~ao foi demonstrada pelo DES com aceita\c{c}\~ao autom\'atica.
 
 \begin{figure}[H]
 \centering
@@ -1013,7 +1021,7 @@ O arcabou\c{c}o metodol\'ogico adotado \'e o Design Science Research, por ser o 
   \item Discuss\~ao dos resultados, limita\c{c}\~oes e condi\c{c}\~oes de evolu\c{c}\~ao futura.
 \end{enumerate}
 
-Os requisitos do artefato combinam tr\^es fontes: fatos operacionais do recorte, par\^ametros da literatura sobre p\'atios e terminais de gr\~aos e hip\'oteses sint\'eticas de calibra\c{c}\~ao. Regras determin\'isticas, execu\c{c}\~ao reprodut\'ivel e avaliadores externos validam o material final.
+Os requisitos do artefato combinam tr\^es fontes: fatos operacionais do recorte, par\^ametros da literatura sobre p\'atios e terminais de gr\~aos e hip\'oteses sint\'eticas de calibra\c{c}\~ao. O protocolo exige regras determin\'isticas, execu\c{c}\~ao reprodut\'ivel e avalia\c{c}\~ao externa do material final; a implementa\c{c}\~ao das duas primeiras n\~ao comprova a realiza\c{c}\~ao da terceira.
 
 O corpus operacional delimita seis fatos verific\'aveis: (i) prioridades mandat\'orias precedem FIFO; (ii) bloqueio documental impede despacho autom\'atico; (iii) recurso indispon\'ivel, bloqueado ou em falha n\~ao recebe caminh\~ao; (iv) chuva bloqueia destinos abertos sens\'iveis; (v) compatibilidade carga--recurso \'e restri\c{c}\~ao r\'igida; e (vi) interven\c{c}\~ao humana exige registro e respeito \`as restri\c{c}\~oes r\'igidas. A rastreabilidade detalhada desses fatos fica no Ap\^endice~\ref{apx:material-suplementar}.
 
@@ -1085,7 +1093,9 @@ Alta congest\~ao & $\rho \geq 1{,}111$ & demais combina\c{c}\~oes do plano fator
 \label{tab:estratos-congestao-n}
 \end{table}
 
-Antes do experimento principal, duas barreiras reduzem endogeneidade: valida\c{c}\~ao de face dos par\^ametros, cen\'arios e trilhas sint\'eticas exemplares; e checagem de plausibilidade param\'etrica, com origem dominante indicada para cada faixa. A valida\c{c}\~ao de face ainda ser\'a realizada com a orientadora e, quando dispon\'ivel, especialista do dom\'inio, mediante rubrica e registro nominal da rodada. At\'e essa evid\^encia existir, o texto n\~ao trata os par\^ametros como validados externamente. Diverg\^encias gerar\~ao emenda documentada ou justificativa de manuten\c{c}\~ao antes da abertura dos resultados comparativos; depois dela, n\~ao haver\'a recalibra\c{c}\~ao.
+Antes do experimento principal, duas barreiras reduzem endogeneidade: valida\c{c}\~ao de face dos par\^ametros, cen\'arios e trilhas sint\'eticas exemplares; e checagem de plausibilidade param\'etrica, com origem dominante indicada para cada faixa. A valida\c{c}\~ao de face ainda ser\'a realizada mediante rubrica e registro nominal da rodada, com dois revisores independentes conforme a regra de aprova\c{c}\~ao. A orientadora e um especialista do dom\'inio s\~ao os perfis previstos; sua participa\c{c}\~ao efetiva dever\'a constar no recibo, sem preenchimento artificial de avaliadores ausentes. At\'e essa evid\^encia existir, o texto n\~ao trata os par\^ametros como validados externamente. Diverg\^encias gerar\~ao emenda documentada ou justificativa de manuten\c{c}\~ao antes da abertura dos resultados comparativos; depois dela, n\~ao haver\'a recalibra\c{c}\~ao.
+
+O recibo real de valida\c{c}\~ao de face permanece em \texttt{PENDING}. Sua aprova\c{c}\~ao exige os registros humanos previstos na rubrica, vinculados \`a vers\~ao do documento, \`a configura\c{c}\~ao e \`as diverg\^encias da rodada. Recibos artificiais usados para testar o software s\~ao \textit{fixtures}: verificam o comportamento da barreira de valida\c{c}\~ao e n\~ao constituem aprova\c{c}\~ao real dos par\^ametros. Mesmo uma futura aprova\c{c}\~ao de face n\~ao substitui a revis\~ao humana de A2 nem comprova o comportamento de operadores.
 
 \subsection{Matriz param\'etrica, plausibilidade e inicializa\c{c}\~ao da simula\c{c}\~ao}
 \label{sec:input-modeling}
@@ -1146,14 +1156,14 @@ Estudos cl\'assicos de elevadores americanos reportam \textbf{despejo isolado} n
 
 O experimento principal fixa \textbf{50 repeti\c{c}\~oes} por configura\c{c}\~ao para estabilizar medianas e compara\c{c}\~oes pareadas n\~ao param\'etricas, sem depender do piloto. O dimensionamento estat\'istico usa como unidade efetiva o par \texttt{cen\'ario + semente}, n\~ao a semente isolada. Assim, ap\'os a estratifica\c{c}\~ao nominal, o estrato de m\'edia congest\~ao possui 600 pares e o de alta congest\~ao possui 2.800 pares; a carga baixa, com 200 pares, permanece como controle operacional.
 
-A an\'alise de poder foi tratada como verifica\c{c}\~ao pr\'evia do protocolo, sem usar resultados do experimento principal. A decis\~ao metodol\'ogica segue a literatura de simula\c{c}\~ao: quando o interesse est\'a no desempenho de um estat\'istico sob um desenho pareado e reprodut\'ivel, a estima\c{c}\~ao por Monte Carlo permite preservar a estrutura de depend\^encia criada por \textit{common random numbers} e testar diretamente a regra de rejei\c{c}\~ao que ser\'a usada no estudo \parencite{lawSimulationModelingAnalysis2015}. A matriz auxiliar RHFS (\textit{Dynamic Reentrant Hybrid Flow Shop}) foi usada apenas como \^ancora de variabilidade: para cada par motor--comparador, as diferen\c{c}as absolutas de p95 foram centradas pela mediana; sob H1, imp\^os-se uma redu\c{c}\~ao sint\'etica de $\delta$ no p95 do motor e estimou-se, por bootstrap pareado com 5.000 reamostragens, a probabilidade de rejei\c{c}\~ao unilateral do Wilcoxon signed-rank em $\alpha=0{,}05$. Como checagem de ordem de grandeza, a aproxima\c{c}\~ao de \textcite{noetherSampleSizeDetermination1987} foi usada apenas como \^ancora anal\'itica: ela expressa o tamanho amostral em termos de probabilidades como $P(D>0)$ e $P(D+D'>0)$ para diferen\c{c}as pareadas independentes, mas assume continuidade e n\~ao representa adequadamente empates ou discretiza\c{c}\~oes no p95.
+A an\'alise auxiliar RHFS (\textit{Dynamic Reentrant Hybrid Flow Shop}) \'e uma \^ancora explorat\'oria de variabilidade, sem resultados do experimento principal. O procedimento centra pela mediana as diferen\c{c}as de p95 dos contrastes auxiliares, re\'une essas diferen\c{c}as em um conjunto de reamostragem e imp\~oe um deslocamento hipot\'etico $\delta$. A configura\c{c}\~ao do script usa 5.000 reamostragens para estimar a probabilidade de rejei\c{c}\~ao de \textbf{um teste de Wilcoxon unilateral}, em $\alpha=0{,}05$. A simula\c{c}\~ao de Monte Carlo permite examinar o comportamento da regra efetivamente implementada \parencite{lawSimulationModelingAnalysis2015}; aqui, essa regra auxiliar n\~ao reproduz a decis\~ao confirmat\'oria completa. A aproxima\c{c}\~ao de \textcite{noetherSampleSizeDetermination1987} permanece apenas como refer\^encia anal\'itica de ordem de grandeza, com limita\c{c}\~oes para empates e discretiza\c{c}\~oes.
 
-Com esse desenho, a redu\c{c}\~ao-alvo de 15\% fica acima do efeito m\'inimo detect\'avel estimado para poder de 0,80: aproximadamente 6,0\% no estrato de m\'edia congest\~ao e 4,2\% no estrato de alta congest\~ao. A pot\^encia estimada para $\delta=15\%$ foi aproximadamente 1,00 nos dois estratos substantivos; para $\delta=5\%$, foi aproximadamente 0,54 em m\'edia congest\~ao e 0,98 em alta congest\~ao. Portanto, ganhos abaixo do MDE do estrato ser\~ao tratados como inconclusivos para fins confirmat\'orios; ganhos entre o MDE e 15\% podem ser detect\'aveis, mas permanecem abaixo do crit\'erio substantivo de H1. A Figura~\ref{fig:desenho-poder-pt} sintetiza o desenho pareado, o $n$ efetivo por estrato e os pontos de poder usados para justificar o protocolo confirmat\'orio.
+As sa\'idas auxiliares arquivadas reportam efeitos m\'inimos detect\'aveis, para poder de 0,80, de aproximadamente 6,0\% em m\'edia congest\~ao e 4,2\% em alta congest\~ao; reportam tamb\'em pot\^encia pr\'oxima de 1,00 para o deslocamento hipot\'etico de 15\%. Esses valores descrevem somente o teste auxiliar e n\~ao foram obtidos pela execu\c{c}\~ao da campanha principal. O procedimento n\~ao simula a conjun\c{c}\~ao dos tr\^es comparadores, a guarda de n\~ao inferioridade do throughput, o teste deslocado no limiar de ganho de 15\% nem o ajuste de Holm entre estratos. Portanto, seus valores de pot\^encia e MDE n\~ao estimam a pot\^encia de H1 nem alteram seus crit\'erios de decis\~ao. A Figura~\ref{fig:desenho-poder-pt} preserva essa evid\^encia auxiliar; a execu\c{c}\~ao integral que originou seus valores n\~ao foi reconfirmada nesta revis\~ao.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{images/figura-poder-protocolo.pdf}
-\caption[Desenho estat\'istico e an\'alise de poder]{Desenho estat\'istico e an\'alise de poder do protocolo confirmat\'orio. O painel A mostra o $n$ efetivo por estrato, calculado como configura\c{c}\~oes $\times$ 50 sementes pareadas. O painel B mostra pontos de refer\^encia do bootstrap sobre a matriz auxiliar RHFS, com Wilcoxon unilateral em $\alpha=0{,}05$.}
+\caption[Desenho pareado e poder de um teste auxiliar]{Desenho pareado e sa\'idas arquivadas de poder de um teste auxiliar. O painel A mostra o $n$ por estrato, calculado como configura\c{c}\~oes $\times$ 50 sementes. O painel B refere-se a um Wilcoxon unilateral sobre contrastes RHFS, em $\alpha=0{,}05$, e n\~ao \`a decis\~ao completa de H1. O ponto de 15\% representa apenas um deslocamento hipot\'etico nesse teste auxiliar.}
 \label{fig:desenho-poder-pt}
 \end{figure}
 
@@ -1217,15 +1227,15 @@ Espera acumulada em fila & soma, nas quatro etapas, do intervalo entre elegibili
 \addlinespace
 Throughput & caminh\~oes que completam o ciclo no horizonte di\'ario; remanescentes entram como fila final & guarda de n\~ao piora para evitar ganho aparente por abandono de ve\'iculos \\
 \addlinespace
-Tempo total no sistema & intervalo entre chegada ao p\'atio e conclus\~ao da pesagem final & evid\^encia secund\'aria de experi\^encia operacional por caminh\~ao \\
+Tempo total no sistema & tempo observado desde a chegada at\'e a pesagem final ou o fim do horizonte, com indicador de censura; mediana e IQR dos ciclos completos & evid\^encia secund\'aria, com contagem expl\'icita dos caminh\~oes incompletos \\
 \addlinespace
 Makespan & intervalo entre a primeira chegada e a \'ultima conclus\~ao registrada no dia & verifica alongamento ou compress\~ao do ciclo operacional completo \\
 \addlinespace
-Utiliza\c{c}\~ao e ociosidade & tempo ocupado por recurso sobre horizonte dispon\'ivel e horizonte bruto; ociosidade como complemento da utiliza\c{c}\~ao l\'iquida & contrapartida de capacidade para interpretar redu\c{c}\~oes de fila \\
+Utiliza\c{c}\~ao e ociosidade & tempo ocupado sobre horizonte dispon\'ivel e bruto; minutos ociosos dispon\'iveis e fra\c{c}\~ao l\'iquida de ociosidade & contrapartida de capacidade, por recurso e classe, ponderada por recurso-minutos \\
 \addlinespace
-Estabilidade e reordena\c{c}\~ao & invers\~oes entre filas consecutivas, quebra de FIFO e frequ\^encia de replanejamento & mede custo decis\'orio e ader\^encia operacional \\
+Estabilidade e reordena\c{c}\~ao & invers\~oes e deslocamento de posi\c{c}\~ao entre candidatos comuns a decis\~oes consecutivas do mesmo recurso; quebra de FIFO e frequ\^encia dessas mudan\c{c}as & descreve a ordem observada dos candidatos, sem inferir um plano global \\
 \addlinespace
-Factibilidade e justificativa leg\'ivel & atendimento das restri\c{c}\~oes r\'igidas e presen\c{c}a dos campos de auditoria definidos na Se\c{c}\~ao~\ref{ch:artefato} & valida seguran\c{c}a, governan\c{c}a e reconstruibilidade \\
+Factibilidade e justificativa leg\'ivel & restri\c{c}\~oes r\'igidas e campos de auditoria da Se\c{c}\~ao~\ref{ch:artefato}; legibilidade avaliada separadamente por pessoas & separa verifica\c{c}\~ao estrutural, reconstruibilidade e revis\~ao humana pendente \\
 \addlinespace
 $\mathrm{CO_2}$ estimado & emiss\~ao derivada do tempo em fila com motor ligado, usando consumo em marcha lenta e fator de emiss\~ao declarados & indicador explorat\'orio, sem papel confirmat\'orio \\
 \bottomrule
@@ -1235,6 +1245,12 @@ $\mathrm{CO_2}$ estimado & emiss\~ao derivada do tempo em fila com motor ligado,
 \end{table}
 
 O indicador ambiental usa a fronteira de motor ligado em fila e entra apenas como vari\'avel derivada. A redu\c{c}\~ao de tempo em marcha lenta (\textit{idle time}) \'e adotada como m\'etrica operacional de iniciativas verdes em agendamento de caminh\~oes, conforme o tratamento de custos e emiss\~oes por ociosidade em \textcite{liDisruptionManagementTruck2018a}. Para a pol\'itica $\pi$, calcula-se $\widehat{E}_{\mathrm{CO_2}}(\pi)=\left(\sum_{i \in I} W_i^{\mathrm{fila}}(\pi)/60\right)\rho_{\mathrm{idle}}\gamma_{\mathrm{diesel}}$, com $\rho_{\mathrm{idle}}=0{,}8$ gal\~ao/hora no valor-base, sensibilidade em $[0{,}5;\,1{,}0]$ gal\~ao/hora e $\gamma_{\mathrm{diesel}}=10{,}18$ kg $\mathrm{CO_2}$/gal\~ao \parencite{usdoeIdleFuelConsumption2015, usepaGreenhouseGasEquivalencies2026}. Deslocamento, partida a frio, poeira, eletricidade e ciclo de vida do combust\'ivel ficam fora do c\'alculo.
+
+A espera eleg\'ivel ainda em curso no fim do horizonte integra o total observado e a estimativa explorat\'oria de $\mathrm{CO_2}$. Para o tempo no sistema, cada caminh\~ao conserva seu valor observado e o indicador de censura; os resumos de mediana e IQR utilizam somente ciclos completos e s\~ao indispon\'iveis quando nenhum ciclo termina. Esses resumos condicionais devem ser apresentados com as contagens de ciclos completos e censurados.
+
+Na utiliza\c{c}\~ao, intervalos ocupados s\~ao limitados ao horizonte di\'ario. Intervalos indispon\'iveis sobrepostos entram por sua uni\~ao, sem dupla contagem. A utiliza\c{c}\~ao bruta divide os minutos ocupados pelo horizonte bruto; a l\'iquida usa o horizonte menos a indisponibilidade. A ociosidade em minutos \'e o tempo dispon\'ivel menos o ocupado, e sua fra\c{c}\~ao l\'iquida \'e o complemento da utiliza\c{c}\~ao l\'iquida. As agrega\c{c}\~oes por classe dividem somas de recurso-minutos, em vez de calcular a m\'edia simples das porcentagens individuais.
+
+As medidas de estabilidade restringem cada compara\c{c}\~ao aos caminh\~oes presentes nas duas listas consecutivas de candidatos do mesmo recurso f\'isico. Somam-se as invers\~oes de ordem e calcula-se, em cada interse\c{c}\~ao, o deslocamento absoluto m\'edio de posi\c{c}\~ao; o resumo deste deslocamento \'e a m\'edia entre compara\c{c}\~oes. Interse\c{c}\~oes vazias ou unit\'arias t\^em dist\^ancia zero, e a quantidade de candidatos compar\'aveis acompanha o resultado. A frequ\^encia de replanejamento conta compara\c{c}\~oes com mudan\c{c}a relativa de ordem por hora simulada. Quebra de FIFO compara o selecionado com o primeiro candidato admiss\'ivel por entrada na etapa e identificador. Essas medidas n\~ao representam altera\c{c}\~oes de uma sequ\^encia global de servi\c{c}os n\~ao registrada.
 
 O conjunto de compara\c{c}\~ao re\'une quatro pol\'iticas de refer\^encia e o artefato proposto. FIFO e BATCH aparecem em recebimento de gr\~aos como regras simples \parencite{r.berrutoAnalyzingReceivingOperation2001a}; appointment systems e agendamento colaborativo refor\c{c}am compara\c{c}\~oes al\'em do FIFO \parencite{phanCollaborativeTruckScheduling2016a, azabDynamicCollaborativeTruck2017a}; e trabalhos de disrup\c{c}\~ao/reagendamento separam resposta a eventos de plano est\'atico inicial \parencite{liDisruptionManagementTruck2018a, xuDynamicAppointmentRescheduling2022}. O escore fixo \'e um advers\'ario din\^amico cr\'ivel: uma regra de \'indice ponderado inspirada nas regras de despacho composto (\textit{composite dispatching rules}) catalogadas por \textcite{panwalkarSurveySchedulingRules1977} e na fam\'ilia ATC/COVERT estudada por \textcite{vepsalainenPriorityRulesJob1987}. A Tabela~\ref{tab:politicas-experimento} fixa o papel de cada pol\'itica; as pol\'iticas deslocadas para sensibilidade aparecem no Ap\^endice~\ref{apx:politicas-secundarias}.
 
@@ -1265,7 +1281,7 @@ Artefato proposto & aplica ranking lexicogr\'afico $h_{k,r}(i)$, desempates fixo
 
 Como fixado na Se\c{c}\~ao~\ref{sec:formulacao-despacho}, as pol\'iticas do painel confirmat\'orio observar\~ao a mesma verdade local validada, a mesma checagem de restri\c{c}\~oes r\'igidas, o mesmo dom\'inio admiss\'ivel, o mesmo bloqueio formal e o mesmo log. Varia somente a regra de sele\c{c}\~ao quando h\'a mais de uma alternativa eleg\'ivel; factibilidade, admiss\~ao e registro pertencem \`a plataforma experimental, n\~ao a uma vantagem exclusiva do artefato.
 
-O prot\'otipo registrar\'a, por decis\~ao, entradas consideradas, restri\c{c}\~oes ativadas, alternativa selecionada, eventual quebra de FIFO e interven\c{c}\~ao manual. `Justificativa leg\'ivel` exige cinco campos: caminh\~ao/etapa, recurso escolhido ou bloqueado, regras ativadas, motivo da decis\~ao e quebra de FIFO. Esse registro permite reconstruir a decis\~ao depois da execu\c{c}\~ao, inclusive quando o operador aceita uma recomenda\c{c}\~ao, altera a sequ\^encia ou mant\'em o recurso bloqueado. A governan\c{c}a humana segue tr\^es regras: s\'o perfis autorizados interv\^em, toda interven\c{c}\~ao tem motivo textual e nenhuma sobreposi\c{c}\~ao viola restri\c{c}\~oes r\'igidas. A literatura de rastreabilidade digital no p\'os-colheita apoia a dimens\~ao de auditoria \parencite{dyckDigitalTwinsNovel2023}.
+O prot\'otipo registrar\'a, por decis\~ao, entradas consideradas, restri\c{c}\~oes ativadas, alternativa selecionada, eventual quebra de FIFO e interven\c{c}\~ao manual. `Justificativa leg\'ivel` exige cinco campos: caminh\~ao/etapa, recurso escolhido ou bloqueado, regras ativadas, motivo da decis\~ao e quebra de FIFO. O registro dever\'a permitir a reconstru\c{c}\~ao posterior tamb\'em quando o operador alterar a sequ\^encia ou mantiver o recurso bloqueado. O desenho de governan\c{c}a humana exige perfis autorizados, motivo textual em toda interven\c{c}\~ao e preserva\c{c}\~ao das restri\c{c}\~oes r\'igidas em qualquer sobreposi\c{c}\~ao. Essas s\~ao obriga\c{c}\~oes do artefato completo, e n\~ao capacidades demonstradas pela aceita\c{c}\~ao autom\'atica do DES. A literatura de rastreabilidade digital no p\'os-colheita apoia a dimens\~ao de auditoria \parencite{dyckDigitalTwinsNovel2023}.
 
 A avalia\c{c}\~ao executa o protocolo deste cap\'itulo, com as m\'etricas consolidadas na Tabela~\ref{tab:metricas-consolidadas}. O \textbf{Bloco A} compara pol\'iticas em cen\'arios simulados; o \textbf{Bloco B} audita seguran\c{c}a operacional e rastreabilidade do artefato. Todos os comparadores usar\~ao o mesmo simulador, eventos, filtro de factibilidade, logs e sementes; muda somente a pol\'itica de ranqueamento/sele\c{c}\~ao.
 
@@ -1273,13 +1289,17 @@ O Bloco A compara cen\'arios equivalentes, executando cada cen\'ario com todas a
 
 H1 exige redu\c{c}\~ao de pelo menos 15\% na mediana pareada do p95 da espera acumulada em fila, nos estratos de m\'edia e alta congest\~ao analisados separadamente, contra FIFO \textit{flow-faithful}, prioridade + factibilidade local e despacho din\^amico por escore fixo. O artefato tamb\'em deve respeitar a margem protetiva de throughput $\max(2,\;0{,}02N)$ caminh\~oes/dia. Assim, a decis\~ao confirmat\'oria passa por duas conjun\c{c}\~oes: dentro de cada par comparador--estrato, p95 e throughput precisam passar; dentro de cada estrato, os tr\^es comparadores prim\'arios precisam passar. No Bloco B, A1 ser\'a verificado por validador determin\'istico independente, inclusive em casos adversariais; A2 ser\'a verificado por completude e reconstruibilidade dos logs, com cobertura estrutural de 100\% e amostra auditada.
 
-O protocolo separa fatos operacionais, hip\'oteses de calibra\c{c}\~ao e resultados observados. Al\'em do Wilcoxon signed-rank, o estudo reportar\'a mediana e IQR das diferen\c{c}as pareadas, Hodges--Lehmann, bootstrap pareado de 95\% e $r_{rb}$. Empates e diferen\c{c}as zero ser\~ao explicitados; se dominarem, o teste de sinais pareado entrar\'a como robustez. Cen\'arios de desenvolvimento, piloto e experimento principal permanecem separados quanto ao prop\'osito (sanidade vs. confirma\c{c}\~ao), sem que ajustes do piloto retroajam sobre os par\^ametros congelados.
+O protocolo separa fatos operacionais, hip\'oteses de calibra\c{c}\~ao e resultados observados. Al\'em do Wilcoxon signed-rank, o estudo reportar\'a mediana e IQR das diferen\c{c}as pareadas, Hodges--Lehmann, intervalos bootstrap pareados de 95\% com 5.000 reamostragens e $r_{rb}$. A quantidade de reamostragens ser\'a registrada junto \`as sa\'idas. Empates e diferen\c{c}as zero ser\~ao explicitados; se dominarem, o teste de sinais pareado entrar\'a como robustez. Cen\'arios de desenvolvimento, piloto e experimento principal permanecem separados quanto ao prop\'osito (sanidade vs. confirma\c{c}\~ao), sem que ajustes do piloto retroajam sobre os par\^ametros congelados.
 
 O piloto verificar\'a sanidade das m\'etricas e do simulador, estabilidade do ganho pareado no p95 e aus\^encia de comportamento degenerado. A estabilidade ser\'a observada pela largura do intervalo bootstrap de 95\% para a melhoria mediana e pelo IQR do ganho pareado. O n\'umero de sementes permanece fixo em 50. O piloto mant\'em $H$, limiares $\tau$ e pesos $(0{,}45;\,0{,}35;\,0{,}20)$ pr\'e-especificados, de modo que a compara\c{c}\~ao principal avalie par\^ametros congelados, sem ajuste conjunto.
 
 A unidade de an\'alise fica congelada: decis\~oes individuais alimentam auditoria; m\'etricas por caminh\~ao geram resumos por dia simulado; m\'etricas de equipamento agregam por recurso e classe, preservando portaria, balan\c{c}as e moegas como categorias separadas. O Wilcoxon ser\'a aplicado sobre pares `cen\'ario + semente`, com uma observa\c{c}\~ao por dia e pol\'itica, separada por estrato de congest\~ao. O ajuste de Holm incidir\'a somente sobre os dois p-valores globais de estrato calculados pela l\'ogica IUT; n\~ao ser\'a aplicado aos tr\^es comparadores prim\'arios nem \`as m\'etricas secund\'arias. A carga baixa ser\'a reportada como estrato de controle operacional, sem expectativa confirmat\'oria de superioridade; m\'edia e alta congest\~ao formam os estratos substantivos de H1. Qualquer agregado geral, se inclu\'ido, ter\'a car\'ater meramente descritivo e dever\'a aparecer depois dos resultados estratificados.
 
-Uma amostra de $\max(50,\;10\%)$ das decis\~oes do artefato por cen\'ario ser\'a auditada por rubrica fechada, al\'em da checagem autom\'atica de 100\% dos logs. A rubrica verifica campos obrigat\'orios, regra ativada, quebra de FIFO, a\c{c}\~ao humana admiss\'ivel e reconstru\c{c}\~ao do estado. Quando houver dois avaliadores, ser\'a reportado kappa de Cohen; concord\^ancia abaixo de 0,60 exigir\'a revis\~ao da rubrica antes do congelamento final.
+Uma amostra de $\max(50,\;10\%)$ das decis\~oes do artefato por cen\'ario ser\'a auditada por rubrica fechada, al\'em da checagem autom\'atica de 100\% dos logs. A rubrica verifica campos obrigat\'orios, regra ativada, quebra de FIFO, a\c{c}\~ao humana admiss\'ivel e reconstru\c{c}\~ao do estado. Quando houver dois avaliadores, ser\'a reportado kappa de Cohen; concord\^ancia abaixo de 0,60 exigir\'a revis\~ao da rubrica antes do congelamento final. Essa revis\~ao humana permanece pendente, sem pareceres ou concord\^ancia observada a reportar.
+
+Na implementa\c{c}\~ao atual, o DES emite \texttt{OPERATOR\_DECISION} com \texttt{accept} automaticamente ap\'os a recomenda\c{c}\~ao. Trata-se de um operador sint\'etico: o encadeamento recomenda\c{c}\~ao--aceita\c{c}\~ao--servi\c{c}o pode ser verificado por replay, mas n\~ao houve participa\c{c}\~ao humana nessa decis\~ao. O teste que introduz \texttt{reject} verifica a recusa de um evento n\~ao suportado pelo replay; ele n\~ao demonstra um fluxo operacional de rejei\c{c}\~ao. Rejei\c{c}\~ao pelo operador e substitui\c{c}\~ao por outra escolha admiss\'ivel ainda n\~ao foram demonstradas no DES. O requisito de interven\c{c}\~ao autorizada continua no escopo do artefato e depende de implementa\c{c}\~ao e avalia\c{c}\~ao pr\'oprias.
+
+Os registros de aceita\c{c}\~ao distinguem, portanto, quatro evid\^encias: aprova\c{c}\~ao humana de face dos par\^ametros; ensaios sint\'eticos de decis\~ao do operador; auditoria autom\'atica da estrutura de A2; e revis\~ao humana da amostra A2. Sucesso em uma dessas etapas n\~ao promove as demais a conclu\'idas. As duas etapas humanas permanecem pendentes nesta vers\~ao.
 
 \subsection{Disponibilidade de Dados e Código}\label{sec:disponibilidade-dados-codigo}
 Os dados sint\'eticos, sementes, inst\^ancias, logs agregados, sa\'idas experimentais, scripts de an\'alise e c\'odigo-fonte customizado necess\'arios para reproduzir os resultados da etapa experimental posterior ser\~ao disponibilizados em reposit\'orio p\'ublico ou m\'idia institucional no momento da entrega final, sujeitos a restri\c{c}\~oes institucionais. A vers\~ao utilizada na an\'alise ser\'a identificada por URL, tag ou hash de commit, com instru\c{c}\~oes de execu\c{c}\~ao, vers\~oes de depend\^encias e ambiente computacional.
@@ -1297,13 +1317,15 @@ Dados reais, documentos sens\'iveis ou informa\c{c}\~oes operacionais identific\
 
 Nesta etapa, ``resultado'' n\~ao significa ainda superioridade estat\'istica do motor. O resultado do TCC~I \'e a prepara\c{c}\~ao verific\'avel do experimento: recorte operacional definido, restri\c{c}\~oes r\'igidas explicitadas, pol\'iticas de refer\^encia congeladas, par\^ametros sint\'eticos justificados, m\'etricas selecionadas e protocolo estat\'istico descrito. A compara\c{c}\~ao principal de desempenho permanece reservada ao TCC~II; o que se demonstra aqui \'e a exist\^encia de uma base implementada e test\'avel, ainda sujeita \`a execu\c{c}\~ao confirmat\'oria e \`a valida\c{c}\~ao de face previstas.
 
+\noindent\textbf{Estado das entregas.} Os resultados da campanha principal e a conclus\~ao de H1 est\~ao \textbf{indispon\'iveis}. A valida\c{c}\~ao de face e a revis\~ao humana de A2 est\~ao \textbf{pendentes}; a demonstra\c{c}\~ao operacional atual utiliza aceita\c{c}\~ao sint\'etica autom\'atica. O modelo tridimensional e o replay no Unreal Engine est\~ao \textbf{n\~ao entregues}. Esses estados n\~ao s\~ao alterados por testes de engenharia nem por sa\'idas de \textit{fixtures}.
+
 \section{Dados, tratamento e preparação experimental}
 
 Os dados principais s\~ao sint\'eticos, parametrizados e controlados. Essa escolha isola o efeito da pol\'itica de despacho, permite pareamento por sementes e garante reprodutibilidade. Dados reais ampliariam a validade externa, mas tamb\'em trariam heterogeneidade operacional e restri\c{c}\~oes de acesso que extrapolam a etapa atual.
 
 O tratamento experimental j\'a est\'a especificado no Cap\'itulo~\ref{ch:metodologia}: plano fatorial, par\^ametros sint\'eticos, hip\'oteses congeladas, plausibilidade dos par\^ametros, limiares da pol\'itica e pol\'iticas de compara\c{c}\~ao. Nesta etapa, o resultado parcial relevante \'e a consolida\c{c}\~ao desse protocolo em uma trilha reprodut\'ivel, na qual cada dia simulado possui cen\'ario, semente, pol\'itica e sa\'idas agregadas identific\'aveis.
 
-O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, ser\'a executado no TCC~II. O motor e o simulador possuem implementa\c{c}\~ao preliminar em reposit\'orio adjacente, com testes automatizados e execu\c{c}\~oes parciais de desenvolvimento; isso demonstra implementabilidade, n\~ao desempenho confirmat\'orio. Um auditor independente dos artefatos persistidos verifica A1, completude estrutural de A2, hashes e consist\^encia entre CSV e JSONL; sua aplica\c{c}\~ao \`a matriz completa e a inspe\c{c}\~ao humana da amostra A2 ainda precisam ser realizadas. Tamb\'em permanecem pendentes as 18.000 execu\c{c}\~oes e a an\'alise de H1. O projeto Unreal Engine~5.8 est\'a inicializado, mas ainda n\~ao cont\'em a cena de dom\'inio nem o replay integrado. A Tabela~\ref{tab:resultados-repos-adjacentes}, no Ap\^endice~\ref{apx:materiais-contextuais}, registra apenas evid\^encias auxiliares e seus limites \parencite{hevnerDesignScienceInformation2004a}.
+O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, ser\'a executado no TCC~II. O motor e o simulador possuem implementa\c{c}\~ao em \texttt{experimento-notebook}, neste reposit\'orio, com testes automatizados e execu\c{c}\~oes de valida\c{c}\~ao de engenharia; isso demonstra implementabilidade, n\~ao desempenho confirmat\'orio. Um auditor independente dos artefatos persistidos verifica A1, completude estrutural de A2, hashes e consist\^encia entre CSV e JSONL; sua aplica\c{c}\~ao \`a matriz completa e a inspe\c{c}\~ao humana da amostra A2 ainda precisam ser realizadas. Tamb\'em permanecem pendentes as 18.000 execu\c{c}\~oes e a an\'alise de H1. A inicializa\c{c}\~ao do projeto Unreal Engine~5.8 n\~ao entrega a cena de dom\'inio nem o replay integrado. A Tabela~\ref{tab:resultados-repos-adjacentes}, no Ap\^endice~\ref{apx:materiais-contextuais}, registra apenas evid\^encias auxiliares e seus limites \parencite{hevnerDesignScienceInformation2004a}.
 
 \section{Matriz de resultados prevista para o TCC~II}
 
@@ -1409,13 +1431,13 @@ Tamb\'em h\'a amea\c{c}a de validade estat\'istica: a compara\c{c}\~ao envolve m
 \chapter{Conclusão}\label{ch:conclusao}
 Este trabalho parte de uma decis\~ao simples de enunciar e dif\'icil de executar: quando um recurso fica livre, qual caminh\~ao deve ser atendido a seguir? Ao formular essa escolha como despacho online sob restri\c{c}\~oes, a pesquisa transforma uma pr\'atica operacional muitas vezes t\'acita em artefato computacional model\'avel, audit\'avel e avali\'avel. A revis\~ao de literatura aproxima o problema de truck appointment systems, scheduling sob incerteza e replanejamento em tempo real, mas o contexto agroindustrial imp\~oe condi\c{c}\~oes pr\'oprias: falha segura, bloqueios documentais, chuva, compatibilidade carga--recurso, rastreabilidade e controle humano.
 
-O TCC~I consolida quatro bases para a etapa experimental. A primeira \'e a modelagem formal do problema (Se\c{c}\~ao~\ref{ch:modelagem}), com $S_k$, $C_{k,r}$, $h_{k,r}(i)$ e execu\c{c}\~ao determin\'istica. A segunda \'e o desenho experimental (Cap\'itulo~\ref{ch:metodologia}), com pol\'iticas congeladas, regimes de perturba\c{c}\~ao, estratos de congest\~ao, m\'etricas, limiares de H1/A1/A2 e protocolo estat\'istico. A terceira \'e o plano de reprodutibilidade (Se\c{c}\~ao~\ref{sec:disponibilidade-dados-codigo}), com dados sint\'eticos, sementes, logs, scripts de an\'alise e identifica\c{c}\~ao da vers\~ao por URL, tag ou hash de commit. A quarta \'e a arquitetura do modelo digital no Unreal Engine~5.8, que transforma logs do simulador em visualiza\c{c}\~ao e replay sem assumir o papel de g\^emeo digital.
+O TCC~I consolida quatro bases para a etapa experimental. A primeira \'e a modelagem formal do problema (Se\c{c}\~ao~\ref{ch:modelagem}), com $S_k$, $C_{k,r}$, $h_{k,r}(i)$ e execu\c{c}\~ao determin\'istica. A segunda \'e o desenho experimental (Cap\'itulo~\ref{ch:metodologia}), com pol\'iticas congeladas, regimes de perturba\c{c}\~ao, estratos de congest\~ao, m\'etricas, limiares de H1/A1/A2 e protocolo estat\'istico. A terceira \'e o plano de reprodutibilidade (Se\c{c}\~ao~\ref{sec:disponibilidade-dados-codigo}), com dados sint\'eticos, sementes, logs, scripts de an\'alise e identifica\c{c}\~ao da vers\~ao por URL, tag ou hash de commit. A quarta \'e a especifica\c{c}\~ao da arquitetura no Unreal Engine~5.8: a transforma\c{c}\~ao de logs em visualiza\c{c}\~ao tridimensional e replay permanece uma entrega pendente, sem reivindica\c{c}\~ao de g\^emeo digital.
 
 H1 ser\'a verificada no TCC~II: reduzir em pelo menos 15\% a mediana pareada do p95 da espera acumulada em fila, nos estratos de m\'edia e alta congest\~ao, sem violar a margem protetiva de throughput. A1 e A2 complementam H1 ao separar desempenho de pol\'itica e qualidade de artefato: A1 exige aus\^encia de viola\c{c}\~ao de restri\c{c}\~oes r\'igidas validada independentemente; A2 exige rastreabilidade e reconstruibilidade de decis\~oes e interven\c{c}\~oes humanas.
 
 Quatro fronteiras delimitam as conclus\~oes: cen\'arios sint\'eticos n\~ao substituem valida\c{c}\~ao de campo; par\^ametros dependem de literatura, hip\'oteses de engenharia e valida\c{c}\~ao de face ainda pendente; a decomposi\c{c}\~ao em quatro etapas concentra o modelo nos gargalos de fila, bloqueio e propaga\c{c}\~ao de atrasos; e a representa\c{c}\~ao no Unreal Engine \'e um modelo digital, n\~ao evid\^encia de sincroniza\c{c}\~ao com um sistema f\'isico real.
 
-O trabalho contribui para sistemas de apoio \`a decis\~ao em log\'istica agroindustrial com maior auditabilidade, resposta a eventos disruptivos e supervis\~ao humana. O motor proposto e o modelo digital oferecem uma base reprodut\'ivel para experimenta\c{c}\~ao controlada e futura valida\c{c}\~ao em campo, sem antecipar validade operacional ainda n\~ao demonstrada.
+O trabalho prop\~oe uma base reprodut\'ivel para apoio \`a decis\~ao em log\'istica agroindustrial, com registro de eventos e requisitos expl\'icitos de governan\c{c}a. A supervis\~ao humana, a entrega no Unreal Engine e a valida\c{c}\~ao em campo permanecem objetivos a demonstrar; a evid\^encia de engenharia atual n\~ao permite concluir que j\'a foram atendidos.
 
 A principal entrega desta etapa, portanto, n\~ao \'e um resultado de superioridade emp\'irica, mas um protocolo fechado para test\'a-la. O TCC~II dever\'a executar esse protocolo, reportar ganhos e perdas por estrato de congest\~ao, auditar logs e discutir os casos em que o artefato n\~ao superar comparadores fortes. Essa delimita\c{c}\~ao preserva a for\c{c}a da contribui\c{c}\~ao: o trabalho apresenta uma formula\c{c}\~ao reprodut\'ivel, comparadores definidos e crit\'erios claros de aceita\c{c}\~ao.
 
@@ -1591,7 +1613,7 @@ A origem pr\'atica do problema ajuda a entender o artefato, mas n\~ao desloca o 
 \rowcolor{tablehead}
 \textbf{Frente} & \textbf{Resultado parcial observado} & \textbf{Uso no trabalho} & \textbf{Cuidado interpretativo} \\
 \midrule
-Prot\'otipo de copiloto de p\'atio & relat\'orio sample com 20 cen\'arios, quatro variantes, taxa nula de viola\c{c}\~ao de restri\c{c}\~oes nas variantes seguras, auditoria completa na variante \textit{full} e cen\'arios de chuva, bloqueio documental, recurso indispon\'ivel e interven\c{c}\~ao humana & evidencia que os requisitos A1/A2 s\~ao implement\'aveis em prot\'otipo audit\'avel & suite sint\'etica pequena; foca factibilidade e auditoria, enquanto p95 operacional e H1 pertencem ao protocolo principal \\
+Prot\'otipo de copiloto de p\'atio & relat\'orio sample com 20 cen\'arios, quatro variantes, taxa nula de viola\c{c}\~ao de restri\c{c}\~oes nas variantes seguras, auditoria de registros na variante \textit{full} e cen\'arios de chuva, bloqueio documental, recurso indispon\'ivel e interven\c{c}\~ao do operador & apoia a implementabilidade dos requisitos t\'ecnicos de factibilidade e registro & suite sint\'etica pequena; n\~ao comprova participa\c{c}\~ao humana, aprova\c{c}\~ao de face ou revis\~ao humana de A2; H1 pertence ao protocolo principal \\
 \addlinespace
 Benchmark RHFS GO & 36 inst\^ancias sint\'eticas, quatro opera\c{c}\~oes por job, tr\^es regimes, FIFO replay sem sobreposi\c{c}\~ao e valida\c{c}\~oes estruturais com PASS em 36/36 inst\^ancias & apoia a modelagem discreta, o uso de eventos e a necessidade de valida\c{c}\~ao determin\'istica & escala e classe RHFS delimitam evid\^encia auxiliar distinta do experimento principal deste estudo \\
 \addlinespace
@@ -1606,7 +1628,7 @@ Revis\~ao sistematizada & corpus sistem\'atico reconciliado em 34 estudos, PRISM
 
 \section{Materiais prévios de concepção e interface}
 
-Os materiais anteriores de concep\c{c}\~ao e prototipagem registram a evolu\c{c}\~ao pr\'atica da ideia antes da avalia\c{c}\~ao experimental. Pitch, descri\c{c}\~ao do MVP, fluxo operacional desenhado, prot\'otipo, prints de interface, feedback explorat\'orio e estimativas preliminares de gargalo entram apenas como evid\^encia contextual. Eles apoiam formula\c{c}\~ao do problema, valida\c{c}\~ao de face e rastreio de requisitos, mas n\~ao constituem resultado experimental nem prova de desempenho do motor.
+Os materiais anteriores de concep\c{c}\~ao e prototipagem registram a evolu\c{c}\~ao pr\'atica da ideia antes da avalia\c{c}\~ao experimental. Pitch, descri\c{c}\~ao do MVP, fluxo operacional desenhado, prot\'otipo, prints de interface, feedback explorat\'orio e estimativas preliminares de gargalo entram apenas como evid\^encia contextual. Eles apoiam a formula\c{c}\~ao do problema, a prepara\c{c}\~ao da rodada de face e o rastreio de requisitos; n\~ao constituem aprova\c{c}\~ao de face, resultado experimental ou prova de desempenho do motor.
 
 \section{Artefatos computacionais de apoio e reprodutibilidade}\label{sec:artefatos-apoio}
 
@@ -1634,7 +1656,7 @@ SLR de recursos (\texttt{f178dbc}) & manuscrito da revis\~ao, contagens e fronte
 \addlinespace
 Revis\~ao arXiv (\texttt{1fc492b}) & rubrica, QA recuperada e ap\^endices de auditoria & harmonizar antes de anexar \\
 \addlinespace
-Modelo digital Unreal Engine~5.8 & projeto inicializado e arquitetura de interc\^ambio JSONL definida neste TCC & cena de dom\'inio, ativos e replay ainda ser\~ao implementados; n\~ao \'e g\^emeo digital \\
+Modelo digital Unreal Engine~5.8 & projeto inicializado e arquitetura de interc\^ambio JSONL definida neste TCC & N\~AO ENTREGUE / PENDENTE: cena, ativos, importador e replay; objetivo mantido no escopo \\
 \bottomrule
 \end{tabularx}
 \caption[Reposit\'orios adjacentes da pesquisa]{Reposit\'orios adjacentes e fun\c{c}\~ao contextual neste trabalho.}

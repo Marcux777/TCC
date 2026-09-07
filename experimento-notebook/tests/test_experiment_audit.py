@@ -133,6 +133,47 @@ def test_validation_bundle_is_complete_replayable_and_auditable(tmp_path: Path):
     assert report.a2_structural_pass is True
     assert report.a2_human_audit_pending is True
     assert report.replay_pass is True
+    assert bundle.manifest["schema_version"] == 3
+    assert bundle.manifest["operator_mode"] == "synthetic_auto_accept"
+    assert report.to_dict()["global_acceptance_status"] == "pending"
+    assert report.to_dict()["acceptance_scope"] == "automated_structural_checks_only"
+    from pequiflux_experiment.export import export_metrics
+    paths = export_metrics(bundle, tmp_path / "descriptive")
+    with paths["table_metrics.csv"].open(encoding="utf-8", newline="") as handle:
+        exported = list(csv.DictReader(handle))
+    assert len(exported) == 10
+    assert float(exported[0]["co2_estimated_kg"]) == bundle.results[0]["co2_estimated_kg"]
+    assert paths["table_metrics_resources.csv"].is_file()
+    assert paths["table_metrics_trucks.csv"].is_file()
+    with paths["table_metrics_resource_classes.csv"].open(encoding="utf-8", newline="") as handle:
+        classes = list(csv.DictReader(handle))
+    assert len(classes) == 30
+    assert float(classes[0]["net_utilization"]) == round(float(classes[0]["busy_minutes"]) / float(classes[0]["available_minutes"]), 12)
+
+
+@pytest.mark.parametrize("forgery", ["secondary_scalar", "secondary_details", "human_approval"])
+def test_audit_rejects_secondary_metric_and_human_approval_forgery(tmp_path, forgery):
+    bundle = build_validation_bundle(tmp_path)
+    if forgery == "secondary_scalar":
+        rows = [dict(row) for row in bundle.results]
+        rows[0]["co2_estimated_kg"] += 1
+        from pequiflux_experiment.experiment import _csv_text
+        bundle.results_path.write_text(_csv_text(rows), encoding="utf-8")
+        expected = "co2_estimated_kg.*reconcile"
+    elif forgery == "secondary_details":
+        metric_path = bundle.run_dir / bundle.results[0]["metrics_file"]
+        payload = json.loads(metric_path.read_text(encoding="utf-8"))
+        payload["resources"][0]["busy_minutes"] += 1
+        metric_path.write_text(json.dumps(payload), encoding="utf-8")
+        expected = "metrics artifact SHA-256"
+    else:
+        manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+        manifest["human_audit_status"] = "complete"
+        manifest["a2"]["human_audit_status"] = "complete"
+        bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        expected = "complete requires a verified human review"
+    with pytest.raises(AuditError, match=expected):
+        audit_run(bundle.run_dir)
 
 
 def test_missing_log_fails_without_fallback(tmp_path: Path):
@@ -276,6 +317,12 @@ def test_audit_derives_accumulated_wait_and_active_horizon(tmp_path: Path):
     assert any(resource.status == "busy" for resource in details.final_snapshot.resources.values())
 
     derived = audit_module._derived_log_metrics(details)
+    from pequiflux_experiment.metrics import compute_policy_day_metrics
+    persisted_metrics = compute_policy_day_metrics(log_path)
+    for metric, value in derived.items():
+        assert persisted_metrics.scalars[metric] == value
+    assert persisted_metrics.scalars["censored_system_trucks"] > 0
+    assert any(row["censored_service_minutes"] > 0 for row in persisted_metrics.trucks.values())
     assert derived["mean_wait_minutes"] == result.metrics["mean_wait_minutes"]
     assert derived["p95_wait_minutes"] == result.metrics["p95_wait_minutes"]
     assert derived["censored_wait_minutes"] == result.metrics["censored_wait_minutes"]

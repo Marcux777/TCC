@@ -659,6 +659,9 @@ def test_export_audit_table_uses_persisted_json_and_rejects_collision(tmp_path):
         "a2_human_audit_pending": True,
         "replay_pass": True,
         "overall_pass": True,
+        "acceptance_scope": "automated_structural_checks_only",
+        "global_acceptance_status": "pending",
+        "operator_mode": "synthetic_auto_accept",
     }
     audit_json.write_text(json.dumps(persisted) + "\n", encoding="utf-8")
     output = tmp_path / "results" / "tables" / "table_audit.csv"
@@ -680,6 +683,9 @@ def test_export_audit_table_uses_persisted_json_and_rejects_collision(tmp_path):
             "a2_human_audit_pending": "True",
             "replay_pass": "True",
             "overall_pass": "True",
+            "acceptance_scope": "automated_structural_checks_only",
+            "global_acceptance_status": "pending",
+            "operator_mode": "synthetic_auto_accept",
         }
     ]
 

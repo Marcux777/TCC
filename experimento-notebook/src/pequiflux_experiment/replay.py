@@ -119,7 +119,7 @@ def _replay_log(path: str | Path) -> ReplayDetails:
         "excluded",
         "selection",
         "explanation",
-        "human_decision",
+        "operator_decision",
         "state_before_hash",
         "state_after_hash",
         "payload",

@@ -43,6 +43,7 @@ class ExportedArtifacts:
     paired_improvement_figure: Path
     throughput_waiting_tradeoff_figure: Path
     p95_figure_png: Path | None = None
+    table_metrics: Path | None = None
 
     @property
     def h1_csv(self) -> Path:
@@ -67,6 +68,8 @@ class ExportedArtifacts:
         }
         if self.p95_figure_png is not None:
             values["p95_figure_png"] = self.p95_figure_png
+        if self.table_metrics is not None:
+            values["table_metrics"] = self.table_metrics
         return {key: str(value) for key, value in values.items()}
 
 
@@ -93,6 +96,9 @@ _AUDIT_TABLE_FIELDS = (
     "a2_human_audit_pending",
     "replay_pass",
     "overall_pass",
+    "acceptance_scope",
+    "global_acceptance_status",
+    "operator_mode",
 )
 _AUDIT_BOOLEAN_FIELDS = (
     "a1_pass",
@@ -179,6 +185,14 @@ def export_audit_table(
         raise ValueError(
             "persisted audit overall_pass cannot be true when row counts differ"
         )
+    governance = {
+        "acceptance_scope": "automated_structural_checks_only",
+        "global_acceptance_status": "pending",
+        "operator_mode": "synthetic_auto_accept",
+    }
+    for field, expected in governance.items():
+        if payload.get(field) != expected:
+            raise ValueError(f"persisted audit {field} must be {expected}")
 
     destination = Path(output_path)
     if destination.exists() or destination.is_symlink():
@@ -190,6 +204,7 @@ def export_audit_table(
         "expected_rows": expected_rows,
         "observed_rows": observed_rows,
         **{field: payload[field] for field in _AUDIT_BOOLEAN_FIELDS},
+        **{field: payload[field] for field in governance},
     }
     try:
         with temporary.open("w", encoding="utf-8", newline="") as handle:
@@ -588,6 +603,8 @@ def _export_analysis_core(
     rows: Any,
     report: H1Report,
     output_root: str | Path,
+    *,
+    metric_bundle=None,
 ) -> ExportedArtifacts:
     """Publish H1 tables and figures from validated materialisations.
 
@@ -651,6 +668,11 @@ def _export_analysis_core(
         _publish_csv(summary, table_h1)
         _publish_parquet(summary, summary_parquet)
         _publish_csv(summary.loc[:, throughput_columns], table_throughput)
+        if metric_bundle is not None:
+            for name, frame in _metric_frames(metric_bundle).items():
+                metric_path = tables / name
+                _publish_csv(frame, metric_path)
+                expected_files += (metric_path,)
 
         p95 = _figure_p95(paired)
         try:
@@ -715,6 +737,7 @@ def _export_analysis_core(
         paired_improvement_figure=published_figures / "paired_improvement.pdf",
         throughput_waiting_tradeoff_figure=published_figures / "throughput_waiting_tradeoff.pdf",
         p95_figure_png=published_figures / "p95_by_policy.png",
+        table_metrics=published_tables / "table_metrics.csv" if metric_bundle is not None else None,
     )
 
 
@@ -735,7 +758,77 @@ def export_analysis(
     except (TypeError, ValueError) as exc:
         raise PairingError("report protocol configuration is not canonical") from exc
     persisted_bundle = _validated_confirmatory_bundle(bundle, config)
-    return _export_analysis_core(persisted_bundle, report, output_root)
+    return _export_analysis_core(persisted_bundle, report, output_root, metric_bundle=persisted_bundle)
 
 
-__all__ = ["ExportedArtifacts", "export_analysis", "export_audit_table"]
+def _metric_frames(bundle):
+    """Materialize audited day metrics and explicit arithmetic means of days."""
+    from .metrics import METRIC_SCALAR_FIELDS
+    from .experiment import INPUT_IDENTITY_FIELDS
+    scope = {key: bundle.manifest[key] for key in ("run_id", "phase", "non_confirmatory", "operator_mode", "global_acceptance_status")}
+    frame = pd.DataFrame([{**scope, **dict(row)} for row in bundle.results])
+    identity = [*scope, "scenario_id", "seed", "policy", "stratum", "regime", "config_hash", *INPUT_IDENTITY_FIELDS, "log_sha256", "metrics_sha256"]
+    daily = frame.loc[:, identity + list(METRIC_SCALAR_FIELDS)]
+    tables = {"table_metrics.csv": daily}
+    for label, groups in (("scenario", ["scenario_id", "stratum", "policy"]), ("stratum", ["stratum", "policy"])):
+        grouped = daily.groupby(groups, sort=True)
+        aggregate = grouped[list(METRIC_SCALAR_FIELDS)].mean().add_suffix("_day_mean")
+        aggregate["day_count"] = grouped.size()
+        totals = grouped[["resource_busy_minutes", "resource_gross_minutes", "resource_available_minutes", "resource_idle_minutes"]].sum()
+        for field in totals:
+            aggregate[f"{field}_total"] = totals[field]
+        aggregate["gross_utilization_pooled"] = totals["resource_busy_minutes"] / totals["resource_gross_minutes"]
+        aggregate["net_utilization_pooled"] = totals["resource_busy_minutes"] / totals["resource_available_minutes"]
+        aggregate["net_idle_fraction_pooled"] = totals["resource_idle_minutes"] / totals["resource_available_minutes"]
+        for key, value in scope.items():
+            aggregate[key] = value
+        tables[f"table_metrics_by_{label}.csv"] = aggregate.reset_index()
+    resource_rows, truck_rows = [], []
+    for row in bundle.results:
+        payload = json.loads((bundle.run_dir / row["metrics_file"]).read_text(encoding="utf-8"))
+        source_row = {**scope, **row}
+        identifiers = {key: source_row[key] for key in identity}
+        resource_rows.extend({**identifiers, **record} for record in payload["resources"])
+        truck_rows.extend({**identifiers, **record} for record in payload["trucks"])
+    tables["table_metrics_resources.csv"] = pd.DataFrame(resource_rows)
+    tables["table_metrics_trucks.csv"] = pd.DataFrame(truck_rows)
+    resource_groups = tables["table_metrics_resources.csv"].groupby(identity + ["kind"], sort=True)
+    classes = resource_groups[["gross_minutes", "busy_minutes", "down_minutes", "available_minutes", "idle_minutes"]].sum()
+    classes["resource_count"] = resource_groups.size()
+    classes["gross_utilization"] = classes["busy_minutes"] / classes["gross_minutes"]
+    classes["net_utilization"] = classes["busy_minutes"] / classes["available_minutes"]
+    classes["net_idle_fraction"] = classes["idle_minutes"] / classes["available_minutes"]
+    classes["gross_idle_fraction"] = (classes["gross_minutes"] - classes["busy_minutes"]) / classes["gross_minutes"]
+    tables["table_metrics_resource_classes.csv"] = classes.round(12).reset_index()
+    for frame in tables.values():
+        if frame.empty or frame.isna().any().any():
+            raise ValueError("metrics export contains absent evidence; no zero/NaN substitution is permitted")
+    return tables
+
+
+def export_metrics(bundle, output_directory: str | Path) -> dict[str, Path]:
+    """Publish descriptive metrics for one audited run; validation stays nonconfirmatory."""
+    from .audit import audit_run
+    from .experiment import load_run_bundle
+    report = audit_run(bundle.run_dir)
+    if not report.overall_pass:
+        raise ValueError("metrics export requires passing automated audit")
+    persisted = load_run_bundle(bundle.run_dir)
+    frames = _metric_frames(persisted)
+    destination = Path(output_directory)
+    if destination.exists() or destination.is_symlink():
+        raise FileExistsError(f"metrics destination already exists: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = _temporary(destination)
+    staging.mkdir()
+    try:
+        for name, frame in frames.items():
+            _publish_csv(frame, staging / name)
+        staging.rename(destination)
+    except Exception:
+        _remove_path(staging)
+        raise
+    return {name: destination / name for name in frames}
+
+
+__all__ = ["ExportedArtifacts", "export_analysis", "export_audit_table", "export_metrics"]

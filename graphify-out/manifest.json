@@ -40,8 +40,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/audit.py": {
-    "mtime": 1788819709.92871,
-    "ast_hash": "a17fe4c2d7feb00a53810799129d8c9c",
+    "mtime": 1788820701.771297,
+    "ast_hash": "8396a7ad249ff57e3f9da46c5b27de52",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/config.py": {
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/emulator.py": {
-    "mtime": 1788819737.7064452,
-    "ast_hash": "2e8d8994b4a9012a5abcec584d697b43",
+    "mtime": 1788820661.1005628,
+    "ast_hash": "979bd5b2cb249098739eca271c5e1088",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/events.py": {
@@ -80,13 +80,13 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/experiment.py": {
-    "mtime": 1788819557.812013,
-    "ast_hash": "35a2439790a07e0a069ddfa7b6b3b096",
+    "mtime": 1788820701.7622793,
+    "ast_hash": "99f7a0a742d5a2469b361e1d74b1f730",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/export.py": {
-    "mtime": 1788378775.08437,
-    "ast_hash": "06193d386c2d9e612329f9f647d076d6",
+    "mtime": 1788821181.7937882,
+    "ast_hash": "1adad6cc88a0addb91e3d204a0d64148",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/face_validation.py": {
@@ -105,13 +105,13 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/replay.py": {
-    "mtime": 1788316700.631789,
-    "ast_hash": "c62fc5cba16f33f6b738eeefa893080a",
+    "mtime": 1788820661.0781837,
+    "ast_hash": "57ccb6ab1732548ba25b375db07440d2",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/statistics.py": {
-    "mtime": 1788378754.7322595,
-    "ast_hash": "f8decbcc207b6f82b4c7d405461c9ea2",
+    "mtime": 1788820648.010759,
+    "ast_hash": "a485d81ef005e42bb34b7bdaf33350c2",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_a2_structural.py": {
@@ -135,8 +135,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_experiment_audit.py": {
-    "mtime": 1788819396.0186727,
-    "ast_hash": "af3d0f7d845dfaf6e5b4c4580a2803ca",
+    "mtime": 1788821064.65282,
+    "ast_hash": "beb1faefcbd8df8f7e3c097ba804af7f",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_notebook.py": {
@@ -145,8 +145,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_statistics_export.py": {
-    "mtime": 1788817520.2197025,
-    "ast_hash": "4edfd34c7965ee1fb246132cf6978552",
+    "mtime": 1788820845.785701,
+    "ast_hash": "ea3bd157907f3eeb3873468fc5ad792f",
     "semantic_hash": ""
   },
   "scripts/figura_poder_protocolo.R": {
@@ -155,8 +155,8 @@
     "semantic_hash": ""
   },
   "scripts/power_analysis_rhfs.py": {
-    "mtime": 1780263023.0,
-    "ast_hash": "1c112d91228303615e7671a21be4e3e6",
+    "mtime": 1788820621.7495012,
+    "ast_hash": "9ae1e2c54818d6442c3396dd17630a6d",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/README.md": {
-    "mtime": 1788819442.1345673,
-    "ast_hash": "5992348a5eafe2d04a28edd10287ee6b",
+    "mtime": 1788821181.8053052,
+    "ast_hash": "b6467fd8c1e013ae9c538151f6b8b7ea",
     "semantic_hash": ""
   },
   "experimento-notebook/docs/superpowers/plans/2026-09-01-experimento-notebook-implementation.md": {
@@ -237,6 +237,36 @@
   "experimento-notebook/tests/test_capacity.py": {
     "mtime": 1788819424.609799,
     "ast_hash": "fb5586af4c6472e8d7808d868e17b827",
+    "semantic_hash": ""
+  },
+  "data/power_analysis_rhfs_historical_metadata.json": {
+    "mtime": 1788820578.0364642,
+    "ast_hash": "6a228925084948841414ed177db8fa3d",
+    "semantic_hash": ""
+  },
+  "data/rhfs_matrix_provenance.json": {
+    "mtime": 1788820578.0354633,
+    "ast_hash": "6f5da387aab8a7b380aa57d808723e04",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/src/pequiflux_experiment/metrics.py": {
+    "mtime": 1788821057.7332869,
+    "ast_hash": "9beded3adbef85d641d6edce501e6761",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/tests/test_metrics.py": {
+    "mtime": 1788821006.7843494,
+    "ast_hash": "9a63c8ecab0acce221b06cbbe56ed3af",
+    "semantic_hash": ""
+  },
+  "data/power_analysis_provenance.md": {
+    "mtime": 1788820648.010759,
+    "ast_hash": "0a27da8108269647585cac756a29d3d4",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/governance-status.md": {
+    "mtime": 1788820784.6081665,
+    "ast_hash": "ad0c502794a2c6f5d78479901d93d28b",
     "semantic_hash": ""
   }
 }

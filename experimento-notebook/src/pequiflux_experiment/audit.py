@@ -518,7 +518,7 @@ def _validate_log_fields(
         return False
     if not isinstance(line.get("explanation"), str):
         return False
-    if line.get("human_decision") is not None and not isinstance(line.get("human_decision"), str):
+    if line.get("operator_decision") is not None and not isinstance(line.get("operator_decision"), str):
         return False
     event_kind = line.get("event_kind")
     if event.kind != event_kind or line.get("kind") != event_kind:
@@ -540,10 +540,12 @@ def _validate_log_fields(
             recommendation = candidate
         else:
             return False
-        if payload.get("decision") != line.get("human_decision"):
+        if payload.get("operator_mode") != "synthetic_auto_accept":
+            return False
+        if payload.get("decision") != line.get("operator_decision"):
             return False
         if (
-            line.get("human_decision") != "accept"
+            line.get("operator_decision") != "accept"
             or payload.get("decision") != "accept"
         ):
             return False
@@ -610,7 +612,7 @@ def _validate_log_fields(
             return False
         if line.get("explanation") != explanation:
             return False
-        if event_kind == "DECISION_RECORDED" and line.get("human_decision") is not None:
+        if event_kind == "DECISION_RECORDED" and line.get("operator_decision") is not None:
             return False
     elif event_kind not in {"DECISION_RECORDED", "OPERATOR_DECISION"}:
         # Non-decision events still carry the canonical envelope, but no
@@ -619,7 +621,7 @@ def _validate_log_fields(
             return False
         if line.get("excluded") != [] or line.get("explanation") != "":
             return False
-        if line.get("human_decision") is not None:
+        if line.get("operator_decision") is not None:
             return False
     return True
 
@@ -885,7 +887,7 @@ def _derived_log_metrics(details: Any) -> dict[str, int | float]:
         "total_trucks": total_trucks,
         "completed_trucks": completed_trucks,
         "throughput": throughput,
-        "scale_utilization_peak": max_scale_occupancy,
+        "scale_occupancy_peak": max_scale_occupancy,
         "makespan_minutes": makespan,
         "throughput_rate": throughput_rate,
         "mean_wait_minutes": mean_wait,
@@ -917,7 +919,13 @@ def _validate_a2_manifest(manifest: Mapping[str, Any]) -> bool:
     required_fields = a2.get("required_fields")
     if not isinstance(required_fields, list) or required_fields != list(LOG_REQUIRED_FIELDS):
         raise AuditError("manifest a2.required_fields do not match canonical log fields")
-    return root_status == "pending"
+    if root_status != "pending":
+        raise AuditError("human_audit_status complete requires a verified human review workflow; automated runs cannot approve it")
+    if manifest.get("operator_mode") != "synthetic_auto_accept":
+        raise AuditError("manifest operator_mode must identify synthetic_auto_accept")
+    if manifest.get("global_acceptance_status") != "pending" or manifest.get("human_review_evidence") is not None:
+        raise AuditError("automated runs must retain pending global acceptance and no human review evidence")
+    return True
 
 
 _INPUT_IDENTITY_FIELDS = (
@@ -931,8 +939,8 @@ def _require_digest(value: object, label: str) -> None:
 
 
 def _validate_input_provenance(manifest, expected_pairs):
-    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 2:
-        raise AuditError("run manifest schema_version must be 2")
+    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 3:
+        raise AuditError("run manifest schema_version must be 3")
     provenance = _required_manifest_mapping(manifest, "input_provenance")
     if provenance.get("kind") not in {"frozen_dataset", "validation_fixture"}:
         raise AuditError("input provenance kind is invalid")
@@ -1019,6 +1027,7 @@ class AuditReport:
 
     @property
     def overall_pass(self) -> bool:
+        """Pass of automated checks only; never human or global approval."""
         return self.a1_pass and self.a2_structural_pass and self.replay_pass
 
     def to_dict(self) -> dict[str, Any]:
@@ -1041,6 +1050,9 @@ class AuditReport:
             "a2_structural_pass": self.a2_structural_pass,
             "a2_human_audit_pending": self.a2_human_audit_pending,
             "overall_pass": self.overall_pass,
+            "acceptance_scope": "automated_structural_checks_only",
+            "global_acceptance_status": "pending",
+            "operator_mode": "synthetic_auto_accept",
             "diagnostics": list(self.diagnostics),
         }
 
@@ -1249,6 +1261,10 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
                 if line.get(field) != row[field]:
                     raise AuditError(f"log input provenance mismatch: {log_name} line={line_number} field={field}")
             if event.kind == "RUN_STARTED":
+                if event.payload.get("operator_mode") != manifest["operator_mode"]:
+                    raise AuditError(f"RUN_STARTED operator mode mismatch: {log_name}")
+                if event.to_dict()["payload"].get("execution_controls") != provenance["controls"]:
+                    raise AuditError(f"RUN_STARTED execution controls mismatch: {log_name}")
                 for field in _INPUT_IDENTITY_FIELDS:
                     if event.payload.get(field) != row[field]:
                         raise AuditError(f"RUN_STARTED input provenance mismatch: {log_name} field={field}")
@@ -1285,13 +1301,31 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
                     f"event time regresses in decision log: {log_name} line {line_number}"
                 )
             previous_time = event.time
+        from .metrics import compute_policy_day_metrics
+        try:
+            calculated = compute_policy_day_metrics(log_path)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise AuditError(f"persisted metrics cannot be reconstructed: {log_name}") from exc
+        expected_metrics_file = f"metrics/{log_name.removesuffix('.jsonl')}.json"
+        if row["metrics_file"] != expected_metrics_file:
+            raise AuditError(f"metrics artifact path mismatch: {log_name}")
+        metrics_path = bundle.run_dir / expected_metrics_file
+        if metrics_path.resolve().parent != (bundle.run_dir / "metrics").resolve():
+            raise AuditError(f"metrics artifact escapes run directory: {log_name}")
+        if _sha256(metrics_path) != row["metrics_sha256"]:
+            raise AuditError(f"metrics artifact SHA-256 mismatch: {log_name}")
+        if json.loads(metrics_path.read_text(encoding="utf-8")) != calculated.to_dict():
+            raise AuditError(f"metrics artifact does not reconcile with log: {log_name}")
+        for metric, value in calculated.scalars.items():
+            if row[metric] != value:
+                raise AuditError(f"persisted metric {metric} does not reconcile with log: {log_name} expected={value} observed={row[metric]}")
         derived = _derived_log_metrics(details)
         for metric in (
             "event_count",
             "total_trucks",
             "completed_trucks",
             "throughput",
-            "scale_utilization_peak",
+            "scale_occupancy_peak",
         ):
             if row.get(metric) != derived[metric]:
                 raise AuditError(
@@ -1336,7 +1370,7 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
             replay_pass = False
             raise AuditError(f"final replay equivalence failed: {log_name}")
         expected_scale_count = scenarios[row.get("scenario_id")].get("scale_count")
-        if isinstance(expected_scale_count, int) and int(row.get("scale_utilization_peak", 0)) > expected_scale_count:
+        if isinstance(expected_scale_count, int) and int(row.get("scale_occupancy_peak", 0)) > expected_scale_count:
             a1_violations.append(
                 f"{_pair_key(row.get('scenario_id'), row.get('seed'), row.get('policy'))}: scale capacity exceeded"
             )

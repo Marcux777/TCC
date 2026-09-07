@@ -35,6 +35,7 @@ from .digital_model import DigitalModel
 from .domain import YardSnapshot, FrozenInstance, ExecutionControls, EventLatentLedger
 from .emulator import DayResult, run_day
 from .events import EventRecord
+from .metrics import compute_policy_day_metrics, METRIC_SCALAR_FIELDS, INTEGER_METRIC_FIELDS
 from .manifest import build_manifest, create_run_directory
 from .policies import DispatchPolicy
 from .statistics import canonical_scenario_metadata
@@ -57,17 +58,9 @@ RESULT_HEADERS: tuple[str, ...] = (
     "scale_count",
     "log_file",
     "log_sha256",
-    "event_count",
-    "total_trucks",
-    "completed_trucks",
-    "throughput",
-    "mean_wait_minutes",
-    "p95_wait_minutes",
-    "censored_wait_minutes",
-    "makespan_minutes",
-    "throughput_rate",
-    "scale_utilization_peak",
-    "hard_constraint_violations",
+    "metrics_file",
+    "metrics_sha256",
+    *METRIC_SCALAR_FIELDS,
     "initial_state_hash",
     "final_state_hash",
     "replay_state_hash",
@@ -100,7 +93,7 @@ LOG_REQUIRED_FIELDS: tuple[str, ...] = (
     "excluded",
     "selection",
     "explanation",
-    "human_decision",
+    "operator_decision",
     "state_before_hash",
     "state_after_hash",
     "payload",
@@ -369,17 +362,7 @@ def _normalise_row(row: Mapping[str, Any]) -> dict[str, Any]:
     if missing:
         raise ValueError(f"result row missing fields: {', '.join(missing)}")
     normalised = dict(row)
-    for key in (
-        "seed",
-        "event_count",
-        "total_trucks",
-        "hopper_count",
-        "scale_count",
-        "completed_trucks",
-        "throughput",
-        "scale_utilization_peak",
-        "hard_constraint_violations",
-    ):
+    for key in ("seed", "hopper_count", "scale_count", *INTEGER_METRIC_FIELDS):
         value = normalised[key]
         if isinstance(value, bool):
             raise ValueError(f"{key} must be an integer, not bool")
@@ -404,13 +387,7 @@ def _normalise_row(row: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("completed_trucks cannot exceed total_trucks")
     if normalised["throughput"] > normalised["completed_trucks"]:
         raise ValueError("throughput cannot exceed completed_trucks")
-    for key in (
-        "mean_wait_minutes",
-        "p95_wait_minutes",
-        "censored_wait_minutes",
-        "makespan_minutes",
-        "throughput_rate",
-    ):
+    for key in (field for field in METRIC_SCALAR_FIELDS if field not in INTEGER_METRIC_FIELDS):
         if isinstance(normalised[key], bool):
             raise ValueError(f"{key} must be numeric, not bool")
         normalised[key] = float(normalised[key])
@@ -434,7 +411,9 @@ def _normalise_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "stratum",
         "regime",
         "log_file",
+        "metrics_file",
         "log_sha256",
+        "metrics_sha256",
         "initial_state_hash",
         "final_state_hash",
         "replay_state_hash",
@@ -447,6 +426,7 @@ def _normalise_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "config_hash",
         *INPUT_IDENTITY_FIELDS[1:],
         "log_sha256",
+        "metrics_sha256",
         "initial_state_hash",
         "final_state_hash",
         "replay_state_hash",
@@ -499,7 +479,7 @@ def _decision_fields(event: EventRecord) -> dict[str, Any]:
     excluded: list[Any] = []
     selection: Mapping[str, Any] | None = None
     explanation = ""
-    human_decision: str | None = None
+    operator_decision: str | None = None
 
     if event.kind == "DECISION_RECORDED":
         recommendation = payload.get("decision")
@@ -512,7 +492,7 @@ def _decision_fields(event: EventRecord) -> dict[str, Any]:
                 selection = dict(selected)
             explanation = str(recommendation.get("explanation", ""))
     elif event.kind == "OPERATOR_DECISION":
-        human_decision = payload.get("decision") if isinstance(payload.get("decision"), str) else None
+        operator_decision = payload.get("decision") if isinstance(payload.get("decision"), str) else None
         recommendation = payload.get("recommendation")
         if isinstance(recommendation, Mapping):
             resource_id = recommendation.get("resource_id", resource_id)
@@ -529,7 +509,7 @@ def _decision_fields(event: EventRecord) -> dict[str, Any]:
         "excluded": excluded,
         "selection": selection,
         "explanation": explanation,
-        "human_decision": human_decision,
+        "operator_decision": operator_decision,
     }
 
 
@@ -580,7 +560,7 @@ def _log_lines(
                 and fields["candidates"]
             )
             if event.kind == "OPERATOR_DECISION":
-                all_fields_complete = all_fields_complete and fields["human_decision"] == "accept"
+                all_fields_complete = all_fields_complete and fields["operator_decision"] == "accept"
 
         line: dict[str, Any] = {
             "run_id": run_id,
@@ -641,8 +621,11 @@ def _result_row(
     final_hash: str,
     replay_hash: str,
     a2_fields_complete: bool,
+    persisted_metrics,
+    metrics_file: str,
+    metrics_sha256: str,
 ) -> dict[str, Any]:
-    metrics = result.metrics
+    metrics = persisted_metrics.scalars
     if not isinstance(scenario_metadata, Mapping):
         raise TypeError("scenario_metadata must be a mapping")
     expected_total_trucks = scenario_metadata.get("total_trucks")
@@ -664,7 +647,7 @@ def _result_row(
         )
     a1_pass = (
         result.hard_constraint_violations == 0
-        and int(metrics.get("hard_constraint_violations", 0)) == 0
+        and int(metrics["hard_constraint_violations"]) == 0
         and result.max_scale_occupancy <= result.scenario.scale_count
     )
     row: dict[str, Any] = {
@@ -679,17 +662,9 @@ def _result_row(
         "scale_count": scenario_metadata["scale_count"],
         "log_file": log_file,
         "log_sha256": log_sha256,
-        "event_count": len(result.events),
-        "total_trucks": expected_total_trucks,
-        "completed_trucks": int(metrics["completed_trucks"]),
-        "throughput": int(metrics["throughput"]),
-        "mean_wait_minutes": float(metrics["mean_wait_minutes"]),
-        "p95_wait_minutes": float(metrics["p95_wait_minutes"]),
-        "censored_wait_minutes": float(metrics["censored_wait_minutes"]),
-        "makespan_minutes": float(metrics["makespan_minutes"]),
-        "throughput_rate": float(metrics["throughput_rate"]),
-        "scale_utilization_peak": int(result.max_scale_occupancy),
-        "hard_constraint_violations": int(result.hard_constraint_violations),
+        "metrics_file": metrics_file,
+        "metrics_sha256": metrics_sha256,
+        **metrics,
         "initial_state_hash": initial_hash,
         "final_state_hash": final_hash,
         "replay_state_hash": replay_hash,
@@ -729,6 +704,7 @@ def _manifest_for_run(
             "audit": "audit.json",
             "logs": "logs",
             "decision_logs": "logs",
+            "metrics": "metrics",
         },
         checkout_clean=checkout_clean,
         now_utc=now_utc,
@@ -766,6 +742,9 @@ def _manifest_for_run(
                 "required_fields": list(LOG_REQUIRED_FIELDS),
             },
             "human_audit_status": "pending",
+            "operator_mode": "synthetic_auto_accept",
+            "global_acceptance_status": "pending",
+            "human_review_evidence": None,
         }
     )
     return manifest
@@ -1002,6 +981,7 @@ def _run_materialized_matrix(
     )
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=False)
+    (run_dir / "metrics").mkdir()
 
     result_rows: list[dict[str, Any]] = []
     log_entries: dict[str, dict[str, Any]] = {}
@@ -1026,6 +1006,11 @@ def _run_materialized_matrix(
                     checksum=checksum,
                 )
                 _atomic_write_text(log_path, log_text)
+                persisted_metrics = compute_policy_day_metrics(log_path)
+                metrics_file = f"metrics/{log_filename.removesuffix('.jsonl')}.json"
+                metrics_text = _canonical_json(persisted_metrics.to_dict()) + "\n"
+                _atomic_write_text(run_dir / metrics_file, metrics_text)
+                metrics_digest = hashlib.sha256(metrics_text.encode("utf-8")).hexdigest()
                 log_digest = hashlib.sha256(log_text.encode("utf-8")).hexdigest()
                 log_entries[log_filename] = {
                     "path": f"logs/{log_filename}",
@@ -1048,6 +1033,9 @@ def _run_materialized_matrix(
                         final_hash=final_hash,
                         replay_hash=replay_hash,
                         a2_fields_complete=a2_complete,
+                        persisted_metrics=persisted_metrics,
+                        metrics_file=metrics_file,
+                        metrics_sha256=metrics_digest,
                     )
                 )
 
@@ -1069,7 +1057,7 @@ def _run_materialized_matrix(
         log_entries=log_entries,
         now_utc=now_utc,
     )
-    manifest["schema_version"] = 2
+    manifest["schema_version"] = 3
     manifest["input_provenance"] = dict(input_provenance)
     manifest["non_confirmatory"] = phase_component != "execute-confirmatory"
     _atomic_write_text(run_dir / "results.csv", _csv_text(result_rows))

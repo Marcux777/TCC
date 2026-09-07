@@ -799,7 +799,7 @@ class _DaySimulation:
         self._emit("DECISION_RECORDED", {"decision": recommendation.to_dict()})
         self._emit(
             "OPERATOR_DECISION",
-            {"decision": "accept", "recommendation": recommendation.to_dict()},
+            {"decision": "accept", "operator_mode": "synthetic_auto_accept", "recommendation": recommendation.to_dict()},
         )
         duration = self._duration(selected_id, operation)
         # Execute the validated typed command against the physical model before
@@ -1027,6 +1027,8 @@ class _DaySimulation:
                 "controlled_view_hash": self.projection.controlled_view_hash,
                 "event_overlay_hash": self.projection.event_overlay_hash,
                 "event_latents_sha256": self.controls.event_latents_sha256,
+                "execution_controls": self.controls.to_dict(),
+                "operator_mode": "synthetic_auto_accept",
                 "event_semantics_version": EVENT_SEMANTICS_VERSION,
                 "event_ranks": dict(EVENT_RANKS),
                 "resources": initial_snapshot.canonical_dict()["resources"],
@@ -1103,7 +1105,7 @@ class _DaySimulation:
             "makespan_minutes": _round_metric(makespan),
             "horizon_minutes": int(HORIZON_MINUTES),
             "throughput_rate": _round_metric(completed / makespan) if makespan > 0 else 0.0,
-            "scale_utilization_peak": self.max_scale_occupancy,
+            "scale_occupancy_peak": self.max_scale_occupancy,
             "max_buffer_occupancy": self.max_buffer_occupancy,
             "max_buffer_reservation": self.max_buffer_reservation,
             "buffer_capacity": self.controls.buffer_capacity,
