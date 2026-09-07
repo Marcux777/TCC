@@ -89,7 +89,7 @@ recente e não ativam uma rota alternativa.
 origem; o executor revalida os seis payloads e usa suas instâncias no
 `run_day(instance, policy, controls, event_latents)`. Não há geração interna
 no DES. Resultados e logs registram os hashes da instância original, da projeção
-executada, dos controles e do dataset. O esquema de resultados/logs é versão 2;
+executada, dos controles e do dataset. O esquema de resultados/logs é versão 3;
 artefatos antigos precisam ser identificados como antigos, sem converter sua
 proveniência em consumo de entradas congeladas.
 
@@ -115,6 +115,15 @@ Não há seleção de perfil por variável de ambiente ou por descoberta de arqu
 Cada execução canônica deve receber uma `PEQUIFLUX_RESULTS_ROOT` nova e vazia;
 uma colisão no mesmo namespace é erro fail-closed, não idempotência. O cwd
 canônico é `experimento-notebook/`, de onde o notebook resolve `src/` e `config/`.
+
+## Escopo dos dados sintéticos
+
+O [escopo fechado](docs/synthetic-data-scope.md) conserva as quatro operações,
+o fatorial, as chaves CRN e os seis payloads. O
+[catálogo de entradas](docs/synthetic-input-catalog.md) explicita unidades,
+valores, origem, justificativa e limites das hipóteses. As 432.000 linhas de
+caminhões e 1.728.000 durações são quantidades previstas, não evidência de uma
+geração executada. Planos, fixtures e resultados principais têm estados distintos.
 
 ## Layout de artefatos
 
@@ -162,13 +171,15 @@ essas tabelas na publicação confirmatória. Na validação, os dados descritiv
 são de fixtures e ficam em `descriptive_metrics/`. Valores ausentes ou
 indefinidos interrompem a derivação; não recebem zero ou NaN.
 
-O DES usa `operator_mode=synthetic_auto_accept`; `operator_decision` no log
+A matriz científica usa `operator_mode=synthetic_auto_accept`; `operator_decision` no log
 não representa uma pessoa. `overall_pass` cobre somente verificações
 automáticas, e `global_acceptance_status` permanece `pending`. O executor
 não transforma `human_audit_status` em `complete`. A aprovação real de face,
-a revisão humana de A2, rejeição/override no DES e o consumidor Unreal
-continuam pendentes; testes isolados de rejeição não demonstram esses fluxos
-na campanha. Veja [governança](docs/governance-status.md).
+a revisão humana de A2 e o consumidor Unreal continuam pendentes.
+`run_synthetic_operator_trial` exercita aceitar, rejeitar e override admissível
+em instâncias de validação, com origem simulada explícita e replay de JSONL.
+Esses ensaios não integram a campanha nem demonstram participação humana.
+Veja [governança](docs/governance-status.md).
 
 Os intervalos pareados usam 5.000 reamostragens e registram a quantidade.
 A matriz RHFS e seus hashes estão em `../data/`; a análise auxiliar é uma

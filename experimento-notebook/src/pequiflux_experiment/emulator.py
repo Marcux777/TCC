@@ -42,6 +42,7 @@ from .domain import (
     TRUCK_STAGE_WAITING,
 )
 from .events import EventRecord
+from .operator import SyntheticOperatorResponse, SyntheticOperatorScript, SYNTHETIC_OPERATOR_PAYLOAD_VERSION
 from .policies import make_policy
 
 
@@ -221,7 +222,15 @@ def tiny_scenario(
 
 class _DaySimulation:
     def __init__(self, instance: FrozenInstance, policy: DispatchPolicy,
-                 controls: ExecutionControls, event_latents: EventLatentLedger) -> None:
+                 controls: ExecutionControls, event_latents: EventLatentLedger, *,
+                 operator_script: SyntheticOperatorScript | None = None) -> None:
+        if operator_script is not None:
+            if not callable(operator_script):
+                raise TypeError("operator_script must explicitly return SyntheticOperatorResponse")
+            if not instance.instance_id.startswith("validation-"):
+                raise ValueError("synthetic operator trials require a validation instance_id")
+        self.operator_script = operator_script
+        self.operator_mode = "synthetic_auto_accept" if operator_script is None else "synthetic_scripted"
         self.source_instance = instance
         self.projection = derive_controlled_projection(instance, event_latents, controls)
         self.instance = self.projection.instance
@@ -635,10 +644,15 @@ class _DaySimulation:
 
     def _dispatch_available(self) -> None:
         progress = True
+        # A rejection idles this resource for the rest of the current external
+        # event batch, including additional passes caused by other resources.
+        rejected_resources: set[str] = set()
         while progress and self.clock < HORIZON_MINUTES:
             progress = False
             self._update_buffer_occupancy()
             for _slot, operations, resource_id in self._dispatch_slots():
+                if resource_id in rejected_resources:
+                    continue
                 snapshot = self._digital_snapshot()
                 resource = snapshot.resources.get(resource_id)
                 if resource is None or resource.status != "available":
@@ -710,8 +724,11 @@ class _DaySimulation:
                 selected_operation = recommendation.selected.operation
                 if selected_operation not in operations:
                     raise RuntimeError("policy selected a candidate outside the resource operation pool")
-                self._accept_and_start(recommendation, selected_operation, resource_id)
-                progress = True
+                started = self._apply_operator_response(recommendation, resource_id)
+                if started:
+                    progress = True
+                else:
+                    rejected_resources.add(resource_id)
 
     @staticmethod
     def _hard_candidate_block_reason(
@@ -769,13 +786,36 @@ class _DaySimulation:
     def _pressure(self, candidate: Candidate) -> float:
         return self._pressure_value(candidate.priority, candidate.waiting_time)
 
-    def _accept_and_start(self, recommendation: Recommendation, operation: str, resource_id: str) -> None:
-        selected_id = recommendation.selected.truck_id
+    def _apply_operator_response(self, recommendation: Recommendation, resource_id: str) -> bool:
+        response = None
+        selected = recommendation.selected
+        if self.operator_script is not None:
+            response = self.operator_script(recommendation)
+            if not isinstance(response, SyntheticOperatorResponse):
+                raise TypeError("operator_script must return SyntheticOperatorResponse; no implicit acceptance")
+            selected = response.resolve(recommendation)
+            if response.action == "override":
+                # Strict FIFO deliberately retains the full feasible queue for
+                # head-of-line blocking. That queue is not the operator's Cadm.
+                admissible = self._admissible_candidates(
+                    recommendation.candidates,
+                    allowed_cargo_types=recommendation.context.allowed_cargo_types,
+                )
+                if selected not in admissible:
+                    raise ValueError("synthetic override violates mandatory-priority/window admission")
+            if selected is None:
+                self._emit("DECISION_RECORDED", {"decision": recommendation.to_dict()})
+                self._emit("OPERATOR_DECISION", self._scripted_operator_payload(recommendation, response, None))
+                return False
+        selected_id = selected.truck_id
+        operation = selected.operation
         snapshot = self._digital_snapshot()
         digital_truck = snapshot.trucks.get(selected_id)
         digital_resource = snapshot.resources.get(resource_id)
         if digital_truck is None or digital_resource is None:
             raise RuntimeError("dispatch command references an unknown digital entity")
+        if not digital_truck.arrived:
+            raise RuntimeError(f"hard constraint violation: truck has not arrived {selected_id}")
         if digital_truck.next_operation != operation or digital_truck.stage == TRUCK_STAGE_SERVICE_STARTED:
             raise RuntimeError(f"hard constraint violation: invalid digital operation for {selected_id}")
         if not digital_truck.document_ok:
@@ -799,6 +839,8 @@ class _DaySimulation:
         self._emit("DECISION_RECORDED", {"decision": recommendation.to_dict()})
         self._emit(
             "OPERATOR_DECISION",
+            self._scripted_operator_payload(recommendation, response, selected)
+            if response is not None else
             {"decision": "accept", "operator_mode": "synthetic_auto_accept", "recommendation": recommendation.to_dict()},
         )
         duration = self._duration(selected_id, operation)
@@ -810,7 +852,7 @@ class _DaySimulation:
         state.active_operation = operation
         state.stage_entry_time = self.clock
         state.service_started.append((operation, self.clock))
-        wait = max(0.0, self.clock - recommendation.selected.stage_entry_time)
+        wait = max(0.0, self.clock - selected.stage_entry_time)
         state.waiting_total += wait
         self.waits.append(wait)
         if operation in {"scale_in", "scale_out"}:
@@ -837,6 +879,20 @@ class _DaySimulation:
             operation=operation,
             resource_id=resource_id,
         )
+        return True
+
+    @staticmethod
+    def _scripted_operator_payload(
+        recommendation: Recommendation, response: SyntheticOperatorResponse,
+        selected: Candidate | None,
+    ) -> dict[str, Any]:
+        return {
+            "operator_payload_version": SYNTHETIC_OPERATOR_PAYLOAD_VERSION,
+            "operator_mode": "synthetic_scripted", "origin": "simulated",
+            "decision": response.action, "reason": response.reason,
+            "recommendation": recommendation.to_dict(),
+            "selection": None if selected is None else selected.to_dict(),
+        }
 
     def _activate_disruption(self, item: _Scheduled) -> None:
         resource_id = item.resource_id
@@ -1028,7 +1084,7 @@ class _DaySimulation:
                 "event_overlay_hash": self.projection.event_overlay_hash,
                 "event_latents_sha256": self.controls.event_latents_sha256,
                 "execution_controls": self.controls.to_dict(),
-                "operator_mode": "synthetic_auto_accept",
+                "operator_mode": self.operator_mode,
                 "event_semantics_version": EVENT_SEMANTICS_VERSION,
                 "event_ranks": dict(EVENT_RANKS),
                 "resources": initial_snapshot.canonical_dict()["resources"],
@@ -1147,9 +1203,33 @@ def run_day(instance: FrozenInstance, policy: DispatchPolicy | str,
     return _DaySimulation(instance, selected_policy, controls, event_latents).run()
 
 
+def run_synthetic_operator_trial(
+    instance: FrozenInstance, policy: DispatchPolicy | str,
+    controls: ExecutionControls, event_latents: EventLatentLedger, *,
+    operator_script: SyntheticOperatorScript,
+) -> DayResult:
+    """Exercise explicit simulated responses on validation instances only.
+
+    This is not a scientific matrix entry point. The caller must supply every
+    response, and the canonical run_day API retains automatic acceptance.
+    """
+    if not isinstance(instance, FrozenInstance) or not instance.instance_id.startswith("validation-"):
+        raise ValueError("synthetic operator trials require a validation FrozenInstance")
+    if not isinstance(controls, ExecutionControls) or not isinstance(event_latents, EventLatentLedger):
+        raise TypeError("synthetic operator trials require typed controls and event latents")
+    if not callable(operator_script):
+        raise TypeError("operator_script must explicitly return SyntheticOperatorResponse")
+    selected_policy = make_policy(policy) if isinstance(policy, str) else policy
+    if not isinstance(selected_policy, DispatchPolicy):
+        raise TypeError("policy must be a DispatchPolicy or policy name")
+    return _DaySimulation(instance, selected_policy, controls, event_latents,
+                          operator_script=operator_script).run()
+
+
 __all__ = [
     "DayResult",
     "HORIZON_MINUTES",
     "run_day",
+    "run_synthetic_operator_trial",
     "tiny_scenario",
 ]

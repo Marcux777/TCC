@@ -126,6 +126,12 @@ def test_validation_bundle_is_complete_replayable_and_auditable(tmp_path: Path):
     assert bundle.results_path.exists()
     assert bundle.logs_dir.exists()
     assert len(tuple(bundle.logs_dir.glob("*.jsonl"))) == 10
+    from pequiflux_experiment.experiment import INPUT_IDENTITY_FIELDS
+    for seed in (101, 102):
+        paired = [row for row in bundle.results if row["seed"] == seed]
+        assert {row["policy"] for row in paired} == set(POLICY_NAMES)
+        for field in INPUT_IDENTITY_FIELDS:
+            assert len({row[field] for row in paired}) == 1, field
 
     report = audit_run(bundle.run_dir)
 

@@ -7,7 +7,7 @@ aprovação ou entrega pendente. Testes e fixtures não são resultados da campa
 | Evidência ou entrega | Estado | O que ela permite concluir |
 | --- | --- | --- |
 | Validação humana de face dos parâmetros, cenários e rastros exemplares | **PENDING** no [recibo real](../inputs/face_validation_receipt.json) | Ainda não há aprovação externa dos parâmetros. A [rubrica](../inputs/face_validation_rubric.v1.json) exige dois revisores independentes, critérios atendidos ou divergências resolvidas e documentadas; recibo, documento e configuração precisam corresponder. |
-| Ensaio do operador no DES | **Sintético, aceitação automática** | A cadeia recomendação → aceitação → serviço é exercitada. Não demonstra participação humana nem escolha autônoma de um operador. |
+| Ensaio do operador no DES | **Sintético: aceitar, rejeitar e override admissível** | Ensaios separados exercitam as três respostas com origem simulada, motivo e replay de JSONL persistido. A matriz científica conserva aceitação automática. Não há participação humana demonstrada. |
 | Auditoria estrutural automatizada de A2 | **Implementada, resultado por execução** | Confere campos, causas, contexto, FIFO, observações dos eventos, replay e proveniência. Sucesso estrutural não mede legibilidade para pessoas nem aprova A2 em seu escopo humano. |
 | Revisão humana da amostra A2 | **PENDING** | Faltam seleção e inspeção reais da amostra, pareceres e, quando aplicável, concordância entre avaliadores. A aprovação de face não substitui essa revisão. |
 | Cena, importador e replay em Unreal Engine 5.8 | **NÃO ENTREGUE / PENDENTE** | O objetivo tridimensional permanece no escopo. A inicialização de projeto e o replay Python não entregam essa demonstração. |
@@ -15,23 +15,35 @@ aprovação ou entrega pendente. Testes e fixtures não são resultados da campa
 
 ## Semântica do operador e cobertura existente
 
-O modo corrente é `operator_mode="synthetic_auto_accept"`. O evento
+O modo da matriz científica é `operator_mode="synthetic_auto_accept"`. O evento
 `OPERATOR_DECISION` transporta `decision="accept"`; no envelope de log, o campo
 correspondente é `operator_decision`. O nome do evento não identifica uma pessoa.
 O manifesto mantém `human_audit_status="pending"` e
 `global_acceptance_status="pending"`. O caminho automático não aceita promover a
 revisão humana a `complete` sem um processo humano verificável, ainda não implementado.
 
-A inspeção dos testes existentes distingue dois comportamentos:
+A inspeção dos testes existentes distingue os seguintes comportamentos:
 
 - [test_every_selection_is_explained_then_accepted_before_service](../tests/test_dispatch_emulator.py)
   verifica a cadeia de aceitação automática antes do serviço.
 - [test_replay_requires_matching_accepted_decision_before_service](../tests/test_digital_model_replay.py)
   introduz `decision="reject"` e espera erro. Isso verifica falha segura para um
-  evento não suportado; não implementa rejeição operacional seguida de nova decisão.
+  evento não suportado nesse modo; não é o ensaio de rejeição operacional.
+- [test_operator_interventions.py](../tests/test_operator_interventions.py)
+  exercita aceitar, rejeitar e substituir por outro candidato admissível, grava
+  e relê JSONL e reconstrói o estado final. Rejeição não inicia serviço e mantém
+  o recurso ocioso até um novo lote de eventos externos; override preserva a
+  recomendação original e registra a escolha efetiva. Resposta ausente ou
+  candidato ainda não chegado causa erro antes de qualquer serviço.
 
-Não há demonstração concluída de rejeição pelo operador, substituição por outro
-candidato admissível ou participação humana no DES. A regra `fifo_override`
+O ponto de entrada separado `run_synthetic_operator_trial` exige instância
+`validation-` e uma função que retorne `SyntheticOperatorResponse` para cada
+recomendação, sem aceitação implícita. Seu evento usa
+`operator_mode="synthetic_scripted"`, `origin="simulated"`, motivo obrigatório
+e versão de payload 1. Esses rastros são ensaios de engenharia; não são bundles
+da matriz científica nem entram na exportação confirmatória de métricas ou H1.
+
+Não há participação humana demonstrada no DES. A regra `fifo_override`
 descreve uma quebra de FIFO causada pela política; não é uma sobreposição humana.
 Fixtures com nomes de pessoas ou recibos `APPROVED` existem para testar limites do
 software e nunca devem ser promovidas a avaliações reais.
@@ -40,9 +52,9 @@ software e nunca devem ser promovidas a avaliações reais.
 
 A rodada real de face deve produzir o recibo e as evidências previstos na rubrica.
 A avaliação humana de A2 deve produzir sua própria amostra, julgamentos e trilha
-de revisão. O fluxo de intervenção autorizada deve ser implementado e demonstrado
-com rejeição e substituição admissível, preservando as restrições rígidas e o motivo
-registrado. A demonstração Unreal requer cena, ativos, importador e controles de
+de revisão. O fluxo com pessoas autorizadas ainda exige integração e avaliação;
+os ensaios sintéticos não comprovam autenticação de operadores nem legibilidade
+humana. A demonstração Unreal requer cena, ativos, importador e controles de
 replay executáveis. A campanha principal depende dos pré-requisitos científicos e
 de capacidade, seguida da execução, auditoria e análise de H1.
 

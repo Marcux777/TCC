@@ -57,6 +57,7 @@ class DigitalModel:
         # This replay bookkeeping is deliberately transient and is not part
         # of the public YardSnapshot schema.
         self._pending_decisions: dict[str, dict[str, Any]] = {}
+        self._operator_mode: str | None = None
 
     @classmethod
     def empty(cls, *, scenario: ScenarioConfig | None = None) -> "DigitalModel":
@@ -106,6 +107,7 @@ class DigitalModel:
             active_operations=active_operations,
             next_operations=next_operations,
             pending_decisions=pending_decisions,
+            operator_mode=self._operator_mode,
         )
         candidate.clock = event.time
         self._state = candidate
@@ -113,6 +115,8 @@ class DigitalModel:
         self._next_operations = next_operations
         self._pending_decisions = pending_decisions
         self._last_sequence = event.sequence
+        if event.kind == "RUN_STARTED":
+            self._operator_mode = event.payload.get("operator_mode")
 
     @staticmethod
     def _require_truck(state: YardSnapshot, truck_id: object) -> Truck:
@@ -201,6 +205,7 @@ class DigitalModel:
         active_operations: dict[str, str] | None = None,
         next_operations: dict[str, str] | None = None,
         pending_decisions: dict[str, dict[str, Any]] | None = None,
+        operator_mode: str | None = None,
     ) -> None:
         if active_operations is None:
             active_operations = {}
@@ -215,6 +220,13 @@ class DigitalModel:
             raise ValueError("impossible transition: day already ended")
 
         if kind == "RUN_STARTED":
+            mode = payload.get("operator_mode")
+            if mode is not None and mode not in {"synthetic_auto_accept", "synthetic_scripted"}:
+                raise ValueError("RUN_STARTED operator_mode is not supported")
+            if mode == "synthetic_scripted":
+                instance_id = payload.get("instance_id")
+                if not isinstance(instance_id, str) or not instance_id.startswith("validation-"):
+                    raise ValueError("synthetic scripted replay requires a validation instance_id")
             if state.running or state.ended:
                 raise ValueError("impossible transition: run already started or ended")
             state.running = True
@@ -483,11 +495,25 @@ class DigitalModel:
             return
 
         if kind == "OPERATOR_DECISION":
+            # Compare detached JSON values: event freezing changes list fields
+            # to tuples, while the recorded recommendation uses JSON lists.
+            payload = event.to_dict()["payload"]
             decision_value = payload["decision"]
-            if decision_value != "accept":
+            scripted = operator_mode == "synthetic_scripted"
+            if not scripted and (decision_value != "accept" or payload.get("operator_mode") == "synthetic_scripted"):
                 raise ValueError(
                     "operator decision must be accept before service can start"
                 )
+            if scripted:
+                if (payload.get("operator_mode") != "synthetic_scripted"
+                        or payload.get("origin") != "simulated"
+                        or type(payload.get("operator_payload_version")) is not int
+                        or payload["operator_payload_version"] != 1):
+                    raise ValueError("synthetic operator response requires its explicit mode, origin and payload version")
+                if decision_value not in {"accept", "reject", "override"}:
+                    raise ValueError("unknown synthetic operator response")
+                if not isinstance(payload.get("reason"), str) or not payload["reason"].strip():
+                    raise ValueError("synthetic operator response requires a reason")
             recommendation = payload.get("recommendation")
             selection = cls._selection_from_recommendation(recommendation)
             if selection is None:
@@ -502,10 +528,57 @@ class DigitalModel:
                 raise ValueError(
                     "operator decision does not match the recorded recommendation"
                 )
-            pending_decisions[truck_id] = {
-                **pending,
-                "accepted": True,
-            }
+            if scripted and recommendation != pending["recommendation"]:
+                raise ValueError("synthetic response changed the recorded recommendation")
+            if scripted and decision_value == "reject":
+                if "selection" not in payload or payload["selection"] is not None:
+                    raise ValueError("rejected recommendation must not contain a service selection")
+                pending_decisions.pop(truck_id)
+            else:
+                effective_selection = selection
+                if scripted:
+                    actual = payload.get("selection")
+                    effective_selection = cls._selection_from_recommendation({"selected": actual})
+                    if effective_selection is None:
+                        raise ValueError("accepted synthetic response requires a selection")
+                    if decision_value == "accept" and actual != recommendation["selected"]:
+                        raise ValueError("synthetic accept must preserve the recommended selection")
+                    if decision_value == "override":
+                        target = effective_selection["truck_id"]
+                        if target == truck_id:
+                            raise ValueError("synthetic override must select another admissible truck")
+                        candidates = recommendation.get("candidate_order")
+                        if not isinstance(candidates, (list, tuple)):
+                            raise ValueError("synthetic override requires recorded admissible candidates")
+                        offered = next((item for item in candidates
+                                        if isinstance(item, Mapping) and item.get("truck_id") == target), None)
+                        if offered is None or any(actual.get(key) != value for key, value in offered.items()):
+                            raise ValueError("synthetic override is outside the recorded admissible candidates")
+                        if any(offered.get(key) is not True for key in ("arrived", "document_ok", "eligible")):
+                            raise ValueError("synthetic override target violates an admissibility constraint")
+                        truck = cls._require_truck(state, target)
+                        mandatory_ids = {
+                            item["truck_id"] for item in candidates
+                            if isinstance(item, Mapping) and item.get("truck_id") in state.trucks
+                            and state.trucks[item["truck_id"]].priority == 2
+                        }
+                        if mandatory_ids and target not in mandatory_ids:
+                            raise ValueError("synthetic override violates mandatory-priority admission")
+                        resource = cls._require_resource(state, recommendation.get("resource_id"))
+                        operation = effective_selection["operation"]
+                        cls._validate_operation_resource_kind(operation, resource)
+                        if (not truck.arrived or not truck.document_ok or target in active_operations
+                                or truck.next_operation != operation or resource.status != "available"
+                                or truck.cargo_type not in resource.allowed_cargo_types
+                                or effective_selection["resource_id"] != resource.resource_id):
+                            raise ValueError("synthetic override violates a hard constraint in the observed state")
+                        if target in pending_decisions:
+                            raise ValueError("synthetic override target already has a pending command")
+                        pending_decisions.pop(truck_id)
+                        truck_id = target
+                pending_decisions[truck_id] = {
+                    **pending, "selection": effective_selection, "accepted": True,
+                }
             state.decisions.append(
                 {
                     "kind": kind,

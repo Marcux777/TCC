@@ -1031,7 +1031,7 @@ A valida\c{c}\~ao ser\'a conduzida em ambiente controlado, por meio de um simula
 
 O protocolo param\'etrico das Tabelas~\ref{tab:plano-fatorial}--\ref{tab:parametros-politica} concentra a gera\c{c}\~ao principal de cen\'arios. Cen\'arios descritivos foram gerados utilizando LLM como ferramenta de verbaliza\c{c}\~ao, condicionados a valida\c{c}\~ao determin\'istica de factibilidade matem\'atica \parencite{huangORLMCustomizableFramework2025a}.
 
-O desenho experimental separa duas dimens\~oes da taxonomia. \textbf{Regime de perturba\c{c}\~ao} designa o tipo de evento ou condi\c{c}\~ao operacional imposta ao cen\'ario; \textbf{estrato de congest\~ao} designa o n\'ivel de carga do sistema. O protocolo cobre quatro regimes de perturba\c{c}\~ao: opera\c{c}\~ao nominal, pico de congestionamento, indisponibilidade de recurso cr\'itico e mudan\c{c}a abrupta de prioridade. Cada simula\c{c}\~ao representa um dia, com $N \in \{60,120,180\}$ caminh\~oes, 1 a 3 moegas e 1 a 2 balan\c{c}as f\'isicas no pool compartilhado. Um processo n\~ao homog\^eneo condicionado a $N$ define dois picos de chegada; $N$ controla a escala e o perfil por bloco controla a distribui\c{c}\~ao temporal. Os tempos de processamento seguem distribui\c{c}\~oes triangulares calibradas por literatura de gr\~aos e pelo recorte operacional.
+O desenho experimental separa duas dimens\~oes da taxonomia. \textbf{Regime de perturba\c{c}\~ao} designa o tipo de evento ou condi\c{c}\~ao operacional imposta ao cen\'ario; \textbf{estrato de congest\~ao} designa o n\'ivel de carga do sistema. O protocolo cobre quatro regimes de perturba\c{c}\~ao: opera\c{c}\~ao nominal, pico de congestionamento, indisponibilidade de recurso cr\'itico e mudan\c{c}a abrupta de prioridade. Cada simula\c{c}\~ao representa um dia, com $N \in \{60,120,180\}$ caminh\~oes, 1 a 3 moegas e 1 a 2 balan\c{c}as f\'isicas no pool compartilhado. Um processo n\~ao homog\^eneo condicionado a $N$ define dois picos de chegada; $N$ controla a escala e o perfil por bloco controla a distribui\c{c}\~ao temporal. Os tempos de processamento seguem distribui\c{c}\~oes triangulares parametrizadas como hip\'oteses de engenharia, contextualizadas pela literatura de gr\~aos e pelo recorte operacional; n\~ao houve calibra\c{c}\~ao com uma s\'erie de dados reais.
 
 Cada configura\c{c}\~ao ter\'a \textbf{50 repeti\c{c}\~oes} com sementes controladas, permitindo compara\c{c}\~oes pareadas entre o artefato e as pol\'iticas de refer\^encia. A an\'alise reportar\'a medianas, intervalo interquartil, diferen\c{c}as pareadas, teste de Wilcoxon signed-rank, estimador de Hodges--Lehmann e tamanho de efeito pareado $r_{rb}$. O estudo piloto de sanidade executar\'a uma amostra de 20\% das configura\c{c}\~oes, selecionada antes do congelamento, para verificar m\'etricas, aus\^encia de comportamento degenerado e estabilidade do ganho pareado. O piloto n\~ao consome nem remove configura\c{c}\~oes: o experimento principal executa as 72 configura\c{c}\~oes completas (3.600 pares), e as configura\c{c}\~oes do piloto s\~ao reexecutadas no principal sob as mesmas sementes. O piloto n\~ao recalibra $H$, limiares $\tau$, pesos do escore fixo nem a regra de rejei\c{c}\~ao.
 
@@ -1097,6 +1097,10 @@ Antes do experimento principal, duas barreiras reduzem endogeneidade: valida\c{c
 
 O recibo real de valida\c{c}\~ao de face permanece em \texttt{PENDING}. Sua aprova\c{c}\~ao exige os registros humanos previstos na rubrica, vinculados \`a vers\~ao do documento, \`a configura\c{c}\~ao e \`as diverg\^encias da rodada. Recibos artificiais usados para testar o software s\~ao \textit{fixtures}: verificam o comportamento da barreira de valida\c{c}\~ao e n\~ao constituem aprova\c{c}\~ao real dos par\^ametros. Mesmo uma futura aprova\c{c}\~ao de face n\~ao substitui a revis\~ao humana de A2 nem comprova o comportamento de operadores.
 
+A unidade ex\'ogena \'e o dia definido por configura\c{c}\~ao, semente e tentativa de gera\c{c}\~ao. As cinco pol\'iticas consomem a mesma inst\^ancia aceita e suas vari\'aveis latentes; somente o simulador calcula esperas, throughput e outras sa\'idas. O plano prev\^e 3.600 inst\^ancias, 432.000 registros de caminh\~oes e 1.728.000 dura\c{c}\~oes potenciais nas quatro opera\c{c}\~oes. Essas contagens s\~ao derivadas do protocolo, n\~ao uma declara\c{c}\~ao de dados materializados nesta revis\~ao; a cardinalidade de disrup\c{c}\~oes varia com as realiza\c{c}\~oes ex\'ogenas.
+
+O congelamento conserva os seis payloads em Parquet e JSONL, manifesto, checksums e recibo de freeze. As chaves CRN n\~ao incluem a pol\'itica. Logs finais podem diferir: filas, in\'icios de servi\c{c}o e o in\'icio efetivo de uma falha n\~ao preemptiva dependem das decis\~oes. A igualdade exigida abrange entradas ex\'ogenas e regra de transforma\c{c}\~ao. Uma rejei\c{c}\~ao estrutural aborta a gera\c{c}\~ao e conserva sua evid\^encia; reamostrar exige a\c{c}\~ao expl\'icita, nova tentativa identificada e proveni\^encia, sem consultar ganhos de pol\'iticas. Repetir I/O n\~ao autoriza reamostrar dados nem trocar a semente.
+
 \subsection{Matriz param\'etrica, plausibilidade e inicializa\c{c}\~ao da simula\c{c}\~ao}
 \label{sec:input-modeling}
 
@@ -1122,7 +1126,7 @@ Chegadas & processo n\~ao homog\^eneo condicionado a $N$, com pesos 6, 3, 7 e 2 
 \addlinespace
 Tempos de servi\c{c}o & entrada $\operatorname{Tri}(2,4,7)$ min; pesagem $\operatorname{Tri}(3,5,8)$ min; descarga $\operatorname{Tri}(12,20,35)$ min & combina hip\'otese sint\'etica, decomposi\c{c}\~ao operacional e literatura de elevadores de gr\~aos \parencite{r.berrutoAnalyzingReceivingOperation2001a, boulandTruckQueuesCountry1967a} \\
 \addlinespace
-Perturba\c{c}\~oes e prioridade & prioridade mandat\'oria 15\%; bloqueio documental 3\%; falha cr\'itica 5\% por turno com dura\c{c}\~ao $\operatorname{Tri}(20,40,70)$ min; chuva em 10\% dos blocos de 30 min & gera estresse controlado sem colapso determin\'istico \\
+Perturba\c{c}\~oes e prioridade & prioridade mandat\'oria 15\%; bloqueio documental 3\%; falha base 5\% por turno fora do regime de falha cr\'itica, cuja ocorr\^encia no gargalo \'e for\c{c}ada; dura\c{c}\~ao $\operatorname{Tri}(20,40,70)$ min; chuva em 10\% dos blocos de 30 min & gera estresse controlado sem colapso determin\'istico \\
 \addlinespace
 Controles estruturais & janela ordin\'aria $H_0=6$ caminh\~oes por evento/recurso; buffer intermedi\'ario de 12 caminh\~oes por etapa & limita reordena\c{c}\~ao local e evita fila infinita mascarando congestionamento \\
 \addlinespace
@@ -1138,13 +1142,17 @@ vers\~ao congela tamb\'em os seguintes par\^ametros: bloqueios documentais s\~ao
 ap\'os $\operatorname{Tri}(30,60,120)$ minutos; a primeira moega \'e exposta \`a chuva
 quando $m\geq2$, enquanto a moega \'unica \'e coberta; o regime de pico usa pesos de
 chegada $(9,2,10,2)$; o regime de falha cr\'itica for\c{c}a uma falha no gargalo com in\'icio
-$U(240,480)$; o regime de mudan\c{c}a de prioridade ocorre em $U(240,480)$ e promove 10\%
-dos caminh\~oes \`a prioridade mandat\'oria; e 20\% dos caminh\~oes recebem prioridade
+$U(240,480)$; o regime de mudan\c{c}a de prioridade sorteia um instante em $U(240,480)$
+e seleciona $\lceil 0{,}10N\rceil$ caminh\~oes com chegada a partir dele, ordenados por
+chegada e identificador, para atribuir prioridade mandat\'oria. Caminh\~oes j\'a mandat\'orios
+podem ser selecionados, portanto n\~ao se prometem 10\% de novos mandat\'orios. Se faltarem
+candidatos, a inst\^ancia \'e rejeitada antes das pol\'iticas. Na distribui\c{c}\~ao inicial, 20\% recebem prioridade
 operacional intermedi\'aria $p=1$, al\'em dos 15\% com prioridade mandat\'oria $p=2$.
 
 As sem\^anticas operacionais ficam igualmente fixadas: o dia sofre corte duro aos 720
-minutos, com espera remanescente censurada nesse instante; chuva ocupa a mesma preced\^encia
-de falha/recupera\c{c}\~ao e libera\c{c}\~ao documental a de mudan\c{c}a de prioridade; o
+minutos, com espera remanescente censurada nesse instante; a ordem de eventos simult\^aneos \'e conclus\~ao de servi\c{c}o,
+recupera\c{c}\~ao, fim de chuva, falha, in\'icio de chuva, libera\c{c}\~ao documental,
+mudan\c{c}\~ao de prioridade e chegada, conforme a tabela versionada do executor; o
 buffer de 12 limita a fila a jusante antes de novo despacho; falhas s\~ao n\~ao preemptivas;
 a portaria possui um recurso fixo; e a penalidade de reordena\c{c}\~ao conta candidatos que
 chegaram antes do selecionado. Essas escolhas pertencem ao protocolo can\^onico deste TCC e
@@ -1152,7 +1160,7 @@ n\~ao podem ser alteradas pela implementa\c{c}\~ao experimental sem emenda docum
 
 Estudos cl\'assicos de elevadores americanos reportam \textbf{despejo isolado} na cava entre 4 e 10 minutos \parencite{r.berrutoAnalyzingReceivingOperation2001a, boulandTruckQueuesCountry1967a}. Aqui, descarga representa o \textbf{ciclo completo na moega}: (i)~\textbf{amostragem de qualidade} ($\approx 3$--$8$ min); (ii)~\textbf{posicionamento e despejo} ($\approx 4$--$10$ min, compat\'ivel com \parencite{r.berrutoAnalyzingReceivingOperation2001a, boulandTruckQueuesCountry1967a}); e (iii)~\textbf{gera\c{c}\~ao do ticket} ($\approx 2$--$5$ min). A moda de $20$ min representa o cen\'ario nominal; a cauda de $35$ min cobre atendimento sucessivo sem intervalo.
 
-\noindent\textbf{Crit\'erio de aceita\c{c}\~ao de cen\'ario.} Cada cen\'ario sint\'etico ser\'a verificado antes da execu\c{c}\~ao das pol\'iticas. O protocolo rejeita viola\c{c}\~oes estruturais, contagem diferente de $N$, recurso nulo em etapa obrigat\'oria, taxas ou eventos fora das faixas congeladas, colapso degenerado definido a priori ou tempos m\'edios fora de $\bar{t}_{\text{entrada}} < \bar{t}_{\text{pesagem}} < \bar{t}_{\text{descarga}}$. Cada rejei\c{c}\~ao registra semente, motivo e nova amostragem. H1 e desempenho relativo nunca justificam rejei\c{c}\~ao.
+\noindent\textbf{Crit\'erio de aceita\c{c}\~ao de cen\'ario.} Cada cen\'ario sint\'etico ser\'a verificado antes da execu\c{c}\~ao das pol\'iticas. O protocolo rejeita viola\c{c}\~oes estruturais, contagem diferente de $N$, recurso nulo em etapa obrigat\'oria, taxas ou eventos fora das faixas congeladas, colapso degenerado definido a priori ou tempos m\'edios fora de $\bar{t}_{\text{entrada}} < \bar{t}_{\text{pesagem}} < \bar{t}_{\text{descarga}}$. Cada rejei\c{c}\~ao registra semente, tentativa e motivo; uma nova amostragem, quando solicitada explicitamente, recebe proveni\^encia pr\'opria. H1 e desempenho relativo nunca justificam rejei\c{c}\~ao.
 
 O experimento principal fixa \textbf{50 repeti\c{c}\~oes} por configura\c{c}\~ao para estabilizar medianas e compara\c{c}\~oes pareadas n\~ao param\'etricas, sem depender do piloto. O dimensionamento estat\'istico usa como unidade efetiva o par \texttt{cen\'ario + semente}, n\~ao a semente isolada. Assim, ap\'os a estratifica\c{c}\~ao nominal, o estrato de m\'edia congest\~ao possui 600 pares e o de alta congest\~ao possui 2.800 pares; a carga baixa, com 200 pares, permanece como controle operacional.
 
@@ -1297,7 +1305,7 @@ A unidade de an\'alise fica congelada: decis\~oes individuais alimentam auditori
 
 Uma amostra de $\max(50,\;10\%)$ das decis\~oes do artefato por cen\'ario ser\'a auditada por rubrica fechada, al\'em da checagem autom\'atica de 100\% dos logs. A rubrica verifica campos obrigat\'orios, regra ativada, quebra de FIFO, a\c{c}\~ao humana admiss\'ivel e reconstru\c{c}\~ao do estado. Quando houver dois avaliadores, ser\'a reportado kappa de Cohen; concord\^ancia abaixo de 0,60 exigir\'a revis\~ao da rubrica antes do congelamento final. Essa revis\~ao humana permanece pendente, sem pareceres ou concord\^ancia observada a reportar.
 
-Na implementa\c{c}\~ao atual, o DES emite \texttt{OPERATOR\_DECISION} com \texttt{accept} automaticamente ap\'os a recomenda\c{c}\~ao. Trata-se de um operador sint\'etico: o encadeamento recomenda\c{c}\~ao--aceita\c{c}\~ao--servi\c{c}o pode ser verificado por replay, mas n\~ao houve participa\c{c}\~ao humana nessa decis\~ao. O teste que introduz \texttt{reject} verifica a recusa de um evento n\~ao suportado pelo replay; ele n\~ao demonstra um fluxo operacional de rejei\c{c}\~ao. Rejei\c{c}\~ao pelo operador e substitui\c{c}\~ao por outra escolha admiss\'ivel ainda n\~ao foram demonstradas no DES. O requisito de interven\c{c}\~ao autorizada continua no escopo do artefato e depende de implementa\c{c}\~ao e avalia\c{c}\~ao pr\'oprias.
+Na matriz cient\'ifica, o DES emite \texttt{OPERATOR\_DECISION} com \texttt{accept} automaticamente ap\'os a recomenda\c{c}\~ao. Trata-se de um operador sint\'etico: o encadeamento recomenda\c{c}\~ao--aceita\c{c}\~ao--servi\c{c}o pode ser verificado por replay, mas n\~ao houve participa\c{c}\~ao humana nessa decis\~ao. Uma entrada separada, restrita a inst\^ancias de valida\c{c}\~ao, exercita respostas sint\'eticas de aceitar, rejeitar e substituir por outro candidato admiss\'ivel. Esses ensaios registram origem simulada, motivo, recomenda\c{c}\~ao original e escolha efetiva; seus testes persistem e releem JSONL, reconstroem o estado final e impedem servi\c{c}o para uma escolha inadmiss\'ivel. Eles n\~ao integram as 18.000 execu\c{c}\~oes previstas nem demonstram participa\c{c}\~ao humana. A integra\c{c}\~ao com pessoas autorizadas e a avalia\c{c}\~ao de sua interven\c{c}\~ao permanecem pendentes.
 
 Os registros de aceita\c{c}\~ao distinguem, portanto, quatro evid\^encias: aprova\c{c}\~ao humana de face dos par\^ametros; ensaios sint\'eticos de decis\~ao do operador; auditoria autom\'atica da estrutura de A2; e revis\~ao humana da amostra A2. Sucesso em uma dessas etapas n\~ao promove as demais a conclu\'idas. As duas etapas humanas permanecem pendentes nesta vers\~ao.
 
