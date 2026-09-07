@@ -204,12 +204,17 @@
   (A1) e rastreabilidade integral das decis\~oes e interven\c{c}\~oes humanas (A2). Esta
   etapa (TCC~I) entrega a modelagem formal, o protocolo experimental completo, os artefatos
   preliminares de reprodutibilidade e os comparadores congelados; a execu\c{c}\~ao dos experimentos
-  comparativos \'e prevista para o TCC~II.
+  comparativos \'e prevista para o TCC~II. Como camada de representa\c{c}\~ao, ser\'a
+  desenvolvido no Unreal Engine~5.8 um \textbf{modelo digital} tridimensional do p\'atio,
+  alimentado por exporta\c{c}\~oes e replays do simulador. O termo g\^emeo digital n\~ao \'e
+  adotado, pois n\~ao existe, nesta etapa, um ativo f\'isico individual pareado nem
+  sincroniza\c{c}\~ao bidirecional em tempo real.
 
   \vspace{\onelineskip}
   \noindent
   \textbf{Palavras-chave}: despacho online. p\'atios agroindustriais. simula\c{c}\~ao de
-  eventos discretos. sistemas de apoio \`a decis\~ao. \textit{scheduling} sob incerteza.
+  eventos discretos. modelo digital. Unreal Engine. sistemas de apoio \`a decis\~ao.
+  \textit{scheduling} sob incerteza.
 \end{resumo}
 
 \begin{resumo}[Abstract]
@@ -232,12 +237,16 @@
   constraints (A1) and full traceability of decisions and human interventions (A2). This
   TCC~I stage delivers the formal model, the experimental protocol, preliminary
   reproducibility artifacts and frozen comparators; the main comparative experiments are
-  planned for TCC~II.
+  planned for TCC~II. A three-dimensional \textbf{digital model} of the yard will be
+  developed in Unreal Engine~5.8 as a representation layer fed by simulator exports and
+  replays. The term digital twin is not used because this stage has neither a paired
+  individual physical asset nor real-time bidirectional synchronization.
 
   \vspace{\onelineskip}
   {\RaggedRight
   \textbf{Keywords}: online dispatching. agro-industrial yards.
-  discrete-event simulation. decision-support systems. scheduling under uncertainty.
+  discrete-event simulation. digital model. Unreal Engine. decision-support systems.
+  scheduling under uncertainty.
   \par}
 \end{resumo}
 
@@ -270,6 +279,15 @@ O problema de pesquisa pode ser formulado nos seguintes termos: como modelar e a
 
 A pesquisa contribui ao transformar uma decis\~ao operacional recorrente, muitas vezes t\'acita, em um objeto computacional model\'avel e avali\'avel. O enquadramento segue Design Science Research, pois o resultado esperado \'e um artefato verific\'avel, n\~ao apenas uma descri\c{c}\~ao do processo \parencite{hevnerDesignScienceInformation2004a, peffersDesignScienceResearch2007aa}. No plano operacional, a contribui\c{c}\~ao n\~ao \'e automatizar o p\'atio, mas especificar uma recomenda\c{c}\~ao rastre\'avel para atendimentos sob restri\c{c}\~oes duras. Neste texto, \textbf{rastreabilidade} \'e o registro completo da decis\~ao; \textbf{auditabilidade}, a possibilidade de reconstru\c{c}\~ao posterior; \textbf{justificativa leg\'ivel}, a explica\c{c}\~ao compreens\'ivel da regra acionada; e \textbf{governan\c{c}a}, o controle humano autorizado dentro das restri\c{c}\~oes r\'igidas.
 
+Neste trabalho, \textbf{modelo digital} designa a representa\c{c}\~ao computacional do p\'atio
+e de seus estados simulados. Essa representa\c{c}\~ao ser\'a produzida no Unreal Engine~5.8
+para visualiza\c{c}\~ao tridimensional e replay de eventos, enquanto o simulador de eventos
+discretos permanece a fonte das transi\c{c}\~oes e das m\'etricas experimentais. A
+classifica\c{c}\~ao como \textbf{g\^emeo digital} seria inadequada: a literatura distingue
+modelo, sombra e g\^emeo pelo fluxo de dados entre entidade f\'isica e digital, e as
+defini\c{c}\~oes t\'ecnicas atuais exigem conex\~ao e sincroniza\c{c}\~ao com uma contraparte
+f\'isica identificada \parencite{kritzingerDigitalTwinManufacturing2018,nistDigitalTwinsEssentialElements2026,isoSmartManufacturingWhitePaper2021}.
+
 \section{Objetivos}
 
 \subsection{Objetivo geral}
@@ -281,6 +299,7 @@ Projetar e avaliar um artefato computacional, no contexto estudado, para apoio \
   \item Definir vari\'aveis, restri\c{c}\~oes r\'igidas e crit\'erios de decis\~ao coerentes com a opera\c{c}\~ao real.
   \item Especificar o motor de decis\~ao proposto, incluindo filtro de factibilidade, regra de ranking e registro audit\'avel.
   \item Construir um prot\'otipo inicial do motor de decis\~ao e seu ambiente de simula\c{c}\~ao.
+  \item Desenvolver no Unreal Engine~5.8 um modelo digital tridimensional do p\'atio para visualiza\c{c}\~ao e replay dos estados produzidos pelo simulador.
   \item Comparar o comportamento do motor com pol\'iticas de refer\^encia est\'aticas e din\^amicas plaus\'iveis.
   \item Avaliar o artefato com m\'etricas de espera, throughput, makespan, estabilidade, auditabilidade da decis\~ao e estimativa explorat\'oria de emiss\~oes de $\mathrm{CO_2}$ por marcha lenta.
   \item Discutir riscos operacionais, limites da modelagem e condi\c{c}\~oes de ado\c{c}\~ao pr\'atica.
@@ -308,6 +327,24 @@ A segunda frente explica por que o plano precisa mudar durante a opera\c{c}\~ao.
 A terceira frente \'e metodol\'ogica. O Design Science Research (DSR) \'e adequado porque o trabalho n\~ao apenas descreve uma opera\c{c}\~ao: ele especifica um artefato computacional e define como avali\'a-lo. \textcite{hevnerDesignScienceInformation2004a} tratam DSR como constru\c{c}\~ao e avalia\c{c}\~ao de artefatos relevantes para problemas organizacionais; \textcite{peffersDesignScienceResearch2007aa} detalham etapas de identifica\c{c}\~ao do problema, objetivos, desenvolvimento, demonstra\c{c}\~ao e avalia\c{c}\~ao. Esse enquadramento sustenta a passagem de uma decis\~ao operacional pouco formalizada para um motor com requisitos, regras, logs e crit\'erios de sucesso verific\'aveis. A tradi\c{c}\~ao de sistemas de apoio \`a decis\~ao orienta a sa\'ida esperada: recomenda\c{c}\~ao justific\'avel, audit\'avel e pass\'ivel de interven\c{c}\~ao pelo operador \parencite{vanderheydenDecisionSupportSystem1985a, mardanehDecisionSupportSystem2021a}.
 
 Por fim, a literatura de gr\~aos fixa a sem\^antica do dom\'inio. Recebimento, mistura de cargas, filas em elevadores e simula\c{c}\~ao de terminais graneleiros mostram que a decis\~ao de despacho precisa respeitar fluxo f\'isico, elegibilidade de recursos, preced\^encias, falhas, bloqueios documentais e comportamento de falha segura. Esse perfil reduz a utilidade de um modelo puramente preditivo: antes de ranquear prioridade ou espera, a decis\~ao precisa preservar factibilidade operacional. A literatura de filas e simula\c{c}\~ao graneleira sustenta modelos discretos para representar gargalos, mistura de cargas e fluxos de recebimento \parencite{boulandTruckQueuesCountry1967a, leblancQueuingModelSimulation1978a, r.berrutoAnalyzingReceivingOperation2001a, t.j.herrmanUseSimulationModel2002a, m.e.a.inglesEffectsGrainreceivingSystem2006a, silvaSimulationToolsetModeling2012a, turnerDiscreteEventSimulation2019a, fioroniFarmPortSimulation2015a}; scheduling din\^amico e rescheduling justificam comparadores din\^amicos al\'em de regras est\'aticas \parencite{langeDispatchingStrategiesDrayage2018a, dasilvaIntegrationMachineLearning2023}. Portos e cross-docking entram como transfer\^encia anal\'ogica controlada, sem substituir a valida\c{c}\~ao no contexto agroindustrial.
+
+\section{Modelo digital e fronteira com g\^emeos digitais}
+
+\textcite{kritzingerDigitalTwinManufacturing2018} distinguem \textit{digital model},
+\textit{digital shadow} e \textit{digital twin} segundo a integra\c{c}\~ao dos fluxos de
+dados entre o sistema f\'isico e sua representa\c{c}\~ao. O modelo digital pode representar
+estrutura e comportamento sem atualiza\c{c}\~ao autom\'atica pelo ativo f\'isico; a sombra
+digital pressup\~oe fluxo autom\'atico do f\'isico para o digital; e o g\^emeo acrescenta
+integra\c{c}\~ao autom\'atica bidirecional. NIST e ISO tamb\'em caracterizam o g\^emeo pela
+conex\~ao com uma contraparte f\'isica e pela sincroniza\c{c}\~ao ao longo do ciclo de vida
+\parencite{nistDigitalTwinsEssentialElements2026,isoSmartManufacturingWhitePaper2021}.
+
+O artefato visual deste TCC \'e, portanto, um \textbf{modelo digital}. Ele representar\'a no
+Unreal Engine~5.8 o leiaute, os caminh\~oes, os recursos, as filas e os eventos de uma
+inst\^ancia sint\'etica. Seus estados ser\~ao recebidos do simulador por arquivos de
+interc\^ambio e replay; n\~ao haver\'a telemetria de um p\'atio real, pareamento individual
+com um ativo operacional nem comando de retorno para esse ativo. Essa fronteira evita que
+fidelidade visual seja confundida com valida\c{c}\~ao operacional.
 
 \section{Protocolo de revisão de literatura}\label{sec:protocolo-revisao}
 A revis\~ao sistematizada cobriu orquestra\c{c}\~ao de caminh\~oes, aloca\c{c}\~ao de recursos, simula\c{c}\~ao e replanejamento em terminais, p\'atios, cross-docking e contextos log\'isticos an\'alogos. As bases consultadas foram IEEE Xplore, Web of Science e Scopus, com snowballing retrospectivo via Zotero. As buscas ocorreram em 27 de fevereiro de 2026; em maio de 2026, uma rodada de cita\c{c}\~oes futuras incorporou trabalhos recentes ap\'os o fechamento inicial do corpus.
@@ -542,6 +579,24 @@ Governan\c{c}a humana & interven\c{c}\~ao autorizada e registrada & permite sobr
 \caption[Taxonomia de restri\c{c}\~oes do artefato]{Taxonomia enxuta das restri\c{c}\~oes usadas pelo artefato. Os eventos que atualizam estado ficam consolidados na Tabela~\ref{tab:eventos-des}.}
 \label{tab:taxonomia-restricoes-artefato}
 \end{table}
+
+\subsection{Arquitetura do modelo digital em Unreal Engine}
+
+O modelo digital ser\'a implementado no \textbf{Unreal Engine~5.8} como camada de
+apresenta\c{c}\~ao desacoplada da infer\^encia experimental. A cada execu\c{c}\~ao, o
+simulador Python produzir\'a um fluxo versionado de estados e eventos com tempo simulado,
+identificador do caminh\~ao, etapa, recurso, posi\c{c}\~ao l\'ogica, estado da fila,
+perturba\c{c}\~ao e decis\~ao registrada. O Unreal importar\'a esse fluxo para animar o
+leiaute e permitir pausa, avan\c{c}o e inspe\c{c}\~ao do replay. O c\'alculo de H1, A1 e A2
+continuar\'a no ambiente experimental, a partir dos logs can\^onicos; o modelo digital n\~ao
+recalcula m\'etricas nem altera resultados.
+
+O projeto Unreal j\'a est\'a inicializado na vers\~ao~5.8, mas a cena de dom\'inio, os ativos,
+o importador de eventos e os controles de replay ainda constituem trabalho do TCC~II. A
+interface m\'inima entre simulador e modelo digital ser\'a JSONL com esquema versionado e
+identifica\c{c}\~ao de cen\'ario, semente, pol\'itica e checksum dos par\^ametros. Essa
+separa\c{c}\~ao permite validar os dados antes da visualiza\c{c}\~ao e evita acoplamento do
+motor de despacho ao motor gr\'afico.
 
 \section{Modelagem do despacho online}\label{ch:modelagem}
 A modelagem delimita o problema como \textbf{despacho online por recurso liberado com horizonte curto}: a cada libera\c{c}\~ao de recurso, o artefato escolhe o pr\'oximo caminh\~ao fact\'ivel sob restri\c{c}\~oes operacionais. Sejam $T$ o conjunto de caminh\~oes, $R$ o conjunto de recursos operacionais, $E$ o conjunto de eventos disruptivos, $K$ o conjunto de instantes de decis\~ao e $O = \{1,2,3,4\}$ o conjunto ordenado de opera\c{c}\~oes do p\'atio: 1 = entrada, 2 = pesagem inicial, 3 = descarga e 4 = pesagem final. Cada recurso $r \in R$ atende um subconjunto de opera\c{c}\~oes $O(r) \subseteq O$, e cada caminh\~ao $i \in T$ possui hor\'ario de chegada, tipo de carga, prioridade, situa\c{c}\~ao documental e recursos eleg\'iveis por opera\c{c}\~ao.
@@ -1030,7 +1085,7 @@ Alta congest\~ao & $\rho \geq 1{,}111$ & demais combina\c{c}\~oes do plano fator
 \label{tab:estratos-congestao-n}
 \end{table}
 
-Antes do congelamento principal, duas barreiras reduzem endogeneidade: valida\c{c}\~ao de face dos par\^ametros, cen\'arios e trilhas sint\'eticas exemplares; e checagem de plausibilidade param\'etrica, com origem dominante indicada para cada faixa. A factibilidade e robustez dos par\^ametros sint\'eticos foram submetidas \`a valida\c{c}\~ao de face por pares independentes em rodada cega. Diverg\^encias geram ajuste documentado ou justificativa de manuten\c{c}\~ao, sem recalibra\c{c}\~ao ap\'os a abertura dos resultados comparativos.
+Antes do experimento principal, duas barreiras reduzem endogeneidade: valida\c{c}\~ao de face dos par\^ametros, cen\'arios e trilhas sint\'eticas exemplares; e checagem de plausibilidade param\'etrica, com origem dominante indicada para cada faixa. A valida\c{c}\~ao de face ainda ser\'a realizada com a orientadora e, quando dispon\'ivel, especialista do dom\'inio, mediante rubrica e registro nominal da rodada. At\'e essa evid\^encia existir, o texto n\~ao trata os par\^ametros como validados externamente. Diverg\^encias gerar\~ao emenda documentada ou justificativa de manuten\c{c}\~ao antes da abertura dos resultados comparativos; depois dela, n\~ao haver\'a recalibra\c{c}\~ao.
 
 \subsection{Matriz param\'etrica, plausibilidade e inicializa\c{c}\~ao da simula\c{c}\~ao}
 \label{sec:input-modeling}
@@ -1067,6 +1122,23 @@ Sementes e reprodutibilidade & sementes 101--150, com 50 repeti\c{c}\~oes por co
 \caption[Matriz param\'etrica e de plausibilidade]{Matriz param\'etrica enxuta do simulador e das hip\'oteses congeladas.}
 \label{tab:parametros-experimentais}
 \end{table}
+
+Para eliminar graus de liberdade que permaneciam impl\'icitos na implementa\c{c}\~ao, esta
+vers\~ao congela tamb\'em os seguintes par\^ametros: bloqueios documentais s\~ao liberados
+ap\'os $\operatorname{Tri}(30,60,120)$ minutos; a primeira moega \'e exposta \`a chuva
+quando $m\geq2$, enquanto a moega \'unica \'e coberta; o regime de pico usa pesos de
+chegada $(9,2,10,2)$; o regime de falha cr\'itica for\c{c}a uma falha no gargalo com in\'icio
+$U(240,480)$; o regime de mudan\c{c}a de prioridade ocorre em $U(240,480)$ e promove 10\%
+dos caminh\~oes \`a prioridade mandat\'oria; e 20\% dos caminh\~oes recebem prioridade
+operacional intermedi\'aria $p=1$, al\'em dos 15\% com prioridade mandat\'oria $p=2$.
+
+As sem\^anticas operacionais ficam igualmente fixadas: o dia sofre corte duro aos 720
+minutos, com espera remanescente censurada nesse instante; chuva ocupa a mesma preced\^encia
+de falha/recupera\c{c}\~ao e libera\c{c}\~ao documental a de mudan\c{c}a de prioridade; o
+buffer de 12 limita a fila a jusante antes de novo despacho; falhas s\~ao n\~ao preemptivas;
+a portaria possui um recurso fixo; e a penalidade de reordena\c{c}\~ao conta candidatos que
+chegaram antes do selecionado. Essas escolhas pertencem ao protocolo can\^onico deste TCC e
+n\~ao podem ser alteradas pela implementa\c{c}\~ao experimental sem emenda documentada.
 
 Estudos cl\'assicos de elevadores americanos reportam \textbf{despejo isolado} na cava entre 4 e 10 minutos \parencite{r.berrutoAnalyzingReceivingOperation2001a, boulandTruckQueuesCountry1967a}. Aqui, descarga representa o \textbf{ciclo completo na moega}: (i)~\textbf{amostragem de qualidade} ($\approx 3$--$8$ min); (ii)~\textbf{posicionamento e despejo} ($\approx 4$--$10$ min, compat\'ivel com \parencite{r.berrutoAnalyzingReceivingOperation2001a, boulandTruckQueuesCountry1967a}); e (iii)~\textbf{gera\c{c}\~ao do ticket} ($\approx 2$--$5$ min). A moda de $20$ min representa o cen\'ario nominal; a cauda de $35$ min cobre atendimento sucessivo sem intervalo.
 
@@ -1212,11 +1284,18 @@ Uma amostra de $\max(50,\;10\%)$ das decis\~oes do artefato por cen\'ario ser\'a
 \subsection{Disponibilidade de Dados e Código}\label{sec:disponibilidade-dados-codigo}
 Os dados sint\'eticos, sementes, inst\^ancias, logs agregados, sa\'idas experimentais, scripts de an\'alise e c\'odigo-fonte customizado necess\'arios para reproduzir os resultados da etapa experimental posterior ser\~ao disponibilizados em reposit\'orio p\'ublico ou m\'idia institucional no momento da entrega final, sujeitos a restri\c{c}\~oes institucionais. A vers\~ao utilizada na an\'alise ser\'a identificada por URL, tag ou hash de commit, com instru\c{c}\~oes de execu\c{c}\~ao, vers\~oes de depend\^encias e ambiente computacional.
 
+Este reposit\'orio do TCC, em especial \texttt{main.tex} e \texttt{refs.bib}, \'e a
+\textbf{fonte can\^onica} da terminologia, dos par\^ametros, das tabelas e do protocolo.
+Reposit\'orios de implementa\c{c}\~ao podem manter c\'opias geradas para reprodu\c{c}\~ao,
+mas n\~ao podem redefinir o protocolo. Cada execu\c{c}\~ao dever\'a registrar o hash da
+vers\~ao can\^onica usada, o checksum dos par\^ametros e o esquema dos eventos exportados ao
+modelo digital.
+
 Dados reais, documentos sens\'iveis ou informa\c{c}\~oes operacionais identific\'aveis n\~ao ser\~ao inclu\'idos no pacote aberto. Quando algum artefato n\~ao puder ser disponibilizado integralmente, ser\'a fornecida vers\~ao sint\'etica ou anonimizada com a mesma estrutura de campos e diferen\c{c}as declaradas. At\'e a libera\c{c}\~ao final do reposit\'orio congelado, os materiais de reprodu\c{c}\~ao ficam dispon\'iveis mediante solicita\c{c}\~ao razo\'avel ao autor.
 
 \chapter{Resultados Parciais}
 
-Nesta etapa, ``resultado'' n\~ao significa ainda superioridade estat\'istica do motor. O resultado do TCC~I \'e a prepara\c{c}\~ao verific\'avel do experimento: recorte operacional definido, restri\c{c}\~oes r\'igidas explicitadas, pol\'iticas de refer\^encia congeladas, par\^ametros sint\'eticos justificados, m\'etricas selecionadas e protocolo estat\'istico descrito. A compara\c{c}\~ao principal de desempenho permanece reservada ao TCC~II; o que se demonstra aqui \'e viabilidade t\'ecnica e maturidade metodol\'ogica para execut\'a-la.
+Nesta etapa, ``resultado'' n\~ao significa ainda superioridade estat\'istica do motor. O resultado do TCC~I \'e a prepara\c{c}\~ao verific\'avel do experimento: recorte operacional definido, restri\c{c}\~oes r\'igidas explicitadas, pol\'iticas de refer\^encia congeladas, par\^ametros sint\'eticos justificados, m\'etricas selecionadas e protocolo estat\'istico descrito. A compara\c{c}\~ao principal de desempenho permanece reservada ao TCC~II; o que se demonstra aqui \'e a exist\^encia de uma base implementada e test\'avel, ainda sujeita \`a execu\c{c}\~ao confirmat\'oria e \`a valida\c{c}\~ao de face previstas.
 
 \section{Dados, tratamento e preparação experimental}
 
@@ -1224,7 +1303,7 @@ Os dados principais s\~ao sint\'eticos, parametrizados e controlados. Essa escol
 
 O tratamento experimental j\'a est\'a especificado no Cap\'itulo~\ref{ch:metodologia}: plano fatorial, par\^ametros sint\'eticos, hip\'oteses congeladas, plausibilidade dos par\^ametros, limiares da pol\'itica e pol\'iticas de compara\c{c}\~ao. Nesta etapa, o resultado parcial relevante \'e a consolida\c{c}\~ao desse protocolo em uma trilha reprodut\'ivel, na qual cada dia simulado possui cen\'ario, semente, pol\'itica e sa\'idas agregadas identific\'aveis.
 
-O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, ser\'a executado no TCC~II. No entanto, em alinhamento com as diretrizes do Design Science Research, a viabilidade t\'ecnica do motor proposto j\'a foi demonstrada por \textit{prova por constru\c{c}\~ao}: o artefato foi instanciado preliminarmente em reposit\'orios adjacentes de desenvolvimento e valida\c{c}\~ao. A s\'intese detalhada desses resultados t\'ecnicos foi deslocada para a Tabela~\ref{tab:resultados-repos-adjacentes}, no Ap\^endice~\ref{apx:materiais-contextuais}. No corpo do cap\'itulo, o ponto substantivo \'e que a etapa atual j\'a possui prot\'otipo audit\'avel, benchmark RHFS validado, artefato congelado com trilha de reprodu\c{c}\~ao e revis\~ao sistematizada reconciliada; nenhum desses itens, isoladamente, substitui o teste confirmat\'orio de H1 \parencite{hevnerDesignScienceInformation2004a}.
+O experimento principal comparativo, descrito nas matrizes da Se\c{c}\~ao~4.2, ser\'a executado no TCC~II. O motor e o simulador possuem implementa\c{c}\~ao preliminar em reposit\'orio adjacente, com testes automatizados e execu\c{c}\~oes parciais de desenvolvimento; isso demonstra implementabilidade, n\~ao desempenho confirmat\'orio. Um auditor independente dos artefatos persistidos verifica A1, completude estrutural de A2, hashes e consist\^encia entre CSV e JSONL; sua aplica\c{c}\~ao \`a matriz completa e a inspe\c{c}\~ao humana da amostra A2 ainda precisam ser realizadas. Tamb\'em permanecem pendentes as 18.000 execu\c{c}\~oes e a an\'alise de H1. O projeto Unreal Engine~5.8 est\'a inicializado, mas ainda n\~ao cont\'em a cena de dom\'inio nem o replay integrado. A Tabela~\ref{tab:resultados-repos-adjacentes}, no Ap\^endice~\ref{apx:materiais-contextuais}, registra apenas evid\^encias auxiliares e seus limites \parencite{hevnerDesignScienceInformation2004a}.
 
 \section{Matriz de resultados prevista para o TCC~II}
 
@@ -1293,6 +1372,7 @@ O cronograma traduz o protocolo em uma sequ\^encia de trabalho para o TCC~II. A 
 \midrule
 Fechamento de escopo, literatura e protocolo & \timeline & \timeline &  &  &  &  &  \\
 Implementa\c{c}\~ao do simulador, logs e validadores &  & \timeline & \timeline & \timeline &  &  &  \\
+Desenvolvimento do modelo digital no Unreal Engine~5.8 &  & \timeline & \timeline & \timeline & \timeline &  &  \\
 Gera\c{c}\~ao de cen\'arios, piloto e congelamento de par\^ametros &  &  & \timeline & \timeline &  &  &  \\
 Execu\c{c}\~ao do experimento principal &  &  &  &  & \timeline & \timeline &  \\
 An\'alise estat\'istica, sensibilidade e auditoria dos logs &  &  &  &  &  & \timeline & \timeline \\
@@ -1309,6 +1389,13 @@ Mesmo com protocolo fechado, o desenho experimental ainda pode falhar em pontos 
 
 A validade externa delimita o alcance dos resultados: cen\'arios sint\'eticos calibrados sustentam coer\^encia, factibilidade e desempenho comparativo em ambiente controlado; uma cooperativa espec\'ifica exige dados locais. Valida\c{c}\~ao de face, plausibilidade param\'etrica e registro de diverg\^encias conectam o modelo sint\'etico ao dom\'inio operacional.
 
+O modelo digital em Unreal Engine introduz uma amea\c{c}a adicional de validade de
+representa\c{c}\~ao: anima\c{c}\~ao visual plaus\'ivel pode sugerir fidelidade operacional que
+os dados sint\'eticos n\~ao sustentam. A mitiga\c{c}\~ao consiste em reproduzir somente
+estados presentes no log can\^onico, validar o esquema de interc\^ambio e identificar a cena
+como modelo digital de pesquisa. Sem telemetria de ativo f\'isico e sincroniza\c{c}\~ao
+bidirecional, nenhum resultado ser\'a descrito como valida\c{c}\~ao de g\^emeo digital.
+
 A discretiza\c{c}\~ao de $\rho$ implica que o estrato de m\'edia congest\~ao repousa sobre um \'unico n\'ivel nominal de carga ($\rho=0{,}833$); a evid\^encia de H1 nesse estrato apoia-se na varia\c{c}\~ao do recurso ligante entre as tr\^es configura\c{c}\~oes, e n\~ao em uma faixa cont\'inua de carga. A extrapola\c{c}\~ao para cargas intermedi\'arias n\~ao amostradas ($0{,}85 \leq \rho < 1{,}11$) permanece fora do escopo confirmat\'orio.
 
 A s\'intese de cen\'arios adiciona risco de contamina\c{c}\~ao sem\^antica entre descri\c{c}\~ao operacional, estrutura formal e comportamento simulado. Um cen\'ario pode soar plaus\'ivel e ainda assim representar outro problema quando convertido em vari\'aveis, restri\c{c}\~oes e eventos. A mitiga\c{c}\~ao exige estruturas formais, valida\c{c}\~ao determin\'istica, execu\c{c}\~ao no simulador, rejei\c{c}\~ao de inst\^ancias inconsistentes e logs de origem. Se logs reais forem incorporados no futuro, o protocolo dever\'a acrescentar matriz de depend\^encias, cobertura de segmentos raros e avalia\c{c}\~ao de risco de privacidade.
@@ -1322,13 +1409,13 @@ Tamb\'em h\'a amea\c{c}a de validade estat\'istica: a compara\c{c}\~ao envolve m
 \chapter{Conclusão}\label{ch:conclusao}
 Este trabalho parte de uma decis\~ao simples de enunciar e dif\'icil de executar: quando um recurso fica livre, qual caminh\~ao deve ser atendido a seguir? Ao formular essa escolha como despacho online sob restri\c{c}\~oes, a pesquisa transforma uma pr\'atica operacional muitas vezes t\'acita em artefato computacional model\'avel, audit\'avel e avali\'avel. A revis\~ao de literatura aproxima o problema de truck appointment systems, scheduling sob incerteza e replanejamento em tempo real, mas o contexto agroindustrial imp\~oe condi\c{c}\~oes pr\'oprias: falha segura, bloqueios documentais, chuva, compatibilidade carga--recurso, rastreabilidade e controle humano.
 
-O TCC~I consolida tr\^es bases para a etapa experimental. A primeira \'e a modelagem formal do problema (Se\c{c}\~ao~\ref{ch:modelagem}), com $S_k$, $C_{k,r}$, $h_{k,r}(i)$ e execu\c{c}\~ao determin\'istica. A segunda \'e o desenho experimental (Cap\'itulo~\ref{ch:metodologia}), com pol\'iticas congeladas, regimes de perturba\c{c}\~ao, estratos de congest\~ao, m\'etricas, limiares de H1/A1/A2 e protocolo estat\'istico. A terceira \'e o plano de reprodutibilidade (Se\c{c}\~ao~\ref{sec:disponibilidade-dados-codigo}), com dados sint\'eticos, sementes, logs, scripts de an\'alise e identifica\c{c}\~ao da vers\~ao por URL, tag ou hash de commit.
+O TCC~I consolida quatro bases para a etapa experimental. A primeira \'e a modelagem formal do problema (Se\c{c}\~ao~\ref{ch:modelagem}), com $S_k$, $C_{k,r}$, $h_{k,r}(i)$ e execu\c{c}\~ao determin\'istica. A segunda \'e o desenho experimental (Cap\'itulo~\ref{ch:metodologia}), com pol\'iticas congeladas, regimes de perturba\c{c}\~ao, estratos de congest\~ao, m\'etricas, limiares de H1/A1/A2 e protocolo estat\'istico. A terceira \'e o plano de reprodutibilidade (Se\c{c}\~ao~\ref{sec:disponibilidade-dados-codigo}), com dados sint\'eticos, sementes, logs, scripts de an\'alise e identifica\c{c}\~ao da vers\~ao por URL, tag ou hash de commit. A quarta \'e a arquitetura do modelo digital no Unreal Engine~5.8, que transforma logs do simulador em visualiza\c{c}\~ao e replay sem assumir o papel de g\^emeo digital.
 
 H1 ser\'a verificada no TCC~II: reduzir em pelo menos 15\% a mediana pareada do p95 da espera acumulada em fila, nos estratos de m\'edia e alta congest\~ao, sem violar a margem protetiva de throughput. A1 e A2 complementam H1 ao separar desempenho de pol\'itica e qualidade de artefato: A1 exige aus\^encia de viola\c{c}\~ao de restri\c{c}\~oes r\'igidas validada independentemente; A2 exige rastreabilidade e reconstruibilidade de decis\~oes e interven\c{c}\~oes humanas.
 
-Tr\^es fronteiras delimitam as conclus\~oes: cen\'arios sint\'eticos n\~ao substituem valida\c{c}\~ao de campo; par\^ametros dependem de literatura, hip\'oteses de engenharia e valida\c{c}\~ao de face; e a decomposi\c{c}\~ao em quatro etapas concentra o modelo nos gargalos de fila, bloqueio e propaga\c{c}\~ao de atrasos.
+Quatro fronteiras delimitam as conclus\~oes: cen\'arios sint\'eticos n\~ao substituem valida\c{c}\~ao de campo; par\^ametros dependem de literatura, hip\'oteses de engenharia e valida\c{c}\~ao de face ainda pendente; a decomposi\c{c}\~ao em quatro etapas concentra o modelo nos gargalos de fila, bloqueio e propaga\c{c}\~ao de atrasos; e a representa\c{c}\~ao no Unreal Engine \'e um modelo digital, n\~ao evid\^encia de sincroniza\c{c}\~ao com um sistema f\'isico real.
 
-O trabalho contribui para sistemas de apoio \`a decis\~ao em log\'istica agroindustrial com maior auditabilidade, resposta a eventos disruptivos e supervis\~ao humana. A aceita\c{c}\~ao do artigo correlato no ICPR-A~2026 refor\c{c}a a ader\^encia do recorte \`a comunidade de produ\c{c}\~ao e log\'istica. O motor proposto oferece base reprodut\'ivel para valida\c{c}\~ao em campo e extens\~oes agrolog\'isticas.
+O trabalho contribui para sistemas de apoio \`a decis\~ao em log\'istica agroindustrial com maior auditabilidade, resposta a eventos disruptivos e supervis\~ao humana. O motor proposto e o modelo digital oferecem uma base reprodut\'ivel para experimenta\c{c}\~ao controlada e futura valida\c{c}\~ao em campo, sem antecipar validade operacional ainda n\~ao demonstrada.
 
 A principal entrega desta etapa, portanto, n\~ao \'e um resultado de superioridade emp\'irica, mas um protocolo fechado para test\'a-la. O TCC~II dever\'a executar esse protocolo, reportar ganhos e perdas por estrato de congest\~ao, auditar logs e discutir os casos em que o artefato n\~ao superar comparadores fortes. Essa delimita\c{c}\~ao preserva a for\c{c}a da contribui\c{c}\~ao: o trabalho apresenta uma formula\c{c}\~ao reprodut\'ivel, comparadores definidos e crit\'erios claros de aceita\c{c}\~ao.
 
@@ -1363,7 +1450,7 @@ Elevadores de gr\~aos & Filas, recebimento, mistura de cargas, gargalos e simula
 \addlinespace
 DSS & Apoio \`a decis\~ao para carga, recursos, rotas, armazenagem e distribui\c{c}\~ao \parencite{vanderheydenDecisionSupportSystem1985a, hillDecisionSupportSystem2017aa, mardanehDecisionSupportSystem2021a}. & Assume decis\~ao assistida, com supervis\~ao humana. & Justifica explicabilidade e interven\c{c}\~ao humana, enquanto o artefato especifica decis\~ao local por caminh\~ao/etapa. \\
 \addlinespace
-G\^emeos digitais & Estado observ\'avel, rastreabilidade e representa\c{c}\~ao digital no p\'os-colheita \parencite{dyckDigitalTwinsNovel2023}. & Exige hist\'orico de eventos e reconstru\c{c}\~ao posterior. & Informa governan\c{c}a e auditoria, sem reivindicar um g\^emeo digital completo. \\
+Modelos digitais e g\^emeos digitais & Representa\c{c}\~ao computacional, estado observ\'avel e integra\c{c}\~ao entre entidades f\'isicas e digitais \parencite{kritzingerDigitalTwinManufacturing2018,dyckDigitalTwinsNovel2023,nistDigitalTwinsEssentialElements2026}. & Exige hist\'orico de eventos e reconstru\c{c}\~ao posterior. & O Unreal Engine~5.8 produzir\'a um modelo digital alimentado por replay; sem ativo pareado e sincroniza\c{c}\~ao bidirecional, o trabalho n\~ao reivindica g\^emeo digital. \\
 \bottomrule
 \end{longtable}
 }
@@ -1546,6 +1633,8 @@ Suplemento SLR de orquestra\c{c}\~ao (\texttt{0c3a7d7}) & corpus de 34 estudos, 
 SLR de recursos (\texttt{f178dbc}) & manuscrito da revis\~ao, contagens e fronteiras de validade & artigo correlato; n\~ao substitui o referencial \\
 \addlinespace
 Revis\~ao arXiv (\texttt{1fc492b}) & rubrica, QA recuperada e ap\^endices de auditoria & harmonizar antes de anexar \\
+\addlinespace
+Modelo digital Unreal Engine~5.8 & projeto inicializado e arquitetura de interc\^ambio JSONL definida neste TCC & cena de dom\'inio, ativos e replay ainda ser\~ao implementados; n\~ao \'e g\^emeo digital \\
 \bottomrule
 \end{tabularx}
 \caption[Reposit\'orios adjacentes da pesquisa]{Reposit\'orios adjacentes e fun\c{c}\~ao contextual neste trabalho.}
@@ -1556,7 +1645,7 @@ Uma trilha complementar analisa dificuldade computacional com Gurobi \parencite{
 
 \section{Produ\c{c}\~ao cient\'ifica relacionada}
 
-Este projeto tamb\'em gerou produ\c{c}\~ao cient\'ifica relacionada ao tema. Um artigo sobre orquestra\c{c}\~ao, modelagem e avalia\c{c}\~ao computacional de filas em p\'atios agroindustriais foi aceito para apresenta\c{c}\~ao no \textit{International Conference on Production Research -- Americas 2026} (ICPR-A~2026), sob o t\'itulo \textit{Computational Methods for Truck and Resource Orchestration in Logistics Terminals: A Systematic Literature Review}. A aceita\c{c}\~ao evidencia maturidade acad\^emica e ader\^encia tem\'atica; a valida\c{c}\~ao do artefato permanece vinculada ao protocolo experimental do Cap\'itulo~\ref{ch:metodologia}.
+Este projeto tamb\'em gerou produ\c{c}\~ao cient\'ifica relacionada ao tema. Um artigo sobre orquestra\c{c}\~ao, modelagem e avalia\c{c}\~ao computacional de filas em p\'atios agroindustriais foi aceito para apresenta\c{c}\~ao no \textit{International Conference on Production Research -- Americas 2026} (ICPR-A~2026), sob o t\'itulo \textit{Computational Methods for Truck and Resource Orchestration in Logistics Terminals: A Systematic Literature Review}. Esse registro documenta produ\c{c}\~ao acad\^emica relacionada, mas n\~ao constitui evid\^encia de valida\c{c}\~ao do motor, do modelo digital ou de H1; essa valida\c{c}\~ao permanece vinculada ao protocolo experimental do Cap\'itulo~\ref{ch:metodologia}. A vers\~ao final dever\'a manter no pacote documental o comprovante institucional de aceita\c{c}\~ao.
 
 Os resultados do artigo entram como motiva\c{c}\~ao, infraestrutura experimental ou evid\^encia preliminar, sem substituir a avalia\c{c}\~ao principal deste trabalho.
 

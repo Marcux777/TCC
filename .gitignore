@@ -9,3 +9,7 @@ autoresearch-hook-context.json
 autoresearch-launch.json
 autoresearch-runtime.json
 autoresearch-runtime.log
+.superpowers/
+graphify-out/cache/
+graphify-out/.graphify_labels.json*
+graphify-out/20??-??-??/

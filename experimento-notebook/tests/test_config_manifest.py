@@ -574,6 +574,36 @@ def _rewrite_manifest_root(root: Path, mutator) -> None:
     freeze_path.write_bytes(canonical_bytes(freeze))
 
 
+def test_resample_provenance_persists_source_receipt_and_event_latent_maps(
+    tmp_path, approved_face, monkeypatch
+):
+    """Each explicit resample records the complete source/latent provenance contract."""
+
+    final_root = _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch)
+    manifest = json.loads((final_root / "manifest.json").read_bytes())
+    provenance = manifest["resample_provenance"]
+    expected_content_keys = {
+        "source_staging_relpath",
+        "source_staging_receipt_sha256",
+        "source_dataset_id",
+        "source_staging_root_hash",
+        "resampled_instance_ids",
+        "generation_attempts",
+        "accepted_record_hashes",
+        "accepted_instance_hashes",
+        "prior_accepted_instance_hashes",
+        "accepted_event_latent_hashes",
+        "prior_accepted_event_latent_hashes",
+        "authorizing_action",
+    }
+    assert expected_content_keys <= set(provenance)
+    assert set(provenance["accepted_event_latent_hashes"]) == {"s23-seed141"}
+    assert set(provenance["prior_accepted_event_latent_hashes"]) == {
+        item["instance_id"] for item in json.loads((final_root / "manifest.json").read_bytes())["instance_headers"]
+        if item["instance_id"] != "s23-seed141"
+    }
+
+
 def test_final_freeze_rejects_tampered_resample_provenance(tmp_path, approved_face, monkeypatch):
     final_root = _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch)
     mutations = {

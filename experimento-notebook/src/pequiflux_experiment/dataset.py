@@ -296,6 +296,8 @@ _STAGING_RESAMPLE_NAMESPACE_FILES: frozenset[str] = frozenset(
 )
 _PROVENANCE_CONTENT_KEYS: frozenset[str] = frozenset(
     {
+        "source_staging_relpath",
+        "source_staging_receipt_sha256",
         "source_dataset_id",
         "source_staging_root_hash",
         "resampled_instance_ids",
@@ -303,6 +305,8 @@ _PROVENANCE_CONTENT_KEYS: frozenset[str] = frozenset(
         "accepted_record_hashes",
         "accepted_instance_hashes",
         "prior_accepted_instance_hashes",
+        "accepted_event_latent_hashes",
+        "prior_accepted_event_latent_hashes",
         "authorizing_action",
     }
 )
@@ -346,6 +350,58 @@ def _digest_bytes(value: bytes) -> str:
 
 def _digest_value(value: Any) -> str:
     return _digest_bytes(canonical_bytes(value))
+
+
+def _safe_sibling_basename(value: Any, label: str = "path") -> str:
+    """Validate one persisted sibling reference without permitting traversal."""
+
+    if not isinstance(value, str) or not value:
+        raise DatasetContractError(f"{label} must be a non-empty basename")
+    if value in {".", ".."} or "\x00" in value:
+        raise DatasetContractError(f"{label} must be a safe sibling basename")
+    if "/" in value or "\\" in value or ":" in value:
+        raise DatasetContractError(f"{label} must be a safe sibling basename")
+    candidate = Path(value)
+    if candidate.is_absolute() or candidate.name != value:
+        raise DatasetContractError(f"{label} must be a safe sibling basename")
+    return value
+
+
+def _reject_reparse(path: Path, label: str) -> None:
+    """Reject links/junctions/reparse points at a retained namespace boundary."""
+
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise DatasetContractError(f"{label} could not be inspected: {path}") from exc
+    if path.is_symlink() or bool(getattr(info, "st_file_attributes", 0) & 0x400):
+        raise DatasetContractError(f"{label} must not be a symlink/junction/reparse point: {path}")
+
+
+def _instance_event_latent_hashes(
+    rows: Iterable[Mapping[str, Any]],
+    instance_ids: Iterable[str],
+) -> dict[str, str]:
+    """Hash each instance's ordered event-latent rows as canonical JSONL bytes."""
+
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise DatasetContractError("event latent rows must be mappings")
+        instance_id = row.get("instance_id")
+        if not isinstance(instance_id, str) or not instance_id.strip():
+            raise DatasetContractError("event latent row instance_id must be non-empty")
+        grouped.setdefault(instance_id, []).append(row)
+    result: dict[str, str] = {}
+    for instance_id in instance_ids:
+        if not isinstance(instance_id, str) or not instance_id.strip():
+            raise DatasetContractError("instance IDs for event latent hashes must be non-empty")
+        result[instance_id] = _digest_bytes(
+            _jsonl_bytes(grouped.get(instance_id, ()), "event_latents")
+        )
+    return result
 
 
 def _rain_covered_latent_ids(row: Mapping[str, Any]) -> list[str]:
@@ -1779,7 +1835,7 @@ def generate_synthetic_dataset(
         if destination.exists():
             raise FileExistsError(f"dataset destination appeared during generation: {destination}")
         os.replace(staging, destination)
-        return load_frozen_dataset(destination, expected_plan=plan)
+        return _load_frozen_dataset(destination, expected_plan=plan)
     except Exception as exc:
         if isinstance(exc, GenerationRejectedError):
             raise
@@ -1840,11 +1896,25 @@ def _provenance_payload(
         for instance_id in ids
         if instance_id in current
     }
+    try:
+        source_event_latent_rows = _read_payloads(source.path)[4]
+    except DatasetContractError:
+        raise
+    accepted_event_latent_hashes = _instance_event_latent_hashes(
+        writer.event_latent_rows,
+        accepted_instance_hashes,
+    )
+    prior_accepted_event_latent_hashes = _instance_event_latent_hashes(
+        source_event_latent_rows,
+        source_headers,
+    )
     prior_accepted_instance_hashes = {
         instance_id: str(row["instance_hash"])
         for instance_id, row in sorted(source_headers.items())
     }
     return {
+        "source_staging_relpath": source.path.name,
+        "source_staging_receipt_sha256": canonical_file_hash(source.path / "STAGING.json"),
         "source_dataset_id": source.dataset_id,
         "source_staging_root_hash": source.staging_root_hash,
         "resampled_instance_ids": list(ids),
@@ -1855,6 +1925,8 @@ def _provenance_payload(
         "accepted_record_hashes": dict(sorted(accepted_record_hashes.items())),
         "accepted_instance_hashes": dict(sorted(accepted_instance_hashes.items())),
         "prior_accepted_instance_hashes": dict(sorted(prior_accepted_instance_hashes.items())),
+        "accepted_event_latent_hashes": dict(sorted(accepted_event_latent_hashes.items())),
+        "prior_accepted_event_latent_hashes": dict(sorted(prior_accepted_event_latent_hashes.items())),
         "authorizing_action": "EXPLICIT_RESAMPLE",
     }
 
@@ -2034,7 +2106,7 @@ def resample_synthetic_dataset(
         os.replace(staging, destination)
         if _TINY_FIXTURE_ACTIVE:
             return FrozenDataset(destination, manifest, tuple())
-        return load_frozen_dataset(destination, expected_plan=plan)
+        return _load_frozen_dataset(destination, expected_plan=plan)
     except GenerationRejectedError:
         raise
     except Exception as exc:
@@ -2266,6 +2338,8 @@ def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str],
     root = Path(path)
     if not root.is_dir():
         raise DatasetContractError(f"aborted staging directory is missing: {root}")
+    _reject_reparse(root, "aborted staging namespace")
+    _reject_reparse(root.parent, "aborted staging parent")
     manifest_path = root / "manifest.json"
     checksums_path = root / "checksums.sha256"
     staging_path = root / "STAGING.json"
@@ -2343,14 +2417,6 @@ def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str],
             raise DatasetContractError(f"staging payload hash mismatch for {name}")
     if canonical_bytes(staging) != staging_path.read_bytes():
         raise DatasetContractError("STAGING.json is not canonical JSON")
-    # The detailed reference/content/schema and hash checks are shared by all
-    # staging and frozen loaders below; this boundary only verifies that the
-    # optional file is represented by the exact namespace inventory.
-    _validate_resample_provenance(
-        root,
-        manifest,
-        plan=plan_synthetic_dataset(_canonical_confirmatory_config()),
-    )
     return manifest, dict(entries), staging
 
 
@@ -2655,10 +2721,23 @@ def _validate_generation_plan_receipt(
         raise DatasetContractError("manifest generation_plan_receipt diverges from canonical plan")
 
 
-def load_aborted_staging(path: str | Path) -> AbortedStaging:
-    """Load and independently validate one retained ABORTED STAGING root."""
+def _load_aborted_staging_internal(
+    path: str | Path,
+    *,
+    visited: set[Path],
+) -> AbortedStaging:
+    """Load one retained STAGING root while recursively tracking its source chain."""
 
     root = Path(path)
+    _reject_reparse(root, "aborted staging namespace")
+    _reject_reparse(root.parent, "aborted staging parent")
+    try:
+        resolved_root = root.resolve(strict=True)
+    except OSError as exc:
+        raise DatasetContractError(f"aborted staging directory could not be resolved: {root}") from exc
+    if resolved_root in visited:
+        raise DatasetContractError("resample provenance source chain contains a cycle")
+    visited.add(resolved_root)
     manifest, _entries, staging = _validate_staging_chain(root)
     plan = plan_synthetic_dataset(_canonical_confirmatory_config())
     accepted_raw = staging.get("accepted_instance_ids")
@@ -2711,6 +2790,7 @@ def load_aborted_staging(path: str | Path) -> AbortedStaging:
         current_headers=headers,
         staging=staging,
         rejection_rows=rows,
+        visited=visited,
     )
     hashes = manifest.get("instance_hashes")
     if not isinstance(hashes, list) or tuple(item.get("instance_id") for item in hashes if isinstance(item, Mapping)) != accepted:
@@ -2729,8 +2809,18 @@ def load_aborted_staging(path: str | Path) -> AbortedStaging:
     )
 
 
-def load_freeze_receipt(path: str | Path) -> FreezeReceipt:
-    """Read a canonical FREEZE/manifest/header receipt without payload loading."""
+def load_aborted_staging(path: str | Path) -> AbortedStaging:
+    """Load and independently validate one retained ABORTED STAGING root."""
+
+    return _load_aborted_staging_internal(Path(path), visited=set())
+
+
+def load_freeze_receipt(
+    path: str | Path,
+    *,
+    expected_dataset_root_hash: str,
+) -> FreezeReceipt:
+    """Read a canonical FREEZE/manifest/header receipt with an explicit pin."""
 
     root = Path(path)
     manifest, _entries = _validate_checksum_chain(root)
@@ -2743,18 +2833,47 @@ def load_freeze_receipt(path: str | Path) -> FreezeReceipt:
     _validate_generation_plan_receipt(manifest, plan)
     headers = _instance_headers_from_manifest(manifest, expected_ids=plan.instance_ids)
     _validate_resample_provenance(root, manifest, plan=plan, current_headers=headers)
+    expected = _require_provenance_sha(
+        expected_dataset_root_hash,
+        "expected_dataset_root_hash",
+    )
+    observed = _require_provenance_sha(freeze.get("dataset_root_hash"), "FREEZE dataset_root_hash")
+    if observed != expected:
+        raise DatasetContractError(
+            "external dataset root pin does not match FREEZE dataset_root_hash"
+        )
     return FreezeReceipt(path=root, manifest=manifest, freeze_json=freeze, instance_headers=headers)
 
 
-def read_instance_header(path: str | Path, instance_id: str) -> InstanceHeader:
-    """Read one persisted header/hash index row, never constructing payload rows."""
+def read_instance_header(
+    path: str | Path,
+    instance_id: str,
+    *,
+    expected_dataset_root_hash: str,
+) -> InstanceHeader:
+    """Read one persisted header/hash index row with an explicit namespace pin."""
 
     root = Path(path)
     if (root / "STAGING.json").is_file():
         staging = load_aborted_staging(root)
+        expected = _require_provenance_sha(
+            expected_dataset_root_hash,
+            "expected_dataset_root_hash",
+        )
+        observed = _require_provenance_sha(
+            staging.staging_root_hash,
+            "STAGING staging_root_hash",
+        )
+        if observed != expected:
+            raise DatasetContractError(
+                "external dataset root pin does not match STAGING staging_root_hash"
+            )
         headers = _instance_headers_from_manifest(staging.manifest, expected_ids=staging.accepted_instance_ids)
     else:
-        headers = load_freeze_receipt(root).instance_headers
+        headers = load_freeze_receipt(
+            root,
+            expected_dataset_root_hash=expected_dataset_root_hash,
+        ).instance_headers
     for header in headers:
         if header.instance_id == instance_id:
             return header
@@ -4465,11 +4584,15 @@ def _validate_full_payloads(
 
 def validate_frozen_dataset(
     path: str | Path,
-    expected_plan: DatasetPlan | None = None,
+    *,
+    expected_dataset_root_hash: str,
 ) -> FrozenDataset:
     """Strictly validate a complete production freeze."""
 
-    return load_frozen_dataset(path, expected_plan=expected_plan)
+    return load_frozen_dataset(
+        path,
+        expected_dataset_root_hash=expected_dataset_root_hash,
+    )
 
 
 def _load_frozen_dataset(
@@ -4477,9 +4600,24 @@ def _load_frozen_dataset(
     expected_plan: DatasetPlan | None = None,
     *,
     published_dataset_id: str | None = None,
+    expected_dataset_root_hash: str | None = None,
 ) -> FrozenDataset:
     root = Path(path)
     manifest, _checksums = _validate_checksum_chain(root)
+    if expected_dataset_root_hash is not None:
+        expected = _require_provenance_sha(
+            expected_dataset_root_hash,
+            "expected_dataset_root_hash",
+        )
+        freeze = _load_json(root / "FREEZE.json", "FREEZE.json")
+        observed = _require_provenance_sha(
+            freeze.get("dataset_root_hash") if isinstance(freeze, Mapping) else None,
+            "FREEZE dataset_root_hash",
+        )
+        if observed != expected:
+            raise DatasetContractError(
+                "external dataset root pin does not match FREEZE dataset_root_hash"
+            )
     return _validate_full_payloads(
         root,
         manifest,
@@ -4488,10 +4626,18 @@ def _load_frozen_dataset(
     )
 
 
-def load_frozen_dataset(path: str | Path, expected_plan: DatasetPlan | None = None) -> FrozenDataset:
-    """Load a complete, canonical production freeze; never headers or defaults."""
+def load_frozen_dataset(
+    path: str | Path,
+    *,
+    expected_dataset_root_hash: str,
+) -> FrozenDataset:
+    """Load a complete, canonical production freeze with an explicit pin."""
 
-    return _load_frozen_dataset(path, expected_plan=expected_plan)
+    _require_provenance_sha(expected_dataset_root_hash, "expected_dataset_root_hash")
+    return _load_frozen_dataset(
+        path,
+        expected_dataset_root_hash=expected_dataset_root_hash,
+    )
 
 
 def freeze_dataset(path: str | Path, manifest: Mapping[str, Any] | None = None) -> FrozenDataset:
