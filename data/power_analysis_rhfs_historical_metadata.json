@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "status": "HISTORICAL_OUTPUTS_NOT_REGENERATED",
+  "original_execution_receipt": null,
+  "original_input_bytes_verified": false,
+  "candidate_input_copy": {
+    "path": "data/rhfs_method_performance_matrix.csv",
+    "sha256": "6ee6b87d9ab54e2a3f6008bd6ab6eba43339f9817cb8afe6718f06a3476e0da4"
+  },
+  "script_before_revision_sha256": "3dbb1fd921d6ad63d3c0e41dad738700b221fe80c9a6b52213721506f2020d09",
+  "outputs": [
+    {
+      "path": "data/power_analysis_rhfs_summary.csv",
+      "sha256": "7b2973c2ebf475df9be74dc7b8594becc69f8a0d89d45c825f1bc1c1e49a2bad"
+    },
+    {
+      "path": "data/power_curve_reference.csv",
+      "sha256": "140f79f89d31bb080f0c40508113ba2eeaf7a5e7740f03d798fca4b5fdc810cd"
+    }
+  ],
+  "parameters_recorded_in_historical_csv": {
+    "replicates": 5000,
+    "alpha": 0.05,
+    "n_effective": [
+      600,
+      2800
+    ],
+    "pooled_pair_count": 99
+  },
+  "seed_status": "Not recorded in historical CSV; prior script default was 20260531, not proof of original invocation.",
+  "scope": "Exploratory single one-sided Wilcoxon test on median-centered differences pooled across three RHFS contrasts.",
+  "excluded_from_power_model": [
+    "conjunction of three comparators",
+    "throughput noninferiority",
+    "gain test shifted by 15 percent threshold",
+    "Holm between strata"
+  ],
+  "legacy_curve_label": {
+    "point_type": "H1",
+    "meaning": "Hypothetical 15 percent effect for the single-test anchor; NOT full-H1 power."
+  }
+}

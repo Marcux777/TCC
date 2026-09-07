@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-09-07T22:36:18.035234+00:00",
+  "status": "EXACT_LOCAL_SOURCE_COPY",
+  "source_path": "C:\\p\\PequiFlux\\agro_yard_dfjsp_paper\\catalog\\method_performance_matrix.csv",
+  "source_repository_commit": "1bcbe64db15bb2731e764d61bf1f64f0de1def44",
+  "source_matches_committed_bytes": true,
+  "source_sha256": "6ee6b87d9ab54e2a3f6008bd6ab6eba43339f9817cb8afe6718f06a3476e0da4",
+  "repository_path": "data/rhfs_method_performance_matrix.csv",
+  "repository_sha256": "6ee6b87d9ab54e2a3f6008bd6ab6eba43339f9817cb8afe6718f06a3476e0da4",
+  "bytes": 238360,
+  "rows": 513,
+  "use": "Exploratory variability anchor only; not observed TCC-II evidence and not power of complete H1."
+}

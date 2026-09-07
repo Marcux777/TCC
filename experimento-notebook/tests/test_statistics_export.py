@@ -173,6 +173,10 @@ def test_h1_core_accepts_complete_confirmatory_rows_from_bundle(tmp_path):
         for stratum in ("medium", "high")
         for comparator in statistics_module.PRIMARY_COMPARATORS
     }
+    assert statistics_module.BOOTSTRAP_ITERATIONS == 5000
+    assert all(detail.bootstrap_iterations == 5000 for detail in report.comparisons.values())
+    assert all(detail['bootstrap_iterations'] == 5000
+               for detail in report.to_dict()['comparisons'].values())
 
 
 def test_h1_derives_scenario_metadata_when_declarations_are_absent():

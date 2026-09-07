@@ -45,7 +45,7 @@ STRATA: tuple[str, ...] = ("medium", "high")
 ALPHA = 0.05
 TARGET_RELATIVE_IMPROVEMENT = 0.15
 BOOTSTRAP_SEED = 20260901
-BOOTSTRAP_ITERATIONS = 2000
+BOOTSTRAP_ITERATIONS = 5000
 INVALID_INPUT = "INVALID_INPUT"
 
 class PairingError(ValueError):
@@ -716,6 +716,7 @@ class ComparisonStats:
     wilcoxon_pvalue: float
     hodges_lehmann: float
     bootstrap_seed: int
+    bootstrap_iterations: int
     bootstrap_ci_low: float
     bootstrap_ci_high: float
     rank_biserial: float
@@ -815,6 +816,7 @@ class ComparisonStats:
             "wilcoxon_pvalue": self.wilcoxon_pvalue,
             "hodges_lehmann": self.hodges_lehmann,
             "bootstrap_seed": self.bootstrap_seed,
+            "bootstrap_iterations": self.bootstrap_iterations,
             "bootstrap_ci_low": self.bootstrap_ci_low,
             "bootstrap_ci_high": self.bootstrap_ci_high,
             "rank_biserial": self.rank_biserial,
@@ -980,6 +982,7 @@ def _comparison_stats(
         wilcoxon_pvalue=pvalue,
         hodges_lehmann=hl,
         bootstrap_seed=bootstrap_seed,
+        bootstrap_iterations=BOOTSTRAP_ITERATIONS,
         bootstrap_ci_low=bootstrap_low,
         bootstrap_ci_high=bootstrap_high,
         rank_biserial=_rank_biserial(difference),
