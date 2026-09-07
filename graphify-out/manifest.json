@@ -45,13 +45,13 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/config.py": {
-    "mtime": 1788413777.7023938,
-    "ast_hash": "e97ff7338c6665894d7d6edeb85e2bea",
+    "mtime": 1788816832.405811,
+    "ast_hash": "2620e1b10f03367898dde13809ac243d",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/dataset.py": {
-    "mtime": 1788446757.462528,
-    "ast_hash": "6bc51b2c108e7f4ea86ae5f127716f41",
+    "mtime": 1788817445.4578063,
+    "ast_hash": "6b31fa5e23ed5878d4a6758cd66496f3",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/digital_model.py": {
@@ -65,13 +65,13 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/domain.py": {
-    "mtime": 1788441463.184271,
-    "ast_hash": "f2a631dd86c28386e7549678d63ac6bd",
+    "mtime": 1788816847.9285665,
+    "ast_hash": "cddcf3e1d6a785ad7c58ada6105f7766",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/emulator.py": {
-    "mtime": 1788435923.080712,
-    "ast_hash": "3b1c2410dea265e385b8f0aca9ffb396",
+    "mtime": 1788817151.8860323,
+    "ast_hash": "47cc2b864c623e1bf81da483bd19410b",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/events.py": {
@@ -80,8 +80,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/experiment.py": {
-    "mtime": 1788382818.766392,
-    "ast_hash": "bdf9b7f3c5fd5c99bdd61bffbfd3cf60",
+    "mtime": 1788816798.3460662,
+    "ast_hash": "f233c0f2053503448f55374b621df15e",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/export.py": {
@@ -90,18 +90,18 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/face_validation.py": {
-    "mtime": 1788413093.3927896,
-    "ast_hash": "aff65747f9078c51029a33fb8d47adf4",
+    "mtime": 1788816832.4068093,
+    "ast_hash": "4f56c6f4e9b67c44ed5fb1bea46b053f",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/manifest.py": {
-    "mtime": 1788435581.0531044,
-    "ast_hash": "b90eca0ac981c5cb07f575b497e07b2d",
+    "mtime": 1788816762.8626373,
+    "ast_hash": "ebf4ab6c066889fc482c84ea5ca1a8c8",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/policies.py": {
-    "mtime": 1788385572.3198125,
-    "ast_hash": "7b7664990999ce6e6a3c44a1ace2edf1",
+    "mtime": 1788816732.0546353,
+    "ast_hash": "908e323c2a1aab83d50236b530fe67d0",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/replay.py": {
@@ -120,8 +120,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_config_manifest.py": {
-    "mtime": 1788446288.737551,
-    "ast_hash": "56962eb08efead1faff189118f7331f9",
+    "mtime": 1788817072.267521,
+    "ast_hash": "a7a1065f0580a26d0ed1231a82351624",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_digital_model_replay.py": {
@@ -130,23 +130,23 @@
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_dispatch_emulator.py": {
-    "mtime": 1788387337.0215454,
-    "ast_hash": "bb2b20246584d213f9e568f4bd9de713",
+    "mtime": 1788817435.6882174,
+    "ast_hash": "17b282d7e3af480d275aceced6f6c4f7",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_experiment_audit.py": {
-    "mtime": 1788382569.1857998,
-    "ast_hash": "ef81dd000ce9d95bcb435cd0031b7793",
+    "mtime": 1788816709.5438092,
+    "ast_hash": "fe478e2b69d1561b7dd3c2512894cda0",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_notebook.py": {
-    "mtime": 1788384107.6656184,
-    "ast_hash": "b0d025e9dca878ec2960dc94662b8e65",
+    "mtime": 1788816692.567428,
+    "ast_hash": "b38c66170447913f607fa53d417caf3c",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_statistics_export.py": {
-    "mtime": 1788378786.0121446,
-    "ast_hash": "32c7578fe1c74697fccb68d0f6afbb83",
+    "mtime": 1788817520.2197025,
+    "ast_hash": "4edfd34c7965ee1fb246132cf6978552",
     "semantic_hash": ""
   },
   "scripts/figura_poder_protocolo.R": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/README.md": {
-    "mtime": 1788376007.4417102,
-    "ast_hash": "e45374568f64f77f10d4bf14561f7704",
+    "mtime": 1788816790.117843,
+    "ast_hash": "4cf8ce42e7def277e38c1933c4f2c23a",
     "semantic_hash": ""
   },
   "experimento-notebook/docs/superpowers/plans/2026-09-01-experimento-notebook-implementation.md": {
@@ -212,6 +212,11 @@
   "images/puc-goias.png": {
     "mtime": 1779016799.0,
     "ast_hash": "aedc3a565036edbfd6989cfeabe8abbf",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/tests/test_manifest_io.py": {
+    "mtime": 1788816761.9266038,
+    "ast_hash": "21a1ae106c1fb86ea3a50d39d8466751",
     "semantic_hash": ""
   }
 }

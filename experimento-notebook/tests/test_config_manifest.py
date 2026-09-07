@@ -158,13 +158,24 @@ def test_generation_headers_receipt_is_non_publishing():
     assert not hasattr(receipt, "path")
 
 
+@pytest.mark.parametrize("attempt", [True, "1", -1, 1.5])
+def test_persisted_header_rejects_coerced_generation_attempt(attempt):
+    header = {
+        "instance_id": "s00-seed101", "scenario_index": 0,
+        "scenario_id": "scenario-0", "seed": 101, "generation_attempt": attempt,
+        "canonical_record_hash": "0" * 64, "instance_hash": "0" * 64,
+    }
+    with pytest.raises(DatasetContractError, match="generation_attempt"):
+        dataset_module._instance_headers_from_manifest({"instance_headers": [header]})
+
+
 def test_strict_loader_rejects_header_only_artifact(tmp_path):
     artifact = tmp_path / "header-only"
     artifact.mkdir()
     with pytest.raises(DatasetContractError, match="FREEZE|header-only|schema"):
         load_frozen_dataset(
             artifact,
-            expected_plan=plan_synthetic_dataset(load_config(CONFIG_PATH)),
+            expected_dataset_root_hash="0" * 64,
         )
 
 
@@ -556,7 +567,9 @@ def _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch):
         ["s23-seed141"], tmp_path / "provenance-published-3",
         now_utc=FIXED_NOW, generator_version="generator.v1",
     )
-    return tmp_path / "provenance-published-3"
+    final_root = tmp_path / "provenance-published-3"
+    pin = json.loads((final_root / "FREEZE.json").read_bytes())["dataset_root_hash"]
+    return final_root, pin
 
 
 def _rewrite_manifest_root(root: Path, mutator) -> None:
@@ -574,12 +587,30 @@ def _rewrite_manifest_root(root: Path, mutator) -> None:
     freeze_path.write_bytes(canonical_bytes(freeze))
 
 
+def _rewrite_provenance_root(root: Path, mutator) -> None:
+    """Rewrite both provenance copies and their hashes to test semantic validation."""
+
+    path = root / "resample_provenance.json"
+    content = json.loads(path.read_bytes())
+    mutator(content)
+    path.write_bytes(canonical_bytes(content))
+    _rewrite_manifest_root(
+        root,
+        lambda manifest: manifest.update({
+            "resample_provenance": {"path": path.name, "sha256": canonical_file_hash(path), **content}
+        }),
+    )
+
+
 def test_resample_provenance_persists_source_receipt_and_event_latent_maps(
     tmp_path, approved_face, monkeypatch
 ):
     """Each explicit resample records the complete source/latent provenance contract."""
 
-    final_root = _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch)
+    final_root, pin = _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch)
+    load_freeze_receipt(final_root, expected_dataset_root_hash=pin)
+    with pytest.raises(DatasetContractError, match="external dataset root pin"):
+        load_freeze_receipt(final_root, expected_dataset_root_hash="0" * 64)
     manifest = json.loads((final_root / "manifest.json").read_bytes())
     provenance = manifest["resample_provenance"]
     expected_content_keys = {
@@ -598,15 +629,40 @@ def test_resample_provenance_persists_source_receipt_and_event_latent_maps(
     }
     assert expected_content_keys <= set(provenance)
     assert set(provenance["accepted_event_latent_hashes"]) == {"s23-seed141"}
-    assert set(provenance["prior_accepted_event_latent_hashes"]) == {
-        item["instance_id"] for item in json.loads((final_root / "manifest.json").read_bytes())["instance_headers"]
-        if item["instance_id"] != "s23-seed141"
-    }
+    source = load_aborted_staging(final_root.parent / provenance["source_staging_relpath"])
+    assert set(provenance["prior_accepted_event_latent_hashes"]) == set(source.accepted_instance_ids)
 
 
 def test_final_freeze_rejects_tampered_resample_provenance(tmp_path, approved_face, monkeypatch):
-    final_root = _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch)
+    final_root, pin = _build_tiny_final_freeze(tmp_path, approved_face, monkeypatch)
+
+    def remove_provenance(root):
+        (root / "resample_provenance.json").unlink()
+        _rewrite_manifest_root(root, lambda manifest: manifest.update({"resample_provenance": None}))
+
     mutations = {
+        "missing_provenance": remove_provenance,
+        "source_traversal": lambda root: _rewrite_provenance_root(
+            root, lambda content: content.update({"source_staging_relpath": "../escape"}),
+        ),
+        "source_cycle": lambda root: _rewrite_provenance_root(
+            root, lambda content: content.update({"source_staging_relpath": root.name}),
+        ),
+        "source_missing": lambda root: _rewrite_provenance_root(
+            root, lambda content: content.update({"source_staging_relpath": "missing-staging"}),
+        ),
+        "source_receipt_hash": lambda root: _rewrite_provenance_root(
+            root, lambda content: content.update({"source_staging_receipt_sha256": "0" * 64}),
+        ),
+        "source_root_hash": lambda root: _rewrite_provenance_root(
+            root, lambda content: content.update({"source_staging_root_hash": "0" * 64}),
+        ),
+        "accepted_latent_hash": lambda root: _rewrite_provenance_root(
+            root, lambda content: content.update({"accepted_event_latent_hashes": {"s23-seed141": "0" * 64}}),
+        ),
+        "prior_latent_hash": lambda root: _rewrite_provenance_root(
+            root, lambda content: content["prior_accepted_event_latent_hashes"].update({"s00-seed101": "0" * 64}),
+        ),
         "bytes": lambda root: (root / "resample_provenance.json").write_bytes(
             (root / "resample_provenance.json").read_bytes() + b" "
         ),
@@ -648,7 +704,7 @@ def test_final_freeze_rejects_tampered_resample_provenance(tmp_path, approved_fa
         shutil.copytree(final_root, tampered_root)
         mutate(tampered_root)
         with pytest.raises(DatasetContractError, match="provenance"):
-            load_freeze_receipt(tampered_root)
+            load_freeze_receipt(tampered_root, expected_dataset_root_hash=pin)
 
 
 def test_probe_diagnoses_both_without_publishing(approved_face):
@@ -702,7 +758,9 @@ def test_fail_fast_persisted_resample_sequence(tmp_path, approved_face, monkeypa
     ] == [
         ("s11-seed119", 0, "PRIORITY_SHIFT_ELIGIBLE_SHORTAGE", "PROHIBITED", "EXPLICIT_RESAMPLE_REQUIRED")
     ]
-    accepted_hash = read_instance_header(staging1.path, "s00-seed101").canonical_record_hash
+    accepted_hash = read_instance_header(
+        staging1.path, "s00-seed101", expected_dataset_root_hash=staging1.staging_root_hash
+    ).canonical_record_hash
 
     with pytest.raises(GenerationRejectedError, match="s23-seed141") as second_error:
         resample_synthetic_dataset(
@@ -721,8 +779,10 @@ def test_fail_fast_persisted_resample_sequence(tmp_path, approved_face, monkeypa
     assert staging2.recomputed_staging_root_hash == staging2.staging_root_hash
     assert set(staging2.accepted_instance_ids).isdisjoint(staging2.rejected_instance_ids)
     assert set(staging2.accepted_instance_ids) | set(staging2.rejected_instance_ids) | set(staging2.remaining_instance_ids) == set(plan.instance_ids)
-    assert read_instance_header(staging2.path, "s00-seed101").canonical_record_hash == accepted_hash
-    assert read_instance_header(staging2.path, "s11-seed119").generation_attempt == 1
+    s00_header = read_instance_header(staging2.path, "s00-seed101", expected_dataset_root_hash=staging2.staging_root_hash)
+    s11_header = read_instance_header(staging2.path, "s11-seed119", expected_dataset_root_hash=staging2.staging_root_hash)
+    assert s00_header.canonical_record_hash == accepted_hash
+    assert s11_header.generation_attempt == 1
     assert staging2.rejection_rows[0].generation_attempt == 0
     assert staging2.rejection_rows[0].next_action == "EXPLICIT_RESAMPLE_REQUIRED"
     provenance1_path = staging2.path / "resample_provenance.json"
@@ -733,23 +793,24 @@ def test_fail_fast_persisted_resample_sequence(tmp_path, approved_face, monkeypa
     assert provenance1["source_staging_root_hash"] == staging1.staging_root_hash
     assert provenance1["resampled_instance_ids"] == ["s11-seed119"]
     assert provenance1["generation_attempts"] == {"s11-seed119": 1}
-    assert read_instance_header(staging2.path, "s11-seed119").canonical_record_hash == provenance1["accepted_instance_hashes"]["s11-seed119"]
+    assert s11_header.canonical_record_hash == provenance1["accepted_instance_hashes"]["s11-seed119"]
     assert staging2.manifest["resample_provenance"]["sha256"] == dataset_module.canonical_file_hash(provenance1_path)
 
-    resample_synthetic_dataset(
+    published = resample_synthetic_dataset(
         config, approved_face, staging2.path, staging2.staging_root_hash,
         ["s23-seed141"], tmp_path / "published-3",
         now_utc=FIXED_NOW, generator_version="generator.v1",
     )
-    freeze_receipt = load_freeze_receipt(tmp_path / "published-3")
+    pin = published.dataset_hash
+    freeze_receipt = load_freeze_receipt(tmp_path / "published-3", expected_dataset_root_hash=pin)
     assert freeze_receipt.manifest["freeze_status"] == "FROZEN"
     assert freeze_receipt.manifest["instance_count"] == 3_600
     assert freeze_receipt.manifest["policy_day_count"] == 18_000
     assert freeze_receipt.manifest["generation_plan_receipt"]["instance_count"] == 3_600
     assert freeze_receipt.manifest["generation_plan_receipt"]["policy_day_count"] == 18_000
-    s00_header = read_instance_header(tmp_path / "published-3", "s00-seed101")
-    s11_header = read_instance_header(tmp_path / "published-3", "s11-seed119")
-    s23_header = read_instance_header(tmp_path / "published-3", "s23-seed141")
+    s00_header = read_instance_header(tmp_path / "published-3", "s00-seed101", expected_dataset_root_hash=pin)
+    s11_header = read_instance_header(tmp_path / "published-3", "s11-seed119", expected_dataset_root_hash=pin)
+    s23_header = read_instance_header(tmp_path / "published-3", "s23-seed141", expected_dataset_root_hash=pin)
     assert s11_header.generation_attempt == 1
     assert s23_header.generation_attempt == 1
     assert s00_header.canonical_record_hash == accepted_hash
@@ -1216,9 +1277,10 @@ def test_event_latent_schema_and_legacy_loader_fail_fast(tmp_path):
 
     legacy = tmp_path / "legacy-v1"
     _write_tiny_chain(legacy)
+    pin = json.loads((legacy / "FREEZE.json").read_bytes())["dataset_root_hash"]
     (legacy / "event_latents.jsonl").unlink()
     with pytest.raises(DatasetContractError, match="MISSING_EVENT_LATENTS"):
-        load_frozen_dataset(legacy, expected_plan=plan_synthetic_dataset(load_config(CONFIG_PATH)))
+        load_frozen_dataset(legacy, expected_dataset_root_hash=pin)
 
 
 def test_event_latent_roundtrip_and_high_projection(tmp_path):

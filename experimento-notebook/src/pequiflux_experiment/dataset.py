@@ -1467,8 +1467,8 @@ def _build_manifest(
         import psutil
 
         runtime["memory"] = {"total_bytes": int(psutil.virtual_memory().total)}
-    except Exception:
-        runtime["memory"] = {"total_bytes": None}
+    except Exception as exc:
+        raise DatasetContractError("could not inspect physical memory for dataset manifest") from exc
     counts = {
         "scenario_index": plan.scenario_count,
         "instances": plan.instance_count,
@@ -1742,8 +1742,9 @@ def _generate_until_rejection(
     previous_config = _ACTIVE_VALIDATOR_CONFIG
     _ACTIVE_VALIDATOR_CONFIG = config
     try:
+        ordered_headers = plan.ordered_instance_headers
         for ordinal in range(start_ordinal, plan.instance_count):
-            header = plan.ordered_instance_headers[ordinal]
+            header = ordered_headers[ordinal]
             scenario = plan.scenarios[int(header["scenario_index"])]
             attempt = int(generation_attempts.get(str(header["instance_id"]), 0))
             candidate = _build_instance(config, scenario, int(header["seed"]), attempt)
@@ -1896,10 +1897,9 @@ def _provenance_payload(
         for instance_id in ids
         if instance_id in current
     }
-    try:
-        source_event_latent_rows = _read_payloads(source.path)[4]
-    except DatasetContractError:
-        raise
+    source_event_latent_rows = _read_jsonl(
+        source.path / "event_latents.jsonl", "event_latents", "event_latents"
+    )
     accepted_event_latent_hashes = _instance_event_latent_hashes(
         writer.event_latent_rows,
         accepted_instance_hashes,
@@ -2001,6 +2001,8 @@ def resample_synthetic_dataset(
     plan = plan_synthetic_dataset(config)
     resample_plan = plan_explicit_resample(source, exact_rejected_ids, config)
     destination = _prepare_destination(destination_root)
+    if destination.parent.resolve() != source.path.parent.resolve():
+        raise DatasetContractError("resample destination must be a sibling of its source staging")
     staging = _create_staging_directory(destination)
     provenance_payload = None
     try:
@@ -2378,6 +2380,11 @@ def _validate_staging_chain(path: Path) -> tuple[dict[str, Any], dict[str, str],
             "staging namespace inventory diverges from exact file set"
             + (f" (missing={','.join(missing)}; unexpected={','.join(extra)})" if missing or extra else "")
         )
+    for name in expected_inventory:
+        entry = root / name
+        _reject_reparse(entry, "staging namespace file")
+        if not entry.is_file():
+            raise DatasetContractError(f"staging namespace entry must be a regular file: {entry}")
     try:
         checksum_bytes = checksums_path.read_bytes()
         rows = checksum_bytes.decode("utf-8").splitlines()
@@ -2438,23 +2445,16 @@ def _instance_headers_from_manifest(
         }
         if set(item) != required:
             raise DatasetContractError(f"instance_headers row {ordinal} schema is not canonical")
-        try:
-            header = InstanceHeader(
-                instance_id=str(item["instance_id"]),
-                scenario_index=int(item["scenario_index"]),
-                scenario_id=str(item["scenario_id"]),
-                seed=int(item["seed"]),
-                generation_attempt=int(item["generation_attempt"]),
-                canonical_record_hash=str(item["canonical_record_hash"]),
-                instance_hash=str(item["instance_hash"]),
-            )
-        except (TypeError, ValueError) as exc:
-            raise DatasetContractError(f"instance_headers row {ordinal} is invalid") from exc
+        for name in ("scenario_index", "seed", "generation_attempt"):
+            value = item[name]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise DatasetContractError(f"instance_headers row {ordinal} {name} must be a non-negative integer")
+        for name in ("instance_id", "scenario_id"):
+            if not isinstance(item[name], str) or not item[name].strip():
+                raise DatasetContractError(f"instance_headers row {ordinal} {name} must be non-empty text")
         for name in ("canonical_record_hash", "instance_hash"):
-            digest = getattr(header, name)
-            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
-                raise DatasetContractError(f"instance_headers row {ordinal} {name} is not a SHA-256 digest")
-        headers.append(header)
+            _require_provenance_sha(item[name], f"instance_headers row {ordinal} {name}")
+        headers.append(InstanceHeader(**item))
     if expected_ids is not None:
         expected = tuple(expected_ids)
         if tuple(header.instance_id for header in headers) != expected:
@@ -2524,9 +2524,10 @@ def _validate_resample_provenance(
     manifest: Mapping[str, Any],
     *,
     plan: DatasetPlan,
-    current_headers: Iterable[InstanceHeader] | None = None,
+    current_headers: Iterable[InstanceHeader],
     staging: Mapping[str, Any] | None = None,
     rejection_rows: Iterable[RejectionLogRow] | None = None,
+    visited: set[Path] | None = None,
 ) -> None:
     """Validate provenance reference, content bytes, and header reconciliation.
 
@@ -2538,11 +2539,15 @@ def _validate_resample_provenance(
 
     provenance = manifest.get("resample_provenance")
     provenance_path = root / "resample_provenance.json"
+    headers = tuple(current_headers)
+    rejections = tuple(rejection_rows) if rejection_rows is not None else ()
     if provenance is None:
         if provenance_path.exists():
             raise DatasetContractError(
                 "initial dataset must not contain resample_provenance.json"
             )
+        if any(item.generation_attempt != 0 for item in (*headers, *rejections)):
+            raise DatasetContractError("positive generation attempts require resample provenance")
         return
     if not isinstance(provenance, Mapping) or set(provenance) != _PROVENANCE_REFERENCE_KEYS:
         raise DatasetContractError(
@@ -2553,12 +2558,7 @@ def _validate_resample_provenance(
         raise DatasetContractError(
             "resample provenance path must be the relative resample_provenance.json"
         )
-    resolved_root = root.resolve()
-    resolved_path = (root / path_value).resolve()
-    try:
-        resolved_path.relative_to(resolved_root)
-    except ValueError as exc:
-        raise DatasetContractError("resample provenance path escapes the namespace") from exc
+    _reject_reparse(provenance_path, "resample provenance file")
     digest = _require_provenance_sha(provenance["sha256"], "resample provenance sha256")
     if not provenance_path.is_file():
         raise DatasetContractError("resample provenance file is missing")
@@ -2566,15 +2566,12 @@ def _validate_resample_provenance(
         raw = provenance_path.read_bytes()
     except OSError as exc:
         raise DatasetContractError("resample provenance file cannot be read") from exc
-    try:
-        content = _load_json(provenance_path, "resample_provenance")
-    except DatasetContractError:
-        raise
+    content = _load_json(provenance_path, "resample_provenance")
     if not isinstance(content, dict) or set(content) != _PROVENANCE_CONTENT_KEYS:
         raise DatasetContractError("resample provenance content schema is not canonical")
     if raw != canonical_bytes(content):
         raise DatasetContractError("resample provenance bytes are not canonical")
-    actual_digest = canonical_file_hash(provenance_path)
+    actual_digest = _digest_bytes(raw)
     if actual_digest != digest:
         raise DatasetContractError("resample provenance sha256 does not match canonical bytes")
     for key in _PROVENANCE_CONTENT_KEYS:
@@ -2583,20 +2580,33 @@ def _validate_resample_provenance(
                 f"resample provenance manifest/content mismatch for {key}"
             )
 
-    source_dataset_id = content["source_dataset_id"]
-    if (
-        not isinstance(source_dataset_id, str)
-        or not source_dataset_id.strip()
-        or source_dataset_id in {".", ".."}
-        or "/" in source_dataset_id
-        or "\\" in source_dataset_id
-        or ":" in source_dataset_id
-    ):
-        raise DatasetContractError("resample provenance source_dataset_id is not path-safe")
-    _require_provenance_sha(
+    source_dataset_id = _safe_sibling_basename(
+        content["source_dataset_id"], "resample provenance source_dataset_id"
+    )
+    source_name = _safe_sibling_basename(
+        content["source_staging_relpath"], "resample provenance source_staging_relpath"
+    )
+    source_hash = _require_provenance_sha(
         content["source_staging_root_hash"],
         "resample provenance source_staging_root_hash",
     )
+    source_receipt_hash = _require_provenance_sha(
+        content["source_staging_receipt_sha256"],
+        "resample provenance source_staging_receipt_sha256",
+    )
+    source_path = root.parent / source_name
+    try:
+        source = _load_aborted_staging_internal(
+            source_path, visited=visited if visited is not None else {root.resolve()}
+        )
+    except DatasetContractError as exc:
+        raise DatasetContractError(f"resample provenance source is invalid: {source_path}: {exc}") from exc
+    if (
+        source.dataset_id != source_dataset_id
+        or source.staging_root_hash != source_hash
+        or canonical_file_hash(source_path / "STAGING.json") != source_receipt_hash
+    ):
+        raise DatasetContractError("resample provenance source identity/hash does not match retained STAGING")
     raw_ids = content["resampled_instance_ids"]
     if not isinstance(raw_ids, list) or not raw_ids:
         raise DatasetContractError("resample provenance resampled_instance_ids must be a non-empty list")
@@ -2604,6 +2614,8 @@ def _validate_resample_provenance(
         raise DatasetContractError("resample provenance IDs must be non-empty strings")
     if len(set(raw_ids)) != len(raw_ids):
         raise DatasetContractError("resample provenance IDs must not contain duplicates")
+    if tuple(raw_ids) != source.rejected_instance_ids:
+        raise DatasetContractError("resample provenance IDs must match the source rejected IDs")
     canonical_ids = set(plan.instance_ids)
     if any(item not in canonical_ids for item in raw_ids):
         raise DatasetContractError("resample provenance contains an ID outside the canonical plan")
@@ -2623,6 +2635,9 @@ def _validate_resample_provenance(
                 f"resample provenance generation_attempts.{instance_id} must be positive"
             )
         generation_attempts[instance_id] = attempt
+    source_attempts = {row.instance_id: row.generation_attempt + 1 for row in source.rejection_rows}
+    if generation_attempts != source_attempts:
+        raise DatasetContractError("resample provenance attempts must increment source rejections exactly once")
     accepted_record_hashes = _validate_provenance_hash_map(
         content["accepted_record_hashes"],
         label="accepted_record_hashes",
@@ -2638,15 +2653,38 @@ def _validate_resample_provenance(
         label="prior_accepted_instance_hashes",
         expected_ids=canonical_ids,
     )
-    if set(accepted_record_hashes) != set(accepted_instance_hashes):
+    accepted_latent_hashes = _validate_provenance_hash_map(
+        content["accepted_event_latent_hashes"],
+        label="accepted_event_latent_hashes",
+        expected_ids=resampled_ids,
+    )
+    prior_latent_hashes = _validate_provenance_hash_map(
+        content["prior_accepted_event_latent_hashes"],
+        label="prior_accepted_event_latent_hashes",
+        expected_ids=set(source.accepted_instance_ids),
+    )
+    if not (set(accepted_record_hashes) == set(accepted_instance_hashes) == set(accepted_latent_hashes)):
         raise DatasetContractError("resample provenance accepted hash maps must have identical IDs")
+    source_headers = _instance_headers_from_manifest(source.manifest, expected_ids=source.accepted_instance_ids)
+    if prior_hashes != {header.instance_id: header.instance_hash for header in source_headers}:
+        raise DatasetContractError("resample provenance prior hashes diverge from source accepted headers")
+    current_latents = _read_jsonl(root / "event_latents.jsonl", "event_latents", "event_latents")
+    source_latents = _read_jsonl(source_path / "event_latents.jsonl", "event_latents", "event_latents")
+    if accepted_latent_hashes != _instance_event_latent_hashes(current_latents, accepted_instance_hashes):
+        raise DatasetContractError("resample provenance accepted event latent hashes diverge from payload")
+    if (
+        prior_latent_hashes != _instance_event_latent_hashes(source_latents, source.accepted_instance_ids)
+        or prior_latent_hashes != _instance_event_latent_hashes(current_latents, source.accepted_instance_ids)
+    ):
+        raise DatasetContractError("resample provenance prior event latent hashes diverge from inherited payload")
     if content["authorizing_action"] != "EXPLICIT_RESAMPLE":
         raise DatasetContractError("resample provenance authorizing_action is invalid")
 
-    if current_headers is None:
-        return
-    headers = tuple(current_headers)
     header_by_id = {header.instance_id: header for header in headers}
+    authorized_attempt_ids = set(source.accepted_instance_ids) | resampled_ids
+    for item in (*headers, *rejections):
+        if item.instance_id not in authorized_attempt_ids and item.generation_attempt != 0:
+            raise DatasetContractError("resample provenance does not authorize a repeated attempt for a new candidate")
     for instance_id in raw_ids:
         header = header_by_id.get(instance_id)
         if header is None:
@@ -2661,10 +2699,10 @@ def _validate_resample_provenance(
                 raise DatasetContractError(
                     f"resample provenance accepted maps contain an absent ID: {instance_id}"
                 )
-            if rejection_rows is None or not any(
+            if not any(
                 row.instance_id == instance_id
                 and row.generation_attempt == generation_attempts[instance_id]
-                for row in rejection_rows
+                for row in rejections
             ):
                 raise DatasetContractError(
                     f"resample provenance absent ID lacks matching rejection row: {instance_id}"
@@ -2678,15 +2716,10 @@ def _validate_resample_provenance(
             raise DatasetContractError(
                 f"resample provenance hashes/attempt diverge for {instance_id}"
             )
-    header_ids = [header.instance_id for header in headers]
-    present_resampled = [instance_id for instance_id in raw_ids if instance_id in header_by_id]
-    if set(prior_hashes) != set(header_ids[: (plan.instance_ids.index(present_resampled[0]) if present_resampled else len(header_ids))]):
-        raise DatasetContractError("resample provenance prior hash IDs diverge from inherited prefix")
-    for instance_id, digest_value in prior_hashes.items():
-        header = header_by_id.get(instance_id)
-        if header is None or header.instance_hash != digest_value:
+    for source_header in source_headers:
+        if header_by_id.get(source_header.instance_id) != source_header:
             raise DatasetContractError(
-                f"resample provenance prior hash diverges for {instance_id}"
+                f"resample provenance inherited header diverges for {source_header.instance_id}"
             )
 
 
@@ -2793,8 +2826,12 @@ def _load_aborted_staging_internal(
         visited=visited,
     )
     hashes = manifest.get("instance_hashes")
-    if not isinstance(hashes, list) or tuple(item.get("instance_id") for item in hashes if isinstance(item, Mapping)) != accepted:
-        raise DatasetContractError("STAGING manifest instance_hashes diverge from accepted IDs")
+    expected_hashes = [
+        {"instance_id": header.instance_id, "instance_hash": header.instance_hash}
+        for header in headers
+    ]
+    if hashes != expected_hashes:
+        raise DatasetContractError("STAGING manifest instance_hashes diverge from accepted headers")
     recomputed = dataset_root_hash(staging["manifest_hash"], staging["checksums_hash"])
     return AbortedStaging(
         path=root,
@@ -3653,6 +3690,8 @@ def _canonical_confirmatory_config() -> ExperimentConfig:
 def _validate_namespace_inventory(path: Path, manifest: Mapping[str, Any]) -> None:
     """Require the exact immutable file set for an initial or resampled freeze."""
 
+    _reject_reparse(path, "frozen dataset namespace")
+    _reject_reparse(path.parent, "frozen dataset parent")
     try:
         observed = {entry.name for entry in path.iterdir()}
     except OSError as exc:
@@ -3680,6 +3719,11 @@ def _validate_namespace_inventory(path: Path, manifest: Mapping[str, Any]) -> No
             "frozen dataset namespace inventory diverges from the exact file set"
             + (f" ({'; '.join(details)})" if details else "")
         )
+    for name in expected:
+        entry = path / name
+        _reject_reparse(entry, "frozen dataset namespace file")
+        if not entry.is_file():
+            raise DatasetContractError(f"frozen dataset namespace entry must be a regular file: {entry}")
 
 
 def _validate_manifest_configuration(
@@ -4265,10 +4309,7 @@ def _validate_full_payloads(
         current_headers=instance_headers,
     )
     seeds = _manifest_seeds(manifest)
-    try:
-        event_latent_ledger = _validate_event_latent_rows(event_latent_rows)
-    except DatasetContractError:
-        raise
+    event_latent_ledger = _validate_event_latent_rows(event_latent_rows)
     if manifest.get("event_latents_sha256") != event_latent_ledger.event_latents_sha256:
         raise DatasetContractError("manifest event_latents_sha256 does not match ledger bytes")
     latent_by_instance: dict[str, list[Mapping[str, Any]]] = {}
@@ -4319,7 +4360,6 @@ def _validate_full_payloads(
     by_instance_disruptions: dict[str, list[Mapping[str, Any]]] = {}
     disruption_row_instance_order: list[str] = []
     truck_row_instance_order: list[str] = []
-    service_row_instance_order: list[str] = []
     observed_service_order: list[tuple[str, str, str]] = []
     for ordinal, row in enumerate(truck_rows):
         instance_id = row.get("instance_id")
@@ -4368,6 +4408,10 @@ def _validate_full_payloads(
         if records != sorted(records, key=lambda item: (item.arrival_minute, item.truck_id)):
             raise DatasetContractError(f"{instance_id} truck rows are not in canonical arrival order")
 
+    truck_ids_by_instance = {
+        instance_id: {truck.truck_id for truck in trucks}
+        for instance_id, trucks in by_instance_trucks.items()
+    }
     for ordinal, row in enumerate(service_rows):
         instance_id = row.get("instance_id")
         generation_attempt = generation_attempt_lookup.get(str(instance_id))
@@ -4399,29 +4443,20 @@ def _validate_full_payloads(
             raise DatasetContractError(f"service_times row {ordinal} draw_key diverges from CRN tuple")
         if service.operation not in expected_distributions or expected_distributions[service.operation] != service.distribution:
             raise DatasetContractError(f"service_times row {ordinal} source distribution diverges")
-        if service.truck_id not in {truck.truck_id for truck in by_instance_trucks[service.instance_id]}:
+        if service.truck_id not in truck_ids_by_instance[service.instance_id]:
             raise DatasetContractError(f"service_times row {ordinal} references an unknown truck")
-        service_row_instance_order.append(service.instance_id)
         observed_service_order.append((service.instance_id, service.truck_id, service.operation))
         by_instance_services.setdefault(service.instance_id, []).append(service)
-    expected_service_order: list[tuple[str, str, str]] = []
-    for instance_id in expected_ids:
-        trucks = by_instance_trucks.get(instance_id, [])
-        for truck in trucks:
-            expected_service_order.extend((instance_id, truck.truck_id, operation) for operation in _OPERATIONS)
+    # Exact sequence equality also proves four operations per truck, unique
+    # truck/operation pairs and canonical instance order in one linear check.
+    expected_service_order = [
+        (instance_id, truck.truck_id, operation)
+        for instance_id in expected_ids
+        for truck in by_instance_trucks[instance_id]
+        for operation in _OPERATIONS
+    ]
     if observed_service_order != expected_service_order:
         raise DatasetContractError("service_times payload order diverges from canonical truck/operation order")
-    expected_service_instance_order = [instance_id for instance_id, _truck_id, _operation in expected_service_order]
-    if service_row_instance_order != expected_service_instance_order:
-        raise DatasetContractError("service_times payload instance order diverges from canonical plan")
-    for instance_id in expected_ids:
-        services = by_instance_services.get(instance_id, [])
-        trucks = by_instance_trucks[instance_id]
-        if len(services) != len(trucks) * len(_OPERATIONS):
-            raise DatasetContractError(f"{instance_id} must contain exactly four service rows per truck")
-        grouped = {truck_id: [item.operation for item in services if item.truck_id == truck_id] for truck_id in {truck.truck_id for truck in trucks}}
-        if any(tuple(operations) != _OPERATIONS for operations in grouped.values()):
-            raise DatasetContractError(f"{instance_id} service operations are not exactly gate/scale_in/unload/scale_out")
 
     for ordinal, row in enumerate(disruption_rows):
         instance_id = row.get("instance_id")
