@@ -30,8 +30,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/pyproject.toml": {
-    "mtime": 1788818924.4929416,
-    "ast_hash": "ec720834c9038a3f07c36d7276debe48",
+    "mtime": 1788822377.1323795,
+    "ast_hash": "640644169d9f63d59f9a3818b53814b4",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/__init__.py": {
@@ -40,8 +40,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/audit.py": {
-    "mtime": 1788820701.771297,
-    "ast_hash": "8396a7ad249ff57e3f9da46c5b27de52",
+    "mtime": 1788824584.8781855,
+    "ast_hash": "794f15458fbc0d6f0a04cd12ee05fdc9",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/config.py": {
@@ -60,8 +60,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/dispatch.py": {
-    "mtime": 1788819017.8501265,
-    "ast_hash": "d98999d07974cce34bdcdca795022e48",
+    "mtime": 1788824584.8791852,
+    "ast_hash": "df8856f0eb4671d534aa7f61ecfee08f",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/domain.py": {
@@ -115,8 +115,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_a2_structural.py": {
-    "mtime": 1788819411.8241382,
-    "ast_hash": "1bd5186d317c6ea7c3190211d856d21d",
+    "mtime": 1788824597.324766,
+    "ast_hash": "e2b2ad9efa614803d7bd2eaf9de02cf9",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_config_manifest.py": {
@@ -170,13 +170,13 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1784039714.0,
-    "ast_hash": "1b2594a7e0de888b079ff9ca46829b73",
+    "mtime": 1788822997.1907096,
+    "ast_hash": "da7e866bad5a0c0d0d5dd455a72d9157",
     "semantic_hash": ""
   },
   "experimento-notebook/README.md": {
-    "mtime": 1788821893.8983302,
-    "ast_hash": "ba936a989b4246cf5f6c8a648ef812ed",
+    "mtime": 1788822453.8002613,
+    "ast_hash": "e1471f817d7e66f623fc81d86e912f5d",
     "semantic_hash": ""
   },
   "experimento-notebook/docs/superpowers/plans/2026-09-01-experimento-notebook-implementation.md": {
@@ -287,6 +287,91 @@
   "experimento-notebook/docs/synthetic-input-catalog.md": {
     "mtime": 1788821702.4547672,
     "ast_hash": "376ed6a37c45d31203de54b8b956d313",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/before-branch/manifest.json": {
+    "mtime": 1788822356.812095,
+    "ast_hash": "1e13a37fb295342bb2ac715ed7409dd8",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/before-branch/receipt.json": {
+    "mtime": 1788822357.1784582,
+    "ast_hash": "447328d0df37528ec6caf671fe2baf8a",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/compileall/manifest.json": {
+    "mtime": 1788824093.5175054,
+    "ast_hash": "02828b9e019f461e18a4aca0e82e3caf",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/compileall/receipt.json": {
+    "mtime": 1788824093.6298335,
+    "ast_hash": "453573d1c079f1492ba934449536d9b8",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/create-environment/manifest.json": {
+    "mtime": 1788822377.7209806,
+    "ast_hash": "a4a1c25bbad793d80ccc2ecb9dbc8250",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/create-environment/receipt.json": {
+    "mtime": 1788822384.5856209,
+    "ast_hash": "91013783eab50eb08e0168e1dcaa7f73",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/git-before-branch.json": {
+    "mtime": 1788822326.618979,
+    "ast_hash": "ae28d627476183eaf99f1dd22573e700",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/index.json": {
+    "mtime": 1788824094.9882047,
+    "ast_hash": "636082e21c782bf3c46cf9cb158217c7",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/install/manifest.json": {
+    "mtime": 1788822403.568983,
+    "ast_hash": "1bd3c3ab3edd24eec0f62ec46486bcff",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/install/receipt.json": {
+    "mtime": 1788822490.2079775,
+    "ast_hash": "f4c97e9ab2fc58bc8c7d404b12a278d3",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/kernel/artifacts/environment.json": {
+    "mtime": 1788822540.2339628,
+    "ast_hash": "d0ab515674cce7998b183c2aca9c6c69",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/kernel/manifest.json": {
+    "mtime": 1788822536.3346853,
+    "ast_hash": "cf9b15a1cbc06c9b2cd5f46bb46e3f1e",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/kernel/receipt.json": {
+    "mtime": 1788822540.2821295,
+    "ast_hash": "5ee63c84cc3c14f8dd3a6b94652be6fe",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/suite/manifest.json": {
+    "mtime": 1788822546.4692898,
+    "ast_hash": "5d62c0932dbc2dd778d88c852dbb36dc",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/suite/receipt.json": {
+    "mtime": 1788824063.7484627,
+    "ast_hash": "f61aad28e520b1d88b5548328bfe2661",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/baseline.md": {
+    "mtime": 1788824191.0858915,
+    "ast_hash": "365492621f1d0d413c46b8e4c211054e",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/closure/evidence/verify_environment.py.txt": {
+    "mtime": 1788822510.1875763,
+    "ast_hash": "fb180fbd78bda88453b28d862992c1b9",
     "semantic_hash": ""
   }
 }

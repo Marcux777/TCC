@@ -231,23 +231,25 @@ def _valid_candidate_evidence(item: Mapping[str, Any]) -> bool:
     )
 
 
-def _observed_exclusion(item: Mapping[str, Any], context: Mapping[str, Any]) -> str | None:
+def _observed_exclusion(
+    item: Mapping[str, Any], context: Mapping[str, Any]
+) -> tuple[str, str] | None:
     """Reconstruct hard constraints from persisted facts, independently of dispatch."""
     if not item["arrived"]:
-        return "NOT_ARRIVED"
+        return "NOT_ARRIVED", "truck not arrived"
     if item["arrival_time"] > context["now"]:
-        return "FUTURE_ARRIVAL"
+        return "FUTURE_ARRIVAL", "truck arrival is in the future"
     if not item["eligible"]:
-        return "INELIGIBLE"
+        return "INELIGIBLE", item["eligibility_reason"] or "candidate is not eligible"
     if not item["document_ok"]:
-        return "DOCUMENT_BLOCKED"
+        return "DOCUMENT_BLOCKED", "document blocked"
     if context["operation"] is not None and item["operation"] is not None:
         if item["operation"] != context["operation"]:
-            return "OPERATION_MISMATCH"
+            return "OPERATION_MISMATCH", "operation mismatch"
     if item["resource_id"] is not None and item["resource_id"] != context["resource_id"]:
-        return "RESOURCE_MISMATCH"
+        return "RESOURCE_MISMATCH", "resource mismatch"
     if item["cargo_type"] not in context["allowed_cargo_types"]:
-        return "CARGO_INCOMPATIBLE"
+        return "CARGO_INCOMPATIBLE", f"cargo type {item['cargo_type']!r} is incompatible with resource"
     return None
 
 
@@ -415,8 +417,8 @@ def _validate_decision_justification(
             return False
         if evidence["truck_id"] != excluded_id:
             return False
-        observed_cause = _observed_exclusion(evidence, context)
-        if observed_cause is None or item["cause"] != observed_cause:
+        observed_exclusion = _observed_exclusion(evidence, context)
+        if observed_exclusion is None or (item["cause"], exclusion_reason) != observed_exclusion:
             return False
         excluded_ids.add(excluded_id)
 
@@ -481,26 +483,22 @@ def _validate_decision_justification(
     if rules != tuple(expected_rules):
         return False
 
-    reason = justification.reason
-    if not all(
-        token in reason for token in (selected_id, selected_stage, resource_id, policy)
-    ):
-        return False
-    reason_lower = reason.casefold()
-    if "fifo" not in reason_lower:
-        return False
-    expected_phrase = "fifo order broken" if expected_fifo_break else "fifo order preserved"
-    if expected_phrase not in reason_lower:
-        return False
-    if any(rule.startswith("priority_") for rule in rules) and "priorit" not in reason_lower:
-        return False
-    if "waiting_window" in rules and not any(
-        token in reason_lower for token in ("waiting", "wait", "window")
-    ):
-        return False
-    if "resource_blocked" in rules and "blocked" not in reason_lower:
-        return False
-    return True
+    # Schema 2 persists canonical evidence, not unrestricted prose. Reconstruct
+    # the entire reason here so retaining valid tokens cannot hide invented claims.
+    fifo_sentence = (
+        f"FIFO order broken: {selected_id} precedes {fifo_reference}"
+        if expected_fifo_break else "FIFO order preserved"
+    )
+    expected_reason = (
+        f"Selected truck {selected_id} for stage {selected_stage} on resource "
+        f"{resource_id} under policy {policy}; {fifo_sentence}"
+    )
+    policy_rules = _POLICY_JUSTIFICATION_RULES.get(policy, ())
+    if policy_rules:
+        expected_reason += f"; applied rules: {', '.join(policy_rules)}"
+    if has_resource_block:
+        expected_reason += "; a resource assignment was blocked by compatibility constraints"
+    return justification.reason == expected_reason + "."
 
 
 def _validate_log_fields(

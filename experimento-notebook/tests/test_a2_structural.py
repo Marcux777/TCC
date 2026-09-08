@@ -44,6 +44,10 @@ def test_auditor_reconstructs_stage_fifo_and_rejects_tampering(same_stage_time) 
         lambda value: value.__setitem__("fifo_reference_truck_id", "Z"),
         lambda value: value["candidate_order"][0].__setitem__("stage_entry_time", 0),
         lambda value: value["candidate_order"][0].pop("stage_entry_time"),
+        lambda value: (
+            value["selected"].__setitem__("truck_id", "outside-candidates"),
+            value["justification"]["truck_stage"].__setitem__("truck_id", "outside-candidates"),
+        ),
         lambda value: value.__setitem__("schema_version", 1),
     ):
         tampered = deepcopy(payload)
@@ -73,6 +77,23 @@ def test_auditor_checks_structured_cargo_exclusion_and_context(assigned_resource
         tampered = deepcopy(payload)
         mutate(tampered)
         assert not _validate_decision_justification(tampered)
+
+
+@pytest.mark.parametrize("target", ["justification", "exclusion"])
+def test_auditor_rejects_invented_reason_despite_valid_structural_tokens(target) -> None:
+    payload = recommend(
+        [Candidate("corn", cargo_type="corn", operation="unload"),
+         Candidate("soy", cargo_type="soy", operation="unload")],
+        DispatchContext(now=10, resource_id="hopper-1", operation="unload",
+                        allowed_cargo_types=("soy",)),
+        make_policy("fifo_flow_faithful"),
+    ).to_dict()
+    assert _validate_decision_justification(payload)
+    if target == "justification":
+        payload["justification"]["reason"] += " The driver requested priority."
+    else:
+        payload["excluded"][0]["reason"] = "The driver asked to leave the yard."
+    assert not _validate_decision_justification(payload)
 
 
 def test_recommendation_emits_canonical_five_field_justification() -> None:

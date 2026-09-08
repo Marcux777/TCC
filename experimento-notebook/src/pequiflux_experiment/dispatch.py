@@ -410,7 +410,10 @@ def _exclusion(candidate: Candidate, context: DispatchContext) -> tuple[str, str
 
 
 def _fifo_reference(candidates: tuple[Candidate, ...]) -> Candidate:
-    """Return the deterministic FIFO reference among admissible candidates."""
+    """Order admissible candidates solely by ``(stage_entry_time, truck_id)``.
+
+    Yard arrival time, input order and ``stable_order`` do not break FIFO ties.
+    """
 
     if not candidates:
         raise ValueError("FIFO reference requires at least one candidate")
