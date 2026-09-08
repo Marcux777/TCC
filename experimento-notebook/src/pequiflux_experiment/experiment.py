@@ -32,6 +32,7 @@ from .config import (
     validate_confirmatory_config,
 )
 from .digital_model import DigitalModel
+from .dataset import derive_controlled_projection
 from .domain import YardSnapshot, FrozenInstance, ExecutionControls, EventLatentLedger
 from .emulator import DayResult, run_day
 from .events import EventRecord
@@ -962,12 +963,28 @@ def _run_materialized_matrix(
     expected_keys = {(scenario.scenario_id, seed) for scenario in scenario_values for seed in seed_values}
     if set(instance_map) != expected_keys:
         raise ValueError("materialized instances must match the requested matrix exactly")
+    expected_inputs = {}
     for scenario in scenario_values:
         for seed in seed_values:
             instance = instance_map[(scenario.scenario_id, seed)]
             if (len(instance.trucks) != scenario.truck_count
                     or instance.scenario_index != scenario.scenario_index):
                 raise ValueError("frozen instance dimensions do not match requested scenario")
+            # Prove ledger membership and the controlled projection before any
+            # namespace or policy is reached. Retain only its identity, once per
+            # instance, for comparison with every worker result below.
+            projection = derive_controlled_projection(instance, event_latents, controls)
+            expected_inputs[(scenario.scenario_id, seed)] = {
+                "scenario_id": scenario.scenario_id,
+                "seed": seed,
+                "instance_id": instance.instance_id,
+                "instance_hash": instance.instance_hash,
+                "execution_instance_hash": projection.instance.instance_hash,
+                "dataset_root_hash": controls.source_dataset_root_hash,
+                "control_hash": controls.control_hash,
+                "controlled_view_hash": projection.controlled_view_hash,
+                "event_overlay_hash": projection.event_overlay_hash,
+            }
     commit, checkout_clean = _git_metadata()
     if phase_component in {"pilot", "execute-confirmatory"}:
         from .capacity import require_capacity
@@ -990,11 +1007,17 @@ def _run_materialized_matrix(
             for policy_name, policy_value in zip(policy_names, policy_values, strict=True):
                 instance = instance_map[(scenario.scenario_id, seed)]
                 result = run_day(instance, policy_value, controls, event_latents)
-                if (result.instance_id != instance.instance_id
-                        or result.instance_hash != instance.instance_hash
-                        or result.dataset_root_hash != controls.source_dataset_root_hash
-                        or result.control_hash != controls.control_hash):
-                    raise RuntimeError("worker result does not identify its consumed frozen input")
+                expected = {**expected_inputs[(scenario.scenario_id, seed)],
+                            "policy_name": policy_name, "controls": controls}
+                mismatches = {
+                    field: {"expected": value, "observed": getattr(result, field)}
+                    for field, value in expected.items() if getattr(result, field) != value
+                }
+                if mismatches:
+                    raise RuntimeError(
+                        "worker result does not identify its consumed frozen input: "
+                        f"instance_id={instance.instance_id}; policy={policy_name}; mismatches={mismatches}"
+                    )
                 log_filename = (
                     f"{scenario.scenario_id}__seed_{seed}__policy_{policy_name}.jsonl"
                 )

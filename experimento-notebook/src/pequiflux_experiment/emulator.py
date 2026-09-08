@@ -275,8 +275,8 @@ class _DaySimulation:
         self.max_buffer_reservation = 0
         self.digital_model: DigitalModel | None = None
         self._build_resources()
-        self._build_trucks()
-        self._build_disruptions()
+        self._load_frozen_trucks()
+        self._schedule_frozen_disruptions()
         self.digital_model = DigitalModel.from_snapshot(
             self._initial_snapshot(),
             scenario=self.scenario,
@@ -306,7 +306,8 @@ class _DaySimulation:
         if self.resource_pool["gate"] != ("gate-1",):
             raise ValueError("frozen instance requires its canonical gate-1 resource")
 
-    def _build_trucks(self) -> None:
+    def _load_frozen_trucks(self) -> None:
+        """Load arrivals and potential service durations without generating values."""
         for index, truck in enumerate(self.instance.trucks):
             if (truck.stage != "gate" or truck.arrival_minute > HORIZON_MINUTES
                     or truck.scenario_id != self.scenario.scenario_id
@@ -328,7 +329,8 @@ class _DaySimulation:
         ):
             raise ValueError("frozen service_times must contain exactly four positive durations per truck")
 
-    def _build_disruptions(self) -> None:
+    def _schedule_frozen_disruptions(self) -> None:
+        """Enqueue only the events from the validated frozen projection."""
         for row in self.instance.disruptions:
             self._push(
                 time=float(row["time"]), kind=row["event_type"],

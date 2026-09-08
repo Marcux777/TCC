@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import math
+import hashlib
+import random
 from dataclasses import replace
+from decimal import Decimal
+from pathlib import Path
 
+import numpy as np
 import pytest
 
-from pequiflux_experiment.config import POLICY_NAMES
+from pequiflux_experiment.config import POLICY_NAMES, load_config
 from pequiflux_experiment.digital_model import DigitalModel
 from pequiflux_experiment.dispatch import (
     Candidate,
@@ -18,6 +23,9 @@ from pequiflux_experiment.dispatch import (
     recommend,
 )
 import pequiflux_experiment.emulator as emulator_module
+import pequiflux_experiment.dataset as dataset_module
+import pequiflux_experiment.experiment as experiment_module
+import pequiflux_experiment.validation_fixtures as fixture_module
 from pequiflux_experiment.emulator import run_day, tiny_scenario
 from pequiflux_experiment.validation_fixtures import build_validation_fixture
 from pequiflux_experiment.domain import EventLatentLedger, ExecutionControls
@@ -109,10 +117,10 @@ def test_scale_in_and_scale_out_share_one_physical_pool() -> None:
 
 
 def _force_arrival_time(monkeypatch, arrival_time: float, *, priority: int | None = None) -> None:
-    build_trucks = emulator_module._DaySimulation._build_trucks
+    load_trucks = emulator_module._DaySimulation._load_frozen_trucks
 
-    def build_trucks_at_time(simulation):
-        build_trucks(simulation)
+    def load_trucks_at_time(simulation):
+        load_trucks(simulation)
         simulation.schedule.clear()
         for state in simulation.states.values():
             state.arrival_time = state.stage_entry_time = arrival_time
@@ -120,7 +128,7 @@ def _force_arrival_time(monkeypatch, arrival_time: float, *, priority: int | Non
                 state.priority = priority
             simulation._push(time=arrival_time, kind="arrival", truck_id=state.truck_id)
 
-    monkeypatch.setattr(emulator_module._DaySimulation, "_build_trucks", build_trucks_at_time)
+    monkeypatch.setattr(emulator_module._DaySimulation, "_load_frozen_trucks", load_trucks_at_time)
 
 
 def test_parallel_pool_resources_do_not_assign_one_truck_twice(monkeypatch) -> None:
@@ -226,29 +234,93 @@ def test_run_day_fails_with_diagnostic_when_physical_snapshot_diverges(monkeypat
         )
 
 
-def test_des_consumes_frozen_arrivals_documents_and_services_without_rng() -> None:
-    fixture = build_validation_fixture(tiny_scenario(truck_count=12))
-    result = run_day(fixture.instance, "lexicographic", fixture.controls, fixture.event_latents)
-    arrivals = {event.payload["truck_id"]: event.payload for event in result.events if event.kind == "TRUCK_ARRIVED"}
-    for truck in fixture.instance.trucks:
-        assert arrivals[truck.truck_id]["arrival_time"] == truck.arrival_minute
-        assert arrivals[truck.truck_id]["document_ok"] == truck.document_ok
-    durations = {(row.truck_id, row.operation): row.duration_min for row in fixture.instance.service_times}
-    for event in result.events:
-        if event.kind == "SERVICE_STARTED":
-            assert event.payload["duration_minutes"] == durations[event.payload["truck_id"], event.payload["operation"]]
-    assert result.instance_id == fixture.instance.instance_id
-    assert result.instance_hash == fixture.instance.instance_hash
-    assert not hasattr(emulator_module._DaySimulation, "_stream")
+@pytest.mark.parametrize("seed", [101, 103])
+def test_des_consumes_frozen_arrivals_documents_and_services_without_rng(monkeypatch, seed) -> None:
+    # Materialize the ledger before the guard; the observed input is hand-set.
+    fixture = build_validation_fixture(tiny_scenario(truck_count=2), seed)
+    arrivals = {"T-001": 0.0, "T-002": 3.0}
+    durations = {
+        ("T-001", "gate"): 2.0, ("T-001", "scale_in"): 3.0,
+        ("T-001", "unload"): 12.0, ("T-001", "scale_out"): 3.0,
+        ("T-002", "gate"): 4.0, ("T-002", "scale_in"): 5.0,
+        ("T-002", "unload"): 20.0, ("T-002", "scale_out"): 5.0,
+    }
+    instance = replace(
+        fixture.instance,
+        trucks=tuple(replace(truck, arrival_minute=arrivals[truck.truck_id],
+                             truck_record_hash=None) for truck in fixture.instance.trucks),
+        service_times=tuple(replace(row, duration_min=durations[row.truck_id, row.operation],
+                                    service_record_hash=None) for row in fixture.instance.service_times),
+        canonical_record_hash=None, instance_hash=None,
+    )
+    controls = ExecutionControls.build(
+        ordinary_window=2, buffer_capacity=3, threshold_multiplier=Decimal("0.75"),
+        intensity="base", event_latents_sha256=fixture.event_latents.event_latents_sha256,
+        source_dataset_root_hash=hashlib.sha256(
+            f"known-engineering-input:{instance.instance_hash}:{fixture.event_latents.event_latents_sha256}".encode()
+        ).hexdigest(),
+    )
+    fixture = replace(fixture, instance=instance, controls=controls)
+    original_instance = instance.to_dict()
+    original_ledger = fixture.event_latents.to_rows()
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("DES attempted to generate inputs or draw random values")
+
+    for module, names in (
+        (dataset_module, ("_rng", "_build_instance", "_build_event_latents", "generate_synthetic_dataset")),
+        (fixture_module, ("_build_instance", "_build_event_latents", "build_validation_fixture", "build_validation_inputs")),
+    ):
+        for name in names:
+            monkeypatch.setattr(module, name, forbidden)
+    # Include the standard RNG APIs as well as the project's generator boundary.
+    for module in (random, np.random):
+        for name in dir(module):
+            if not name.startswith("_") and callable(getattr(module, name)):
+                monkeypatch.setattr(module, name, forbidden)
+
+    events_by_policy = {}
+    for policy_order in (POLICY_NAMES, tuple(reversed(POLICY_NAMES))):
+        for policy in policy_order:
+            result = run_day(instance, policy, controls, fixture.event_latents)
+            observed_arrivals = {
+                event.payload["truck_id"]: (event.time, event.payload["arrival_time"], event.payload["document_ok"])
+                for event in result.events if event.kind == "TRUCK_ARRIVED"
+            }
+            assert observed_arrivals == {"T-001": (0.0, 0.0, True), "T-002": (3.0, 3.0, True)}
+            assert {(event.payload["truck_id"], event.payload["operation"]): event.payload["duration_minutes"]
+                    for event in result.commands} == durations
+            starts = {(event.payload["truck_id"], event.payload["operation"]): event.time
+                      for event in result.commands}
+            completions = {(event.payload["truck_id"], event.payload["operation"]): event.time
+                           for event in result.events if event.kind == "SERVICE_COMPLETED"}
+            assert {key: completed_at - starts[key] for key, completed_at in completions.items()} == durations
+            assert result.completed_trucks == 2
+            assert result.instance_id == instance.instance_id
+            assert result.instance_hash == result.execution_instance_hash == instance.instance_hash
+            assert result.dataset_root_hash == controls.source_dataset_root_hash
+            assert result.control_hash == controls.control_hash
+            assert result.controls == controls
+            assert result.metrics["buffer_capacity"] == 3
+            assert result.events[0].payload["event_latents_sha256"] == fixture.event_latents.event_latents_sha256
+            serialized = [event.to_dict() for event in result.events]
+            if policy in events_by_policy:
+                assert serialized == events_by_policy[policy]
+            events_by_policy[policy] = serialized
+    assert instance.to_dict() == original_instance
+    assert fixture.event_latents.to_rows() == original_ledger
 
     first = fixture.instance.service_times[0]
-    changed_service = replace(first, duration_min=first.source_a, service_record_hash=None)
+    changed_service = replace(first, duration_min=first.source_b, service_record_hash=None)
     changed = replace(fixture.instance, service_times=(changed_service, *fixture.instance.service_times[1:]),
                       canonical_record_hash=None, instance_hash=None)
     changed_result = run_day(changed, "lexicographic", fixture.controls, fixture.event_latents)
     observed = next(event for event in changed_result.events if event.kind == "SERVICE_STARTED"
                     and event.payload["truck_id"] == first.truck_id and event.payload["operation"] == first.operation)
-    assert observed.payload["duration_minutes"] == first.source_a
+    assert observed.payload["duration_minutes"] == first.source_b
+    completed = next(event for event in changed_result.events if event.kind == "SERVICE_COMPLETED"
+                     and event.payload["truck_id"] == first.truck_id and event.payload["operation"] == first.operation)
+    assert completed.time - observed.time == first.source_b
     assert changed_result.instance_hash == changed.instance_hash != result.instance_hash
     missing = replace(fixture.instance, service_times=fixture.instance.service_times[1:],
                       canonical_record_hash=None, instance_hash=None)
@@ -257,11 +329,49 @@ def test_des_consumes_frozen_arrivals_documents_and_services_without_rng() -> No
     with pytest.raises(TypeError, match="FrozenInstance"):
         run_day(tiny_scenario(), "lexicographic", fixture.controls, fixture.event_latents)
     forged_rows = tuple({
-        **row, "instance_id": "s00-seed101",
-        "latent_id": row["latent_id"].replace(fixture.instance.instance_id, "s00-seed101"),
+        **row, "instance_id": f"s00-seed{seed}",
+        "latent_id": row["latent_id"].replace(fixture.instance.instance_id, f"s00-seed{seed}"),
     } for row in fixture.event_latents.to_rows())
     with pytest.raises(ValueError, match="scenario_id diverges"):
         EventLatentLedger(forged_rows)
+
+
+@pytest.mark.parametrize("field", ["execution_instance_hash", "policy_name"])
+def test_matrix_rejects_worker_result_from_wrong_projection_or_policy(tmp_path, monkeypatch, field):
+    fixture = build_validation_fixture(tiny_scenario(truck_count=2))
+    result = run_day(fixture.instance, "fifo_strict", fixture.controls, fixture.event_latents)
+    forged = replace(result, **{field: "0" * 64 if field == "execution_instance_hash" else "lexicographic"})
+    if field == "execution_instance_hash":
+        # Keep the returned envelope and RUN_STARTED mutually consistent: only
+        # comparison with the supplied frozen projection can expose this forgery.
+        started = replace(result.events[0], payload={**result.events[0].payload, field: "0" * 64})
+        forged = replace(forged, events=(started, *result.events[1:]))
+    monkeypatch.setattr(experiment_module, "run_day", lambda *_args: forged)
+    with pytest.raises(RuntimeError, match="worker result does not identify its consumed frozen input"):
+        experiment_module.run_validation_matrix(
+            [fixture.instance], ["fifo_strict"],
+            load_config(Path(__file__).parents[1] / "config" / "confirmatory.json"),
+            tmp_path / "runs", controls=fixture.controls, event_latents=fixture.event_latents,
+        )
+    assert not list((tmp_path / "runs").rglob("*.jsonl"))
+
+
+def test_matrix_proves_ledger_contains_instance_before_namespace(tmp_path, monkeypatch):
+    fixture = build_validation_fixture(tiny_scenario(truck_count=2), 101)
+    other = build_validation_fixture(tiny_scenario(truck_count=2), 103)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("namespace or worker reached before proving the frozen input")
+
+    monkeypatch.setattr(experiment_module, "create_run_directory", forbidden)
+    monkeypatch.setattr(experiment_module, "run_day", forbidden)
+    with pytest.raises(dataset_module.DatasetContractError, match="does not contain the supplied instance"):
+        experiment_module.run_validation_matrix(
+            [fixture.instance], ["fifo_strict"],
+            load_config(Path(__file__).parents[1] / "config" / "confirmatory.json"),
+            tmp_path / "runs", controls=other.controls, event_latents=other.event_latents,
+        )
+    assert not (tmp_path / "runs").exists()
 
 
 def _overlap_fixture(*, unload_duration=20.0, failure_start=245.0):
