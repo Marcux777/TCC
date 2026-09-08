@@ -257,6 +257,7 @@ def _compute(rows: list[dict[str, Any]], log_hash: str) -> MetricRow:
         resource = require_resource(resource_id)
         reservation = sum(state["arrived"] and state["stage"] in (1, 2) for state in states.values())
         scale_out_queue = sum(state["arrived"] and state["stage"] == 3 and truck_id not in active for truck_id, state in states.items())
+        scale_out_reservation = scale_out_queue + sum(service[0] == "unload" for service in active.values())
         values = []
         for truck_id, state in states.items():
             stage = state["stage"]
@@ -266,7 +267,7 @@ def _compute(rows: list[dict[str, Any]], log_hash: str) -> MetricRow:
                 continue
             allowed = (reservation < controls.buffer_capacity if stage == 0 else
                        reservation <= controls.buffer_capacity if stage == 1 else
-                       scale_out_queue < controls.buffer_capacity if stage == 2 else True)
+                       scale_out_reservation < controls.buffer_capacity if stage == 2 else True)
             if allowed:
                 values.append(truck_id)
         return sorted(values, key=lambda truck_id: (states[truck_id]["stage_time"], truck_id))

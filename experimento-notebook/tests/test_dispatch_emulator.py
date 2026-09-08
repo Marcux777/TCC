@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import hashlib
+import heapq
 import random
 from dataclasses import replace
 from decimal import Decimal
@@ -30,8 +31,11 @@ from pequiflux_experiment.emulator import run_day, tiny_scenario
 from pequiflux_experiment.validation_fixtures import build_validation_fixture
 from pequiflux_experiment.domain import EventLatentLedger, ExecutionControls
 from pequiflux_experiment.dataset import _coalesced_rain_rows, _disruption_payload_hash
-from pequiflux_experiment.config import EVENT_RANKS
+from pequiflux_experiment.config import EVENT_RANKS, EVENT_SEMANTICS_VERSION
+from pequiflux_experiment.events import read_jsonl, write_jsonl
+from pequiflux_experiment.digital_model import replay_events
 from pequiflux_experiment.policies import make_policy
+from pequiflux_experiment.metrics import compute_policy_day_metrics
 
 
 def _run_fixture(scenario, seed, policy):
@@ -374,7 +378,8 @@ def test_matrix_proves_ledger_contains_instance_before_namespace(tmp_path, monke
     assert not (tmp_path / "runs").exists()
 
 
-def _overlap_fixture(*, unload_duration=20.0, failure_start=245.0):
+def _overlap_fixture(*, unload_duration=20.0, failure_start=245.0,
+                     failure_duration=40.0, rain_blocks=(8,)):
     fixture = build_validation_fixture(tiny_scenario(truck_count=1, hoppers=2, regime="critical_failure"))
     truck = replace(fixture.instance.trucks[0], arrival_minute=230.0, cargo_type="soy",
                     document_status="CLEAR", truck_record_hash=None)
@@ -387,12 +392,14 @@ def _overlap_fixture(*, unload_duration=20.0, failure_start=245.0):
         if row["latent_kind"] == "document":
             payload["u"] = 0.99
         elif row["latent_kind"] == "rain_block":
-            payload["u"] = 0.0 if payload["block_index"] == 8 else 0.99
+            payload["u"] = 0.0 if payload["block_index"] in rain_blocks else 0.99
         elif row["latent_kind"] == "forced_failure":
-            payload.update(start_minute=failure_start, duration_min=40.0, end_minute=failure_start + 40.0)
+            payload.update(start_minute=failure_start, duration_min=failure_duration,
+                           end_minute=failure_start + failure_duration)
     ledger = EventLatentLedger(tuple(rows))
     failure = dict(next(row for row in fixture.instance.disruptions if row["cause"] == "critical_failure"))
-    failure.update(time=failure_start, duration_min=40.0, return_time=failure_start + 40.0)
+    failure.update(time=failure_start, duration_min=failure_duration,
+                   return_time=failure_start + failure_duration)
     disruptions = [failure, *_coalesced_rain_rows(fixture.instance,
         [row for row in rows if row["latent_kind"] == "rain_block" and row["payload"]["u"] == 0.0])]
     disruptions.sort(key=lambda row: (row["time"], row["event_rank"], row["resource_id"], row["truck_id"]))
@@ -406,17 +413,29 @@ def _overlap_fixture(*, unload_duration=20.0, failure_start=245.0):
     return instance, controls, ledger
 
 
-@pytest.mark.parametrize("unload_duration,failure_start", ((20.0, 245.0), (35.0, 245.0), (31.0, 270.0)))
-def test_nonpreemptive_failure_rain_overlap_and_same_timestamp_order(unload_duration, failure_start):
-    instance, controls, ledger = _overlap_fixture(unload_duration=unload_duration, failure_start=failure_start)
-    result = run_day(instance, "lexicographic", controls, ledger)
+@pytest.mark.parametrize("policy", POLICY_NAMES)
+@pytest.mark.parametrize("unload_duration,failure_start,failure_duration,rain_blocks", (
+    (20.0, 245.0, 40.0, (8,)),
+    (35.0, 245.0, 40.0, (8,)),
+    (31.0, 270.0, 40.0, (8,)),
+    (35.0, 240.0, 20.0, (8,)),  # service finishes after nominal recovery
+    (20.0, 260.0, 40.0, (8, 9)),  # both active causes end at 300
+))
+def test_nonpreemptive_failure_rain_overlap_and_same_timestamp_order(
+    tmp_path, policy, unload_duration, failure_start, failure_duration, rain_blocks,
+):
+    instance, controls, ledger = _overlap_fixture(
+        unload_duration=unload_duration, failure_start=failure_start,
+        failure_duration=failure_duration, rain_blocks=rain_blocks,
+    )
+    result = run_day(instance, policy, controls, ledger)
     completion = next(event.time for event in result.events if event.kind == "SERVICE_COMPLETED"
                       and event.payload["operation"] == "unload")
     assert completion == 239.0 + unload_duration
     evidence = [event for event in result.events if event.kind == "DISRUPTION_RECORDED"]
     critical = next(event.payload for event in evidence if event.payload["cause"] == "critical_failure")
     assert critical["effective_failure_start"] == max(failure_start, completion)
-    assert critical["recovery_time"] == max(failure_start, completion) + 40.0
+    assert critical["recovery_time"] == max(failure_start, completion) + failure_duration
     recovered = [event.time for event in result.events if event.kind == "RESOURCE_RECOVERED"]
     assert recovered == [critical["recovery_time"]]
     assert all(not (completion <= event.time < critical["recovery_time"])
@@ -426,7 +445,197 @@ def test_nonpreemptive_failure_rain_overlap_and_same_timestamp_order(unload_dura
     # all same-time changes settle before dispatch and the new failure wins.
     same_time = [event.kind for event in result.events if event.time == completion]
     assert same_time.index("SERVICE_COMPLETED") < same_time.index("RESOURCE_FAILED")
-    assert EVENT_RANKS["rain_end"] < EVENT_RANKS["resource_failure"]
+    rain = next(event.payload for event in evidence if event.payload["cause"] == "rain")
+    rain_end = 30.0 * (max(rain_blocks) + 1)
+    assert rain["recovery_time"] == rain_end
+    assert rain["expired_before_effective_start"] is (rain_end <= completion)
+    assert len([event for event in result.events if event.kind == "SERVICE_STARTED"
+                and event.payload["operation"] == "unload"]) == 1
+    assert len([event for event in result.events if event.kind == "SERVICE_COMPLETED"
+                and event.payload["operation"] == "unload"]) == 1
+    path = tmp_path / "overlap.jsonl"
+    write_jsonl(path, result.events)
+    replayed = replay_events(read_jsonl(path), physical=result.initial_snapshot, scenario=result.scenario)
+    assert replayed.canonical_dict() == result.physical_snapshot.canonical_dict()
+
+
+def _concurrent_unload_buffer_fixture():
+    fixture = build_validation_fixture(
+        tiny_scenario(truck_count=4, hoppers=3, scales=1, regime="critical_failure")
+    )
+    trucks = tuple(replace(
+        truck, arrival_minute=213.0 if truck.truck_id in {"T-003", "T-004"} else 210.0,
+        priority=2 if truck.truck_id in {"T-003", "T-004"} else 0,
+        cargo_type="soy" if int(truck.truck_id[-3:]) % 2 else "corn",
+        document_status="CLEAR", truck_record_hash=None,
+    ) for truck in fixture.instance.trucks)
+    durations = {"gate": 2.0, "scale_in": 3.0, "unload": 12.0, "scale_out": 8.0}
+    services = tuple(replace(row, duration_min=durations[row.operation],
+                             service_record_hash=None) for row in fixture.instance.service_times)
+    rows = fixture.event_latents.to_rows()
+    for row in rows:
+        if row["latent_kind"] in {"document", "rain_block"}:
+            row["payload"]["u"] = 0.99
+        elif row["latent_kind"] == "forced_failure":
+            row["payload"].update(start_minute=240.0, duration_min=40.0, end_minute=280.0)
+    ledger = EventLatentLedger(rows)
+    failure = dict(next(row for row in fixture.instance.disruptions
+                        if row["cause"] == "critical_failure"))
+    failure.update(time=240.0, duration_min=40.0, return_time=280.0, sequence=1)
+    failure["payload_hash"] = _disruption_payload_hash(failure)
+    instance = replace(fixture.instance, trucks=trucks, service_times=services,
+                       disruptions=(failure,), canonical_record_hash=None, instance_hash=None)
+    controls = ExecutionControls.build(**{key: value for key, value in fixture.controls.to_dict().items()
+        if key not in {"control_hash", "event_latents_sha256", "buffer_capacity"}},
+        buffer_capacity=2, event_latents_sha256=ledger.event_latents_sha256)
+    return instance, controls, ledger
+
+
+@pytest.mark.parametrize("policy", POLICY_NAMES)
+def test_output_buffer_reserves_concurrent_unloads_and_drains_shared_scale(tmp_path, policy):
+    instance, controls, ledger = _concurrent_unload_buffer_fixture()
+    result = run_day(instance, policy, controls, ledger)
+    path = tmp_path / "buffer.jsonl"
+    log_text, *_ = experiment_module._log_lines(result, run_id="engineering-buffer", checksum="a" * 64)
+    path.write_text(log_text, encoding="utf-8")
+    events = read_jsonl(path)
+    active_unloads, output_queue, active_scales = set(), set(), set()
+    starts, completions, releases, subsequent_unloads = set(), set(), [], []
+    input_reservation = peak_output = 0
+    for event in events:
+        if event.kind not in {"SERVICE_STARTED", "SERVICE_COMPLETED"}:
+            continue
+        truck, operation = event.payload["truck_id"], event.payload["operation"]
+        key = (truck, operation)
+        if event.kind == "SERVICE_STARTED":
+            assert key not in starts
+            starts.add(key)
+            if operation == "unload":
+                active_unloads.add(truck)
+                subsequent_unloads.append(event.time)
+            elif operation == "scale_out":
+                output_queue.remove(truck)
+                releases.append(event.time)
+            if operation in {"scale_in", "scale_out"}:
+                assert event.payload["resource_id"] == "scale-1"
+                active_scales.add(key)
+        else:
+            assert key in starts and key not in completions
+            completions.add(key)
+            if operation == "gate":
+                input_reservation += 1
+            elif operation == "unload":
+                active_unloads.remove(truck)
+                output_queue.add(truck)
+                input_reservation -= 1
+            if operation in {"scale_in", "scale_out"}:
+                active_scales.remove(key)
+        output_reservation = len(active_unloads) + len(output_queue)
+        peak_output = max(peak_output, output_reservation)
+        assert 0 <= input_reservation <= 2
+        assert output_reservation <= 2
+        assert len(active_scales) <= 1  # entry and exit share one physical scale
+    assert len(completions) == 16 and completions == starts
+    assert not active_unloads and not output_queue and not active_scales
+    assert peak_output == 2
+    assert any(start >= releases[0] for start in subsequent_unloads)
+    assert result.metrics["max_buffer_reservation"] == 2
+    assert result.metrics["max_buffer_occupancy"] <= 2
+    metrics = compute_policy_day_metrics(path)
+    assert metrics.scalars["completed_trucks"] == 4
+    assert metrics.resources["scale-1"]["busy_minutes"] == 44.0
+    replayed = replay_events(events, physical=result.initial_snapshot, scenario=result.scenario)
+    assert replayed.canonical_dict() == result.physical_snapshot.canonical_dict()
+
+
+def test_six_way_scheduler_collision_persists_consolidated_state_before_dispatch(tmp_path):
+    """Engineering scheduler case: two injected failures, not a scientific dataset."""
+    fixture = build_validation_fixture(tiny_scenario(truck_count=3, hoppers=2))
+    originals = sorted(fixture.instance.trucks, key=lambda truck: truck.truck_id)
+    a, b, c = (truck.truck_id for truck in originals)
+    arrivals = {a: 266.0, b: 240.0, c: 270.0}
+    trucks = tuple(replace(truck, arrival_minute=arrivals[truck.truck_id], cargo_type="soy",
+        document_status="BLOCKED" if truck.truck_id == b else "CLEAR", truck_record_hash=None)
+        for truck in originals)
+    services = tuple(replace(row, duration_min={"gate": 4.0, "scale_in": 5.0,
+        "unload": 20.0, "scale_out": 5.0}[row.operation], service_record_hash=None)
+        for row in fixture.instance.service_times)
+    rows = fixture.event_latents.to_rows()
+    for row in rows:
+        row["payload"]["u"] = 0.99
+        if row["latent_kind"] == "document" and row["entity_id"] == b:
+            row["payload"].update(u=0.0, release_duration_min=30.0)
+            document_latent = row
+    ledger = EventLatentLedger(rows)
+    document = dict(instance_id=fixture.instance.instance_id, scenario_index=fixture.instance.scenario_index,
+        scenario_id=fixture.instance.scenario_id, seed=fixture.instance.seed, time=270.0,
+        event_rank=EVENT_RANKS["document_release"], sequence=1, event_type="document_release",
+        resource_id="", truck_id=b, cause="document", operation="gate", duration_min=30.0,
+        return_time=0.0, latent_id=document_latent["latent_id"], event_origin="sampled")
+    document["payload_hash"] = _disruption_payload_hash(document)
+    instance = replace(fixture.instance, trucks=trucks, service_times=services,
+                       disruptions=(document,), canonical_record_hash=None, instance_hash=None)
+    controls = ExecutionControls.build(**{key: value for key, value in fixture.controls.to_dict().items()
+        if key not in {"control_hash", "event_latents_sha256"}}, event_latents_sha256=ledger.event_latents_sha256)
+    simulation = emulator_module._DaySimulation(instance, make_policy("lexicographic"), controls, ledger)
+    initial = simulation._initial_snapshot()
+    simulation._emit("RUN_STARTED", {
+        "scenario_id": instance.scenario_id, "event_semantics_version": EVENT_SEMANTICS_VERSION,
+        "event_ranks": dict(EVENT_RANKS), "execution_controls": controls.to_dict(),
+        "resources": initial.canonical_dict()["resources"],
+    })
+    simulation._push(time=240.0, kind="resource_failure", resource_id="scale-1",
+        cause="engineering_prior_failure", duration=30.0,
+        latent_id="engineering:prior_failure", scheduled_start=240.0)
+    simulation._push(time=240.0, kind="rain_start", resource_id="hopper-1", cause="rain",
+        duration=30.0, recovery_at=270.0, latent_id="engineering:rain", scheduled_start=240.0)
+    simulation._push(time=270.0, kind="rain_end", resource_id="hopper-1", cause="rain",
+                     latent_id="engineering:rain")
+    simulation._push(time=270.0, kind="resource_failure", resource_id="gate-1",
+        cause="engineering_new_failure", duration=20.0,
+        latent_id="engineering:new_failure", scheduled_start=270.0)
+    consumed = []
+    while simulation.schedule and simulation.schedule[0][0] <= 270.0:
+        timestamp = simulation.schedule[0][0]
+        simulation.clock = timestamp
+        while simulation.schedule and simulation.schedule[0][0] == timestamp:
+            item = heapq.heappop(simulation.schedule)[-1]
+            if timestamp == 270.0:
+                consumed.append(item.kind)
+            simulation._process(item)
+        simulation._update_buffer_occupancy()
+        if timestamp == 270.0:
+            assert simulation.resource_status == {"gate-1": "failed", "scale-1": "available",
+                "hopper-1": "available", "hopper-2": "available"}
+            assert simulation.states[b].document_ok and simulation.states[c].arrived
+        simulation._dispatch_available()
+    assert consumed == ["service_completion", "resource_recovery", "rain_end", "resource_failure",
+                        "document_release", "arrival"]
+    collision = [event for event in simulation.events if event.time == 270.0]
+    assert [event.kind for event in collision] == ["SERVICE_COMPLETED", "RESOURCE_RECOVERED",
+        "RESOURCE_RECOVERED", "DISRUPTION_RECORDED", "RESOURCE_FAILED", "DOCUMENT_RELEASED",
+        "TRUCK_ARRIVED", "DECISION_RECORDED", "OPERATOR_DECISION", "SERVICE_STARTED"]
+    started = collision[-1].payload
+    assert (started["truck_id"], started["resource_id"], started["operation"]) == (a, "scale-1", "scale_in")
+    simulation._emit("END_OF_DAY", {"horizon_minutes": 270})
+    path = tmp_path / "six-way-engineering.jsonl"
+    write_jsonl(path, simulation.events)
+    replayed = replay_events(read_jsonl(path), physical=initial, scenario=simulation.scenario)
+    assert replayed.canonical_dict() == simulation._final_snapshot().canonical_dict()
+
+
+def test_scheduler_ties_use_contract_rank_then_identity_then_sequence():
+    simulation = _simulation_fixture(tiny_scenario(truck_count=1), 101, make_policy("lexicographic"))
+    simulation.schedule.clear()
+    for truck_id, operation in (("B", "first"), ("A", "first"), ("A", "second")):
+        simulation._push(time=1.0, kind="arrival", truck_id=truck_id, operation=operation)
+    simulation._push(time=1.0, kind="document_release", truck_id="Z")
+    events = [heapq.heappop(simulation.schedule)[-1] for _ in range(4)]
+    assert [(event.kind, event.truck_id, event.operation) for event in events] == [
+        ("document_release", "Z", None), ("arrival", "A", "first"),
+        ("arrival", "A", "second"), ("arrival", "B", "first"),
+    ]
+    assert all(event.rank == EVENT_RANKS[event.kind] for event in events)
 
 
 def test_service_durations_use_canonical_triangular_ranges() -> None:
@@ -935,9 +1144,10 @@ def test_lexicographic_h_uses_pressure_wait_reorder_affinity_then_stage_entry() 
 
 
 @pytest.mark.parametrize("hoppers,scales,expected_resource", ((1, 1, "hopper-1"), (2, 1, "hopper-1"), (3, 1, "scale-1"), (3, 2, "hopper-1")))
-def test_critical_failure_uses_only_frozen_nominal_bottleneck(hoppers, scales, expected_resource) -> None:
-    fixture = build_validation_fixture(tiny_scenario(truck_count=12, hoppers=hoppers, scales=scales, regime="critical_failure"))
-    result = run_day(fixture.instance, "fifo_flow_faithful", fixture.controls, fixture.event_latents)
+@pytest.mark.parametrize("policy", POLICY_NAMES)
+def test_critical_failure_uses_only_frozen_nominal_bottleneck(hoppers, scales, expected_resource, policy) -> None:
+    fixture = build_validation_fixture(tiny_scenario(truck_count=2, hoppers=hoppers, scales=scales, regime="critical_failure"))
+    result = run_day(fixture.instance, policy, fixture.controls, fixture.event_latents)
     failures = [event for event in result.events if event.kind == "DISRUPTION_RECORDED" and event.payload["cause"] != "rain"]
     assert len(failures) == 1
     failure = failures[0].payload

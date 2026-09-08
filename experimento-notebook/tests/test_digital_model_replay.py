@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from pequiflux_experiment.config import EVENT_RANKS, EVENT_SEMANTICS_VERSION, ScenarioConfig
 from pequiflux_experiment.digital_model import DigitalModel, replay_events
 from pequiflux_experiment.domain import Resource, Truck, YardSnapshot
 from pequiflux_experiment.events import (
@@ -578,3 +579,174 @@ def test_dispatch_blocked_is_evidence_without_mutating_digital_state() -> None:
     assert after["clock"] == 1.0
     after["clock"] = before["clock"]
     assert after == before
+
+
+def _physics_event(model, time, kind, **payload):
+    event = EventRecord(time=time, sequence=model.last_sequence + 1, kind=kind, payload=payload)
+    model.apply(event)
+
+
+def _physics_contract(capacity=2):
+    return {
+        "event_semantics_version": EVENT_SEMANTICS_VERSION,
+        "event_ranks": dict(EVENT_RANKS),
+        "execution_controls": {"buffer_capacity": capacity},
+    }
+
+
+def _physics_model(*trucks, capacity=2, hoppers=1):
+    resources = {name: Resource(name, kind) for name, kind in (
+        ("gate-1", "gate"), ("scale-1", "scale"),
+    )}
+    resources.update({f"hopper-{i}": Resource(f"hopper-{i}", "hopper") for i in range(1, hoppers + 1)})
+    model = DigitalModel.from_snapshot(YardSnapshot(
+        trucks={truck.truck_id: truck for truck in trucks},
+        resources=resources,
+    ))
+    _physics_event(model, 0, "RUN_STARTED", **_physics_contract(capacity))
+    return model
+
+
+def _physics_service(model, time, truck="T", resource="gate-1", operation="gate", duration=10):
+    selected = {"truck_id": truck, "resource_id": resource, "operation": operation}
+    recommendation = {"selected": selected}
+    _physics_event(model, time, "DECISION_RECORDED", decision=recommendation)
+    _physics_event(model, time, "OPERATOR_DECISION", decision="accept", recommendation=recommendation)
+    _physics_event(model, time, "SERVICE_STARTED", **selected, duration_minutes=duration)
+
+
+def _physics_disruption(model, start, end, latent, cause="base_failure", *, scheduled=None):
+    scheduled = start if scheduled is None else scheduled
+    evidence = {
+        "resource_id": "hopper-1", "cause": cause, "latent_id": latent,
+        "scheduled_failure_start": scheduled, "effective_failure_start": start,
+        "scheduled_failure_duration": end - (scheduled if cause == "rain" else start),
+        "recovery_time": end, "expired_before_effective_start": end <= start,
+    }
+    _physics_event(model, start, "DISRUPTION_RECORDED", **evidence)
+    return evidence
+
+
+def test_physics_rejects_failure_preemption_atomically():
+    model = _physics_model(Truck("T", 0, "soy", 0, True, 1, arrived=True))
+    _physics_service(model, 0)
+    before = model.snapshot()
+    with pytest.raises(ValueError, match="busy|preempt|active"):
+        _physics_event(model, 1, "RESOURCE_FAILED", resource_id="gate-1")
+    assert model.snapshot() == before
+    _physics_event(model, 10, "SERVICE_COMPLETED", truck_id="T", resource_id="gate-1", operation="gate")
+    assert model.snapshot().resources["gate-1"].status == "available"
+
+
+@pytest.mark.parametrize("rain_end", [10, 20])
+def test_physics_reconstructs_overlap_and_coincident_recoveries(rain_end):
+    model = _physics_model()
+    first = _physics_disruption(model, 1, 10, "failure")
+    _physics_event(model, 1, "RESOURCE_FAILED", **first, duration_minutes=9)
+    _physics_disruption(model, 2, rain_end, "rain", "rain")
+    before = model.snapshot()
+    with pytest.raises(ValueError, match="recover|disruption"):
+        _physics_event(model, rain_end - 1, "RESOURCE_RECOVERED", resource_id="hopper-1", cause="rain", latent_id="rain")
+    assert model.snapshot() == before
+    _physics_event(model, rain_end, "RESOURCE_RECOVERED", resource_id="hopper-1", cause="rain", latent_id="rain")
+    assert model.snapshot().resources["hopper-1"].status == "available"
+    with pytest.raises(ValueError, match="recover|failed|disruption"):
+        _physics_event(model, rain_end, "RESOURCE_RECOVERED", resource_id="hopper-1", cause="base_failure", latent_id="failure")
+
+
+@pytest.mark.parametrize("service_start,scheduled,valid", [(0, 2, True), (250, 240, False), (250, 250, False)])
+def test_physics_expired_rain_does_not_fail_resource_after_service(service_start, scheduled, valid):
+    truck = Truck("T", 0, "soy", 0, True, 1, arrived=True, next_operation="unload")
+    model = _physics_model(truck)
+    _physics_service(model, service_start, resource="hopper-1", operation="unload")
+    completed = service_start + 10
+    _physics_event(model, completed, "SERVICE_COMPLETED", truck_id="T", resource_id="hopper-1", operation="unload")
+    if not valid:
+        before, sequence = model.snapshot(), model.last_sequence
+        with pytest.raises(ValueError, match="deferred|interval|service"):
+            _physics_disruption(model, completed, scheduled + 3, "rain", "rain", scheduled=scheduled)
+        assert model.snapshot() == before
+        assert model.last_sequence == sequence
+        # The rejected event must not consume the latent identity.
+        scheduled = service_start + 2
+    expired = _physics_disruption(model, completed, scheduled + 3, "rain", "rain", scheduled=scheduled)
+    with pytest.raises(ValueError, match="expired|disruption|failure"):
+        _physics_event(model, completed, "RESOURCE_FAILED", **expired, duration_minutes=1)
+    assert model.snapshot().resources["hopper-1"].status == "available"
+
+
+@pytest.mark.parametrize("completion", [0, 9, 11])
+def test_physics_checks_effective_service_duration(completion):
+    model = _physics_model(Truck("T", 0, "soy", 0, True, 1, arrived=True))
+    _physics_service(model, 0)
+    before = model.snapshot()
+    with pytest.raises(ValueError, match="duration|completion|deadline"):
+        _physics_event(model, completion, "SERVICE_COMPLETED", truck_id="T", resource_id="gate-1", operation="gate")
+    assert model.snapshot() == before
+    _physics_event(model, 10, "SERVICE_COMPLETED", truck_id="T", resource_id="gate-1", operation="gate")
+
+
+def test_physics_checks_buffer_reservation_before_gate():
+    model = _physics_model(
+        Truck("A", 0, "soy", 0, True, 1, arrived=True, next_operation="unload"),
+        Truck("T", 0, "soy", 0, True, 1, arrived=True), capacity=1,
+    )
+    with pytest.raises(ValueError, match="buffer|capacity|reservation"):
+        _physics_service(model, 0)
+    assert model.snapshot().resources["gate-1"].status == "available"
+
+
+def test_physics_checks_resource_pool_against_scenario():
+    scenario = ScenarioConfig(1, 1, 1, "nominal")
+    snapshot = YardSnapshot(resources={
+        "gate-1": Resource("gate-1", "gate"), "hopper-1": Resource("hopper-1", "hopper"),
+        "scale-1": Resource("scale-1", "scale"), "scale-2": Resource("scale-2", "scale"),
+    })
+    model = DigitalModel.from_snapshot(snapshot, scenario=scenario)
+    with pytest.raises(ValueError, match="pool|scale|capacity"):
+        _physics_event(model, 0, "RUN_STARTED", **_physics_contract())
+    assert model.last_sequence == 0
+
+
+def test_physics_reserves_scale_out_space_for_active_unloads():
+    model = _physics_model(
+        Truck("A", 0, "soy", 0, True, 1, arrived=True, next_operation="unload"),
+        Truck("T", 0, "soy", 0, True, 1, arrived=True, next_operation="unload"),
+        capacity=2, hoppers=2,
+    )
+    # One completed unload already occupies the final weighing queue.
+    _physics_service(model, 0, truck="A", resource="hopper-1", operation="unload", duration=1)
+    _physics_event(model, 1, "SERVICE_COMPLETED", truck_id="A", resource_id="hopper-1", operation="unload")
+    _physics_service(model, 1, resource="hopper-1", operation="unload")
+    # A third truck can enter the unloading queue after one reservation moves downstream.
+    # Use public arrival and service cycles instead of injecting the physical state.
+    _physics_event(model, 2, "TRUCK_ARRIVED", truck_id="B", arrival_time=2, cargo_type="soy", priority=0, document_ok=True, stage=1)
+    _physics_service(model, 2, truck="B", duration=1)
+    _physics_event(model, 3, "SERVICE_COMPLETED", truck_id="B", resource_id="gate-1", operation="gate")
+    _physics_service(model, 3, truck="B", resource="scale-1", operation="scale_in", duration=1)
+    _physics_event(model, 4, "SERVICE_COMPLETED", truck_id="B", resource_id="scale-1", operation="scale_in")
+    with pytest.raises(ValueError, match="buffer|capacity|reservation"):
+        _physics_service(model, 4, truck="B", resource="hopper-2", operation="unload")
+    assert model.snapshot().resources["hopper-2"].status == "available"
+
+
+def test_physics_rejects_external_rank_inversion_after_arrival():
+    model = _physics_model()
+    _physics_event(model, 1, "TRUCK_ARRIVED", truck_id="T", arrival_time=1, cargo_type="soy", priority=0, document_ok=True, stage=1)
+    before = model.snapshot()
+    with pytest.raises(ValueError, match="rank|order"):
+        _physics_event(model, 1, "PRIORITY_CHANGED", truck_id="T", priority=2)
+    assert model.snapshot() == before
+
+
+@pytest.mark.parametrize("field,value", [
+    ("event_semantics_version", "unknown"), ("event_ranks", {}),
+    ("execution_controls", {"buffer_capacity": True}),
+])
+def test_physics_rejects_invalid_supplied_contract(field, value):
+    model = DigitalModel.empty()
+    contract = _physics_contract()
+    contract[field] = value
+    with pytest.raises(ValueError, match="semantics|rank|control|capacity"):
+        _physics_event(model, 0, "RUN_STARTED", **contract)
+    assert model.last_sequence == 0

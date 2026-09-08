@@ -521,7 +521,7 @@ class _DaySimulation:
         )
         self.buffer_occupancy["scale_out"] = self._queue_occupancy("scale_out")
         self.max_buffer_reservation = max(
-            self.max_buffer_reservation, self._unload_reservation()
+            self.max_buffer_reservation, self._unload_reservation(), self._scale_out_reservation()
         )
         self.max_buffer_occupancy = max(self.max_buffer_occupancy, *self.buffer_occupancy.values())
         if self.max_buffer_occupancy > self.controls.buffer_capacity or self.max_buffer_reservation > self.controls.buffer_capacity:
@@ -537,10 +537,15 @@ class _DaySimulation:
         if operation == "scale_in":
             # The candidate itself is already part of the reservation.
             return self._unload_reservation() <= self.controls.buffer_capacity
-        downstream = {"gate": "scale_in", "scale_in": "unload", "unload": "scale_out"}.get(operation)
-        if downstream is None:
-            return True
-        return self._queue_occupancy(downstream) < self.controls.buffer_capacity
+        if operation == "unload":
+            return self._scale_out_reservation() < self.controls.buffer_capacity
+        return True
+
+    def _scale_out_reservation(self) -> int:
+        """Reserve output space during unload; release it when scale-out starts."""
+        return self._queue_occupancy("scale_out") + sum(
+            state.active_operation == "unload" for state in self.states.values()
+        )
 
     @staticmethod
     def _snapshot_unload_reservation(snapshot: YardSnapshot) -> int:
@@ -566,10 +571,13 @@ class _DaySimulation:
             return reservation < self.controls.buffer_capacity
         if operation == "scale_in":
             return reservation <= self.controls.buffer_capacity
-        downstream = {"scale_in": "unload", "unload": "scale_out"}.get(operation)
-        if downstream is None:
-            return True
-        return self._snapshot_queue_occupancy(snapshot, downstream) < self.controls.buffer_capacity
+        if operation == "unload":
+            output_reservation = self._snapshot_queue_occupancy(snapshot, "scale_out") + sum(
+                truck.next_operation == "unload" and truck.stage == TRUCK_STAGE_SERVICE_STARTED
+                for truck in snapshot.trucks.values()
+            )
+            return output_reservation < self.controls.buffer_capacity
+        return True
 
     def _digital_snapshot(self) -> YardSnapshot:
         if self.digital_model is None:
@@ -1036,7 +1044,10 @@ class _DaySimulation:
             for failure in pending or ():
                 self._push(
                     time=self.clock, kind=failure.kind, resource_id=failure.resource_id,
-                    cause=failure.cause, recovery_at=failure.recovery_at,
+                    # Rain retains its absolute end; an equipment failure's
+                    # duration starts only after this nonpreemptive service.
+                    cause=failure.cause,
+                    recovery_at=failure.recovery_at if failure.kind == "rain_start" else None,
                     duration=failure.duration, latent_id=failure.latent_id,
                     scheduled_start=failure.scheduled_start,
                 )

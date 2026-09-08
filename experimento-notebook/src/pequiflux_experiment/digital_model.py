@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass, field
 import math
 from typing import Any, Iterable, Mapping
 
-from .config import ScenarioConfig
+from .config import EVENT_RANKS, EVENT_SEMANTICS_VERSION, ScenarioConfig
 from .domain import (
     Resource,
     Truck,
@@ -20,6 +21,208 @@ from .domain import (
     VALID_TRUCK_STAGES,
 )
 from .events import EventRecord
+
+
+def _physical_number(value: object, name: str, *, positive: bool = False) -> float:
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value < 0 or (positive and value == 0)):
+        raise ValueError(f"{name} must be finite and {'positive' if positive else 'non-negative'}")
+    return float(value)
+
+
+@dataclass
+class _PhysicalReplay:
+    """Independent physical obligations, copied with each atomic event application."""
+
+    strict: bool = False
+    buffer_capacity: int | None = None
+    pool_counts: dict[str, int] | None = None
+    service_starts: dict[str, float] = field(default_factory=dict)
+    service_deadlines: dict[str, float] = field(default_factory=dict)
+    completed_services: dict[str, tuple[float, float]] = field(default_factory=dict)
+    disruptions: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    seen_disruptions: set[tuple[str, str]] = field(default_factory=set)
+    required_failure: dict[str, Any] | None = None
+    order_time: float | None = None
+    order_key: tuple[int, str, str] | None = None
+    dispatch_started: bool = False
+
+    @staticmethod
+    def _occupancy(state: YardSnapshot) -> tuple[dict[str, int], int, int]:
+        queues = {operation: 0 for operation in ("scale_in", "unload", "scale_out")}
+        inbound = outbound = 0
+        for truck in state.trucks.values():
+            if not truck.arrived:
+                continue
+            operation = truck.next_operation
+            active = truck.stage == TRUCK_STAGE_SERVICE_STARTED
+            if operation in queues and not active:
+                queues[operation] += 1
+            if operation in {"scale_in", "unload"}:
+                inbound += 1
+            if (operation == "unload" and active) or (operation == "scale_out" and not active):
+                outbound += 1
+        return queues, inbound, outbound
+
+    def _order(self, event: EventRecord) -> None:
+        if not self.strict:
+            return
+        if event.time != self.order_time:
+            self.order_time, self.order_key, self.dispatch_started = event.time, None, False
+        kind, payload = event.kind, event.payload
+        external = {
+            "SERVICE_COMPLETED": "service_completion", "DOCUMENT_RELEASED": "document_release",
+            "PRIORITY_CHANGED": "priority_change", "TRUCK_ARRIVED": "arrival",
+        }.get(kind)
+        if kind == "DISRUPTION_RECORDED":
+            external = "rain_start" if payload["cause"] == "rain" else "resource_failure"
+        elif kind == "RESOURCE_RECOVERED":
+            external = "rain_end" if payload["cause"] == "rain" else "resource_recovery"
+        if external is not None:
+            key = (EVENT_RANKS[external], payload.get("resource_id", ""), payload.get("truck_id", ""))
+            if self.dispatch_started or (self.order_key is not None and key < self.order_key):
+                raise ValueError(f"public event rank/order violation: {kind} at {event.time}")
+            self.order_key = key
+        elif kind in {"DECISION_RECORDED", "OPERATOR_DECISION", "SERVICE_STARTED", "DISPATCH_BLOCKED"}:
+            self.dispatch_started = True
+        # RESOURCE_FAILED is the immediate consequence of DISRUPTION_RECORDED,
+        # not another external event. Decision/operator/service chains likewise
+        # stay together after the complete external batch.
+
+    def before(self, state: YardSnapshot, event: EventRecord) -> None:
+        kind, payload = event.kind, event.to_dict()["payload"]
+        if kind == "RUN_STARTED":
+            contract = {"event_semantics_version", "event_ranks", "execution_controls"}
+            if contract.intersection(payload):
+                if not contract.issubset(payload):
+                    raise ValueError("incomplete physical event semantics contract")
+                if payload["event_semantics_version"] != EVENT_SEMANTICS_VERSION:
+                    raise ValueError("unsupported physical event semantics version")
+                ranks = payload["event_ranks"]
+                if (not isinstance(ranks, Mapping) or dict(ranks) != dict(EVENT_RANKS)
+                        or any(type(value) is not int for value in ranks.values())):
+                    raise ValueError("event ranks disagree with physical semantics version")
+                controls = payload["execution_controls"]
+                if not isinstance(controls, Mapping):
+                    raise ValueError("execution controls must be a mapping")
+                capacity = controls.get("buffer_capacity")
+                if type(capacity) is not int or capacity <= 0:
+                    raise ValueError("buffer capacity must be a positive integer")
+                self.buffer_capacity, self.strict = capacity, True
+                resources = payload.get("resources")
+                if resources is not None and resources != state.canonical_dict()["resources"]:
+                    raise ValueError("RUN_STARTED resource pool differs from initial snapshot")
+        resource_id = payload.get("resource_id")
+        resource = state.resources.get(resource_id)
+        if kind == "RESOURCE_FAILED" and resource is not None and resource.status == "busy":
+            raise ValueError("resource failure cannot preempt an active service")
+        if self.required_failure is not None:
+            if (kind != "RESOURCE_FAILED" or event.time != self.required_failure["effective_failure_start"]
+                    or any(payload.get(key) != value for key, value in self.required_failure.items())):
+                raise ValueError("recorded disruption requires its matching resource failure")
+        for truck_id, deadline in self.service_deadlines.items():
+            if event.time > deadline:
+                raise ValueError(f"missing service completion at deadline {deadline}: {truck_id}")
+        for identifier, intervals in self.disruptions.items():
+            deadline = max(item["recovery_time"] for item in intervals.values())
+            if state.resources[identifier].status == "failed" and event.time > deadline:
+                raise ValueError(f"missing resource recovery at {deadline}: {identifier}")
+
+        if kind == "DISRUPTION_RECORDED":
+            if resource is None:
+                raise ValueError("disruption references an unknown resource")
+            if resource.status == "busy":
+                raise ValueError("effective disruption cannot preempt an active service")
+            for key in ("latent_id", "cause"):
+                if not isinstance(payload.get(key), str) or not payload[key].strip():
+                    raise ValueError(f"disruption {key} must be a non-empty string")
+            latent_id = payload["latent_id"]
+            identity = (resource_id, latent_id)
+            if identity in self.seen_disruptions:
+                raise ValueError("duplicate recorded disruption")
+            scheduled = _physical_number(payload.get("scheduled_failure_start"), "scheduled failure start")
+            effective = _physical_number(payload.get("effective_failure_start"), "effective failure start")
+            duration = _physical_number(payload.get("scheduled_failure_duration"), "disruption duration", positive=True)
+            recovery = _physical_number(payload.get("recovery_time"), "recovery time")
+            expired = payload.get("expired_before_effective_start")
+            rain = payload["cause"] == "rain"
+            expected_recovery = (scheduled if rain else effective) + duration
+            if (scheduled > effective or effective != event.time
+                    or not math.isclose(recovery, expected_recovery, rel_tol=0, abs_tol=1e-9)
+                    or type(expired) is not bool or expired != (recovery <= effective)):
+                raise ValueError("disruption interval or expiration evidence is incoherent")
+            if effective > scheduled:
+                interval = self.completed_services.get(resource_id)
+                if interval is None or interval[1] != effective or not interval[0] < scheduled < interval[1]:
+                    raise ValueError("deferred disruption must originate inside the completed service interval")
+            self.seen_disruptions.add(identity)
+            if not expired:
+                self.disruptions.setdefault(resource_id, {})[latent_id] = payload
+                if resource.status == "available":
+                    self.required_failure = payload
+        elif kind == "RESOURCE_FAILED":
+            if self.required_failure is None:
+                raise ValueError("resource failure has no active recorded disruption (or it expired)")
+            duration = _physical_number(payload.get("duration_minutes"), "failure duration", positive=True)
+            if duration != self.required_failure["recovery_time"] - event.time:
+                raise ValueError("resource failure duration disagrees with recorded disruption")
+            self.required_failure = None
+        elif kind == "RESOURCE_RECOVERED":
+            intervals = self.disruptions.get(resource_id, {})
+            interval = intervals.get(payload.get("latent_id"))
+            if (interval is None or interval["cause"] != payload.get("cause")
+                    or interval["recovery_time"] != event.time
+                    or any(item["recovery_time"] > event.time for item in intervals.values())):
+                raise ValueError("resource recovery has unmatched or still active disruptions")
+            if any(truck.resource_id == resource_id and truck.stage == TRUCK_STAGE_SERVICE_STARTED
+                   for truck in state.trucks.values()):
+                raise ValueError("resource recovery cannot release an active service")
+            self.disruptions.pop(resource_id)
+        elif kind == "SERVICE_STARTED":
+            truck_id = payload["truck_id"]
+            self.service_starts[truck_id] = event.time
+            if self.strict or "duration_minutes" in payload:
+                duration = _physical_number(payload.get("duration_minutes"), "service duration", positive=True)
+                self.service_deadlines[truck_id] = _physical_number(event.time + duration, "service completion deadline")
+            if any(truck.resource_id == resource_id and truck.stage == TRUCK_STAGE_SERVICE_STARTED
+                   for truck in state.trucks.values()):
+                raise ValueError("resource pool capacity exceeded: another service is active")
+            if self.buffer_capacity is not None:
+                _, inbound, outbound = self._occupancy(state)
+                operation = payload["operation"]
+                if ((operation == "gate" and inbound >= self.buffer_capacity)
+                        or (operation == "scale_in" and inbound > self.buffer_capacity)
+                        or (operation == "unload" and outbound >= self.buffer_capacity)):
+                    raise ValueError(f"buffer reservation capacity blocks {operation}")
+        elif kind == "SERVICE_COMPLETED":
+            truck_id = payload["truck_id"]
+            if truck_id in self.service_deadlines:
+                if event.time != self.service_deadlines[truck_id]:
+                    raise ValueError("service completion disagrees with effective duration")
+                self.service_deadlines.pop(truck_id)
+            elif self.strict:
+                raise ValueError("service completion is missing its effective duration")
+            started = self.service_starts.pop(truck_id, None)
+            if started is None:
+                raise ValueError("impossible transition: service completion has no observed start")
+            self.completed_services[resource_id] = (started, event.time)
+        elif kind == "END_OF_DAY":
+            if any(deadline <= event.time for deadline in self.service_deadlines.values()):
+                raise ValueError("service completion due before end of day is missing")
+            if any(max(item["recovery_time"] for item in intervals.values()) <= event.time
+                   for intervals in self.disruptions.values()):
+                raise ValueError("resource recovery due before end of day is missing")
+        self._order(event)
+
+    def after(self, state: YardSnapshot, event: EventRecord) -> None:
+        if event.kind == "RUN_STARTED" and self.strict and self.pool_counts is not None:
+            for kind, expected in self.pool_counts.items():
+                if sum(resource.kind == kind for resource in state.resources.values()) != expected:
+                    raise ValueError(f"{kind} resource pool capacity disagrees with scenario")
+        if self.buffer_capacity is not None:
+            queues, inbound, outbound = self._occupancy(state)
+            if max(*queues.values(), inbound, outbound) > self.buffer_capacity:
+                raise ValueError("physical buffer occupancy or reservation exceeds capacity")
 
 
 class DigitalModel:
@@ -58,6 +261,9 @@ class DigitalModel:
         # of the public YardSnapshot schema.
         self._pending_decisions: dict[str, dict[str, Any]] = {}
         self._operator_mode: str | None = None
+        self._physics = _PhysicalReplay(pool_counts=None if scenario is None else {
+            "gate": 1, "scale": scenario.scale_count, "hopper": scenario.hopper_count,
+        })
 
     @classmethod
     def empty(cls, *, scenario: ScenarioConfig | None = None) -> "DigitalModel":
@@ -101,6 +307,8 @@ class DigitalModel:
         active_operations = dict(self._active_operations)
         next_operations = dict(self._next_operations)
         pending_decisions = copy.deepcopy(self._pending_decisions)
+        physics = copy.deepcopy(self._physics)
+        physics.before(candidate, event)
         self._apply_to(
             candidate,
             event,
@@ -110,10 +318,12 @@ class DigitalModel:
             operator_mode=self._operator_mode,
         )
         candidate.clock = event.time
+        physics.after(candidate, event)
         self._state = candidate
         self._active_operations = active_operations
         self._next_operations = next_operations
         self._pending_decisions = pending_decisions
+        self._physics = physics
         self._last_sequence = event.sequence
         if event.kind == "RUN_STARTED":
             self._operator_mode = event.payload.get("operator_mode")
