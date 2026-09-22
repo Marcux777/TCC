@@ -62,6 +62,24 @@ The research question is whether the proposed rule reduces the median paired rel
 
 The design combines artefact construction with comparative evaluation, in the sense of design science research \parencite{peffersDesignScienceResearch2007aa}. Its intended practical output is a recommendation that an authorized operator can inspect, accept or contest within the hard constraints. The experiment currently uses automatic synthetic acceptance; a recorded recommendation is therefore distinct from evidence that a person understood or acted on it. The evaluation treats policy performance, constraint compliance and human-facing traceability as separate questions.
 
+\section{Related literature}
+
+\subsection{Grain receiving, queues and decision support}
+
+Grain logistics studies show why a receiving queue cannot always be treated as a single interchangeable line. In a simulation of a single-pit country elevator handling different grain types, \textcite{r.berrutoAnalyzingReceivingOperation2001a} compared segregated batch service with FIFO. Batch service shortened mean customer waiting near the facility's receiving capacity, whereas FIFO performed better at lower loads. The relevant lesson for the present design is conditional: the ranking of queue rules can depend on demand relative to capacity. Their facility, batching decision and mean-wait outcome differ from the multi-stage yard and daily waiting p95 considered here, so their reported effect is not a prediction of H1.
+
+Discrete-event simulation also appears at other points in the grain flow. \textcite{turnerDiscreteEventSimulation2019a} modelled field-to-farm-storage transportation to examine truck and driver resources, material flow, utilization and throughput. Their system boundary and resource choices are different from dispatch among trucks already in a receiving yard. Together with the elevator study, this work supports representing arrivals, service and resource contention as events, while showing that the decision being optimized must be specified separately from the simulation method.
+
+The decision-support literature in grains addresses still another scale. \textcite{mardanehDecisionSupportSystem2021a} developed a system for comparing harvesting, on-farm storage and distribution strategies across crops and storage options. It demonstrates the value of explicit alternatives and model-based support in grain logistics, but its planning decision is not the event-level choice of which eligible truck should take a newly available gate, scale or hopper. In the present study, the recommendation is deliberately narrower: it is made at a service opportunity, constrained by the current yard state and accompanied by a decision record.
+
+\subsection{Appointments and rescheduling under uncertainty}
+
+Reviews of truck appointment scheduling in container terminals organize methods for allocating arrival slots and managing congestion before trucks reach service resources \parencite{abdelmagidComprehensiveReviewTruck2022a,graciaTruckAppointmentScheduling2025a}. Appointment design can change the arrival profile faced by a terminal, but it does not eliminate the need to choose among trucks already present when documents, load compatibility or a resource failure constrain service. This distinction matters for the comparison: the three primary baselines in this article operate on the same realized state as the proposed rule, rather than on a revised appointment plan.
+
+When arrivals deviate from plan, the decision may need to be revised. In a cross-dock setting, \textcite{nasiriPredictivereactiveCrossdockRescheduling2022} combined scheduled reviews with short-interval repair policies for delayed inbound trucks. \textcite{fonsecaStabilityApproachCDC2025} examined stable truck rescheduling under uncertain release dates at a multi-dock cross-docking center. Both studies make schedule change a design choice rather than an incidental implementation detail. Their objectives and facilities are different from grain receiving, so they motivate attention to event response and sequence stability without supplying a direct performance comparator for this yard model.
+
+These strands locate distinct decisions: shaping arrivals through appointments, replanning a schedule after uncertainty, and selecting the next feasible truck at a resource. The present experiment isolates the last decision. It first applies the same operational eligibility and admission rules to the proposed policy and its three primary comparators, then varies the ranking among admissible trucks. Stratifying by congestion follows the load-dependent comparison observed by \textcite{r.berrutoAnalyzingReceivingOperation2001a}, while the paired p95 and throughput guard test the specific trade-off defined for this model. The literature identifies useful mechanisms and boundaries; the planned campaign must establish whether this particular policy improves outcomes.
+
 \section{Methods}
 
 \subsection{Research design and system boundary}
@@ -185,6 +203,5 @@ The study specifies a constrained online dispatching rule, a paired discrete-eve
 
 An initial outline and draft language were prepared and revised with OpenAI Codex. \pending{Before submission, the authors must verify the final disclosure, describe any further AI-assisted tasks and confirm their review of all included text.}
 
-\clearpage
 \printbibliography[title={References}]
 \end{document}

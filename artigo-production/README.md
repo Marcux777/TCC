@@ -26,9 +26,13 @@ conjuntiva de H1. A seção **Results** separa inventário de execuções,
 comparações primárias e auditorias A1/A2; **Discussion** e **Conclusions** mantêm
 os limites sustentados pelo protocolo e marcas para interpretação futura.
 As marcas `Pending` no PDF indicam texto ou números ainda dependentes de evidência
-e devem ser resolvidas antes de qualquer submissão. O rascunho ainda não alcança
-a extensão mínima de 4.000 palavras da revista; os resultados, sua discussão e
-a revisão da literatura precisarão completar o artigo sem conteúdo de enchimento.
+e devem ser resolvidas antes de qualquer submissão. A seção **Related literature**
+condensa e confronta estudos do referencial de `main.tex` com os PDFs locais
+consultados, distinguindo recebimento de grãos, agendamento e replanejamento.
+As contagens da revisão sistematizada no TCC não foram transferidas para este
+artigo, pois a matriz de extração que as fundamenta não está neste checkout.
+O rascunho ainda não alcança a extensão mínima de 4.000 palavras da revista;
+os resultados e sua discussão deverão completá-lo sem conteúdo de enchimento.
 
 ## Contrato editorial consultado em 22 de setembro de 2026
 
@@ -67,10 +71,10 @@ e preencher os documentos apenas com informações confirmadas pelos autores.
 1. **Problema e contribuição:** adaptar a pergunta e o recorte de despacho online
    de `main.tex`, Introdução (linhas 272–323). Posicionar o trabalho para decisões
    operacionais em recebimento agroindustrial, sem chamá-lo de gêmeo digital.
-2. **Literatura:** condensar `main.tex`, Referencial Teórico (linhas 328–514), em
-   poucos eixos: recebimento de grãos, agendamento/despacho de caminhões,
-   replanejamento sob incerteza e rastreabilidade. Selecionar apenas referências
-   realmente citadas em `../refs.bib`; conferir metadados e suporte de cada claim.
+2. **Literatura:** a seção **Related literature** já condensa `main.tex`,
+   Referencial Teórico (linhas 328–514), em recebimento de grãos, agendamento
+   de caminhões e replanejamento sob incerteza. Antes da submissão, conferir a
+   matriz do corpus sistematizado e revisar o suporte de cada afirmação.
 3. **Método:** derivar formulação e arquitetura de `main.tex` (linhas 515–1012)
    e cenários, políticas, métricas e inferência (linhas 1013–1310). Preservar a
    separação entre DES, política de despacho, auditoria e visualização Unreal.
@@ -100,7 +104,8 @@ e preencher os documentos apenas com informações confirmadas pelos autores.
 - Autoria, contribuições CRediT, financiamento, conflitos, ética e licença
   precisam de decisão e confirmação dos autores antes de submissão.
 
-O artigo usa [references.bib](references.bib), um recorte das cinco referências
-citadas. Seus metadados principais foram conferidos no Crossref em 22 de
-setembro de 2026; o suporte de cada afirmação ainda precisa ser conferido no
-texto original antes da versão de avaliação.
+O artigo usa [references.bib](references.bib), um recorte de oito referências
+citadas. Os cinco registros iniciais tiveram seus metadados principais
+conferidos no Crossref em 22 de setembro de 2026; os três acrescentados agora
+foram cotejados com os PDFs locais e `../refs.bib`. O suporte de cada afirmação
+ainda deve passar pela revisão autoral antes da versão de avaliação.
