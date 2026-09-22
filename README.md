@@ -11,6 +11,7 @@ canônico daqui.
 - `main.tex`: texto e protocolo canônicos.
 - `refs.bib`: bibliografia canônica.
 - `images/` e `data/`: figuras e dados auxiliares usados pelo texto.
+- `experimento-notebook/`: implementação experimental, notebook, auditoria e testes.
 - `latexmkrc`: configuração de compilação.
 
 O arquivo histórico `projeto-tcc.tex` foi removido porque descrevia uma versão
@@ -29,27 +30,28 @@ O projeto produzirá um **modelo digital**, e não um gêmeo digital.
   nem sincronização bidirecional em tempo real. Sem esses elementos, a
   classificação “gêmeo digital” seria tecnicamente indevida.
 
-O projeto Unreal já está inicializado em `../UnrealProject`, associado ao Unreal
-Engine 5.8. A cena de domínio, os ativos, o importador JSONL e os controles de
-replay ainda precisam ser implementados.
+O projeto Unreal Engine 5.8 foi inicializado fora deste repositório. A cena de
+domínio, os ativos, o importador JSONL e os controles de replay ainda precisam
+ser implementados.
 
 ## Arquitetura dos artefatos
 
 ```text
-TCC canônico (este repositório)
+TCC canônico (main.tex, neste repositório)
         |
-        +-- protocolo e parâmetros --> ../agro-yard-des-experiment
-        |                                 |
-        |                                 +-- logs/eventos JSONL
-        |                                             |
-        +---------------------------------------------v
-                                          ../UnrealProject
-                                          modelo digital 3D
+        +-- protocolo e parâmetros --> experimento-notebook/
+        |                              simulador DES e comparadores
+        |                                      |
+        |                                      +-- logs/eventos JSONL
+        |                                                  |
+        +--------------------------------------------------v
+                                     projeto Unreal Engine 5.8 externo
+                                     modelo digital 3D
 ```
 
-O repositório `../agro-yard-des-experiment` contém o motor DES e os comparadores.
-Snapshots do texto mantidos nele devem ser gerados mecanicamente a partir deste
-repositório e tratados como somente leitura.
+Implementações ou snapshots mantidos em repositórios adjacentes não substituem
+o protocolo e o texto canônicos daqui. Os estados da campanha e das aprovações
+humanas estão detalhados em `experimento-notebook/docs/governance-status.md`.
 
 ## Estado atual
 
@@ -60,8 +62,8 @@ Concluído ou especificado:
 - parâmetros antes implícitos agora congelados no TCC;
 - distinção conceitual entre modelo digital e gêmeo digital;
 - arquitetura de integração DES → JSONL → Unreal Engine 5.8;
-- implementação preliminar do simulador e testes automatizados no repositório
-  adjacente.
+- implementação preliminar do simulador, auditor estrutural e testes
+  automatizados em `experimento-notebook/`, sem resultados confirmatórios.
 
 Ainda necessário no TCC II:
 
@@ -81,8 +83,8 @@ O documento usa `fontspec` e deve ser compilado com XeLaTeX:
 latexmk -xelatex main.tex
 ```
 
-O PDF principal é gerado em `build/main.pdf` e copiado para `main.pdf` pela
-configuração do projeto.
+O PDF compilado é gerado em `build/main.pdf`. O arquivo `main.pdf`, versionado
+na raiz, não é atualizado automaticamente por `latexmkrc`.
 
 ## Enquadramento acadêmico
 
