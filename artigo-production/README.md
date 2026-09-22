@@ -1,10 +1,24 @@
 # Artigo para a revista Production
 
-Pasta de preparação editorial do PequiFlux. O manuscrito de trabalho está em
-[manuscript.md](manuscript.md). Os arquivos da revista estão em
+Pasta de preparação editorial do PequiFlux. O artigo é editado em
+[manuscript.tex](manuscript.tex), com prévia em
+[manuscript.pdf](manuscript.pdf). Os arquivos da revista estão em
 [`originais/`](originais/). O texto e o protocolo científicos continuam tendo
 como fonte canônica [`../main.tex`](../main.tex); a bibliografia canônica é
 [`../refs.bib`](../refs.bib). Esta pasta não altera o TCC nem antecipa resultados.
+
+Para atualizar a prévia após editar o LaTeX, executar nesta pasta:
+
+```powershell
+latexmk -xelatex -interaction=nonstopmode -file-line-error -outdir=build manuscript.tex
+Copy-Item build/manuscript.pdf manuscript.pdf
+```
+
+A revista aceita LaTeX, mas oferece o modelo oficial para download somente em
+DOCX. Por isso, `manuscript.tex` aplica as medidas e a estrutura das normas:
+A4, margens de 2,5 cm, Times New Roman 12, espaçamento 1,5 e uma coluna. O
+modelo DOCX original permanece intacto para conferência. O PDF ainda é um
+**rascunho**, com notas editoriais visíveis nas seções sem evidência.
 
 ## Contrato editorial consultado em 22 de setembro de 2026
 
@@ -76,6 +90,7 @@ e preencher os documentos apenas com informações confirmadas pelos autores.
 - Autoria, contribuições CRediT, financiamento, conflitos, ética e licença
   precisam de decisão e confirmação dos autores antes de submissão.
 
-O rascunho em `manuscript.md` usa chaves de citação de `../refs.bib` como
-marcadores de trabalho. Antes da versão de avaliação, verificar cada fonte
-original e converter as citações e referências para APA.
+O artigo usa [references.bib](references.bib), um recorte das cinco referências
+citadas. Seus metadados principais foram conferidos no Crossref em 22 de
+setembro de 2026; o suporte de cada afirmação ainda precisa ser conferido no
+texto original antes da versão de avaliação.
