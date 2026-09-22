@@ -20,6 +20,16 @@ A4, margens de 2,5 cm, Times New Roman 12, espaçamento 1,5 e uma coluna. O
 modelo DOCX original permanece intacto para conferência. O PDF ainda é um
 **rascunho**, com notas editoriais visíveis nas seções sem evidência.
 
+Nesta versão, o método explicita os parâmetros da política, a unidade pareada de
+análise, o cálculo do ganho relativo em p95, a margem de throughput e a regra
+conjuntiva de H1. A seção **Results** separa inventário de execuções,
+comparações primárias e auditorias A1/A2; **Discussion** e **Conclusions** mantêm
+os limites sustentados pelo protocolo e marcas para interpretação futura.
+As marcas `Pending` no PDF indicam texto ou números ainda dependentes de evidência
+e devem ser resolvidas antes de qualquer submissão. O rascunho ainda não alcança
+a extensão mínima de 4.000 palavras da revista; os resultados, sua discussão e
+a revisão da literatura precisarão completar o artigo sem conteúdo de enchimento.
+
 ## Contrato editorial consultado em 22 de setembro de 2026
 
 Fontes oficiais: [Guidelines and Policies](https://prod.org.br/instructions) e

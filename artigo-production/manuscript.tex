@@ -9,6 +9,7 @@
 \usepackage{needspace}
 \usepackage{csquotes}
 \usepackage{xurl}
+\usepackage{xcolor}
 \usepackage[hidelinks]{hyperref}
 \usepackage[backend=biber,style=apa]{biblatex}
 \addbibresource{references.bib}
@@ -18,10 +19,11 @@
   {\setmainfont{Times New Roman}}
   {\setmainfont{Liberation Serif}}
 \onehalfspacing
-\setlength{\parindent}{0pt}
+\setlength{\parindent}{1.2em}
 \setlength{\parskip}{0pt}
 \setlength{\emergencystretch}{3em}
 \hypersetup{pdftitle={Constrained Online Truck Dispatching in Agroindustrial Receiving Yards},pdfauthor={}}
+\newcommand{\pending}[1]{\textcolor{black!70}{\emph{[Pending: #1]}}}
 
 \begin{document}
 \begin{center}
@@ -32,17 +34,17 @@
 \begin{abstract}
 \normalsize
 
-\noindent \textbf{Paper aims:} To design and evaluate a constrained online dispatching policy for truck receiving yards, where each service decision must respect operational eligibility and remain traceable.
+\noindent \textbf{Paper aims:} To design and evaluate a constrained online dispatching policy for truck receiving yards, where each service decision must respect operational eligibility and remain traceable.\par\smallskip
 
-\noindent \textbf{Originality:} The study joins event-triggered dispatching, hard feasibility checks and decision records in a grain-receiving setting. [Position this claim against the verified related-work corpus before submission.]
+\noindent \textbf{Originality:} The protocol joins event-triggered dispatching, hard feasibility checks and decision records in a grain-receiving setting. \pending{Establish the specific novelty claim against the verified related-work corpus.}\par\smallskip
 
-\noindent \textbf{Research method:} A discrete-event model compares a lexicographic policy with feasible FIFO, local priority and a fixed-score dynamic rule under paired synthetic scenarios. The protocol evaluates queue waiting, a throughput guard and independent decision-log audits.
+\noindent \textbf{Research method:} A discrete-event model compares a lexicographic policy with feasible FIFO, local priority and a fixed-score dynamic rule under paired synthetic scenarios. The protocol evaluates queue waiting, a throughput guard and independent decision-log audits.\par\smallskip
 
-\noindent \textbf{Main findings:} [Insert only audited results from the complete confirmatory campaign, with effect estimates and uncertainty. No findings are currently available.]
+\noindent \textbf{Main findings:} \pending{Insert audited stratum-specific effects, uncertainty and the H1 decision after the complete campaign. No confirmatory findings are available.}\par\smallskip
 
-\noindent \textbf{Implications for theory and practice:} [Write after the findings are known; state the scope of inference for synthetic yards and any conditions for operational adoption.]
+\noindent \textbf{Implications for theory and practice:} \pending{Interpret the observed findings within the synthetic-yard setting and specify any conditions for operational adoption.}\par\smallskip
 
-\noindent \textbf{Keywords:} discrete-event simulation. queueing. decision support. operational traceability. grain logistics.
+\noindent \textbf{Keywords:} discrete-event simulation; queueing; decision support; operational traceability; grain logistics.
 
 \end{abstract}
 
@@ -56,9 +58,9 @@ This article studies that decision as constrained online dispatching. The propos
 
 This separation matters when a queue contains trucks that cannot yet be served. Giving an infeasible truck a low score is insufficient: a later change in score or a programming error could still select it. The policy therefore constructs the feasible set before applying any preference. The approach treats physical compatibility, completed preceding operations, administrative clearance, resource availability and buffer capacity as constraints. Priority and waiting time enter only after these conditions are met. A recommendation is accompanied by a record of the candidate set, the activated rules and the reason for any departure from feasible first-in-first-out service.
 
-The research question is whether the proposed rule reduces the paired median 95th percentile of accumulated queue waiting time by at least 15\% against each of three operational comparators in medium- and high-congestion strata, while respecting a protective throughput margin. This is the prespecified comparative hypothesis H1 in the source protocol. Safety of final recommendations (A1) and traceability and human interpretability (A2) are separate engineering acceptance criteria. Their status must be reported independently of the performance comparison. The article's contribution will depend on the confirmatory evidence; the present draft establishes the question and method.
+The research question is whether the proposed rule reduces the median paired relative difference in the daily 95th percentile of accumulated queue waiting by at least 15\% against each of three operational comparators in medium- and high-congestion strata, while respecting a protective throughput margin. This is the prespecified comparative hypothesis H1 in the source protocol. Safety of final recommendations (A1) and traceability and human interpretability (A2) are separate engineering acceptance criteria. Their status must be reported independently of the performance comparison.
 
-The design combines artefact construction with comparative evaluation, in the sense of design science research \parencite{peffersDesignScienceResearch2007aa}. Its intended practical output is a recommendation that an authorized operator can inspect, accept or contest within the hard constraints. The experiment, however, currently uses automatic synthetic acceptance. The manuscript must therefore distinguish a recorded recommendation from evidence that a person understood or acted on it. The following sections set out the policy, comparison and audit needed to make that distinction testable.
+The design combines artefact construction with comparative evaluation, in the sense of design science research \parencite{peffersDesignScienceResearch2007aa}. Its intended practical output is a recommendation that an authorized operator can inspect, accept or contest within the hard constraints. The experiment currently uses automatic synthetic acceptance; a recorded recommendation is therefore distinct from evidence that a person understood or acted on it. The evaluation treats policy performance, constraint compliance and human-facing traceability as separate questions.
 
 \section{Methods}
 
@@ -66,7 +68,7 @@ The design combines artefact construction with comparative evaluation, in the se
 
 The study develops a decision-support artefact for evaluation through discrete-event simulation. A simulated workday has a 720-minute horizon and represents gate, inbound scale, unloading and outbound scale stages. A truck's next operation depends on completion of its preceding operation. Inbound and outbound weighing compete for the same physical scale pool; they do not have separate capacities. Resource release, arrival, documentary release, rain, failure and priority change are events that can alter the next decision.
 
-Inputs are synthetic and controlled. This choice allows the policies to face identical exogenous arrivals, service requirements and disruptions within each scenario–seed pair. It does not make the model a calibrated forecast for any named cooperative or warehouse. The simulator is the source of state transitions and measurements; a planned three-dimensional visual replay is outside the evidence used for H1. The manuscript will report only completed simulation and audit evidence, not visual plausibility as operational validation.
+Inputs are synthetic and controlled. This choice allows the policies to face identical exogenous arrivals, service requirements and disruptions within each scenario–seed pair. It does not make the model a calibrated forecast for any named cooperative or warehouse. The simulator is the source of state transitions and measurements; a planned three-dimensional visual replay is outside the evidence used for H1. Visual plausibility would not establish operational validity.
 
 \subsection{Dispatching policies and scenarios}
 
@@ -76,7 +78,11 @@ The hard filter requires the truck to have arrived, completed the preceding stag
 
 Within the domain, the proposed policy compares candidates lexicographically by normalized operational pressure, waiting time, negative reordering penalty and immediate resource affinity, with deterministic tie-breakers. Pressure is the positive excess over the priority-specific waiting threshold. Affinity is evaluated only after load–resource compatibility is established; it cannot rescue an infeasible candidate. A shared scale is booked once when it starts either weighing operation, avoiding simultaneous use by inbound and outbound trucks. These details are important to the comparison because an apparent waiting-time improvement would be meaningless if it were obtained by double-booking capacity or ignoring a blocked truck.
 
+The ordinary admission window is fixed at $H_0=6$ trucks. The waiting thresholds are 10, 30 and 60 minutes for priority classes $p_2$, $p_1$ and $p_0$, respectively. They define when a truck joins the urgency expansion regardless of its position behind the first six feasible trucks. Degenerate normalizations take a value of zero, and ties are settled by priority, arrival at the current stage and truck identifier. These values and tie-breakers are fixed for the main comparison rather than selected from its outcomes.
+
 The comparison policies share the event engine, feasibility filter, admissible domain and decision-log format. Feasible FIFO chooses the earliest arrival to the current stage. The local-priority rule orders admissible trucks by operational priority and then stage arrival. The fixed-score policy combines normalized waiting, priority and immediate affinity with prespecified weights of 0.45, 0.35 and 0.20. Strict FIFO can block on the first truck in its queue and serves as a descriptive lower reference. H1 is tested against the other three rules, so the proposed policy must improve on more than an avoidably blocked FIFO sequence.
+
+The sequence of operations is the same for the proposed rule and its three primary comparators. An event updates the state; resource-specific eligibility is checked; the admissible domain is formed; and only then is a truck selected. The decision record preserves the candidates, activated constraints, selected truck and any departure from feasible FIFO. Keeping this sequence common to the four operational rules prevents a policy from gaining an advantage through different access to trucks or resources. A recommendation and the truck actually served remain separate fields when an operator intervention is simulated. Strict FIFO remains a separate descriptive reference because it can wait for an ineligible first truck.
 
 \Needspace{8\baselineskip}
 The confirmatory plan has 72 scenario configurations, 50 paired seeds per configuration and five policies, yielding 18,000 planned policy-day runs. Table~\ref{tab:factorial-design} lists the factor levels fixed before the performance comparison.
@@ -110,41 +116,75 @@ Seeds and policies & 50 seeds × 5 policies & Produces paired policy-days for ea
 \label{tab:factorial-design}
 \end{table}
 
-In the planned comparison, all policies for a scenario–seed pair receive the same exogenous input. A nominal load index is computed from trucks and the capacity of the limiting resource before the runs. It defines low, medium and high congestion independently of observed policy performance. Low congestion is an operational control stratum; medium and high congestion are the substantive strata for H1. The medium stratum contains three resource configurations at one nominal load level, so any result there will describe variation in the limiting resource rather than a continuous range of loads. The final paper must reconcile these planned counts with accepted instances, rejections and run manifests.
+In the planned comparison, all policies for a scenario–seed pair receive the same exogenous input. A nominal load index is computed from trucks and the capacity of the limiting resource before the runs. It defines low, medium and high congestion independently of observed policy performance. Low congestion is an operational control stratum; medium and high congestion are the substantive strata for H1. The medium stratum contains three resource configurations at one nominal load level, so any result there will describe variation in the limiting resource rather than a continuous range of loads.
+
+The design implies 3,600 planned scenario–seed pairs: 200 in the low-load control stratum, 600 in medium congestion and 2,800 in high congestion. These are design counts, not completed observations. Before a pair enters the comparison, the synthetic instance is checked for the specified truck count, required resources, valid event ranges and nondegenerate service times. A rejected instance and any replacement must retain their seeds, attempt identifiers and reasons; rejection cannot depend on which policy performs better. The final analysis will use the accepted paired inventory and report any gap from the plan.
 
 \subsection{Outcomes and decision rules}
 
-The primary outcome is the daily 95th percentile of each truck's accumulated eligible queue waiting across service stages. Throughput counts trucks that complete the cycle within the horizon and acts as a non-inferiority guard. For each comparator and each substantive congestion stratum, H1 requires a paired median waiting improvement of at least 15\% and a throughput loss no greater than max(2, 0.02 × N) trucks per day, where N is the scenario truck count. The stratum decision is conjunctive across the three primary comparators. The protocol prespecifies the intersection–union logic within each stratum and Holm's adjustment to the two global stratum p-values.
+The primary outcome is the daily 95th percentile of each truck's accumulated eligible queue waiting across service stages. Throughput counts trucks that complete the cycle within the horizon and acts as a non-inferiority guard. For a paired policy-day $i$ and comparator $c$, let $W_{i,c}$ and $W_{i,L}$ be the daily waiting p95 under the comparator and the lexicographic policy. When $W_{i,c}>0$, the paired relative improvement is
+\begin{equation}
+g_{i,c}=100\frac{W_{i,c}-W_{i,L}}{W_{i,c}}\,\%.
+\label{eq:paired-gain}
+\end{equation}
+The planned descriptive estimate is the median of these paired improvements within each congestion stratum. It is not the percentage change between two unpaired group medians. A zero comparator p95 makes this contrast undefined and requires explicit treatment in the run inventory, rather than an arbitrary replacement value.
+
+For the same pair, let $T_{i,L}$ and $T_{i,c}$ be completed trucks and $N_i$ the configured truck count. The protective throughput contrast is $d'_{i,c}=(T_{i,L}-T_{i,c})+\max(2,0.02N_i)$ trucks per day. The margin is calculated separately for each configuration before contrasts are pooled within a stratum. For each comparator and each substantive stratum, H1 requires a median relative waiting improvement of at least 15\% and a throughput result that passes the prespecified one-sided non-inferiority test on $d'_{i,c}$. The stratum decision is conjunctive across the three primary comparators. The protocol prespecifies intersection–union testing within each stratum and Holm's adjustment to the two global stratum p-values.
 
 Waiting is accumulated from eligibility for each operation until service starts, including eligible waiting still in progress at the end of the day. Throughput prevents a policy from appearing faster merely because more trucks remain unfinished. The comparison is made within each congestion stratum, never only by averaging all 72 configurations. The 15\% threshold concerns a paired median of daily p95 values, not a 15\% change in the grand mean of all individual truck waits. In the report, the improvement and the protective throughput decision must be shown together for every primary comparator.
 
 Paired scenario–seed observations are the analysis unit for the Wilcoxon signed-rank comparisons. The planned report also includes paired median and interquartile range, Hodges–Lehmann estimates, 95\% paired bootstrap intervals from 5,000 resamples and rank-biserial effect sizes. Secondary outcomes include system time with censoring counts, makespan, resource use and idleness, reordering, and an exploratory estimate of idling-related CO₂. These outcomes do not form extra confirmatory tests of H1.
 
+The inferential comparison uses the registered 15\% gain threshold, not merely a test of improvement above zero. Within each stratum, the global intersection–union $p$-value is the largest component $p$-value across waiting and throughput for the three comparators. Holm's procedure is applied only to the resulting medium- and high-congestion $p$-values. The low-load stratum and the secondary outcomes remain descriptive. Ties and zero differences will be reported, with the protocol's paired sign-test sensitivity check where required; they will not be silently discarded.
+
 The time-in-system summary includes only completed truck cycles and reports the number censored at the horizon alongside it. Resource utilization is calculated from occupied time relative to available and gross resource-minutes; overlapping unavailability is counted once. Reordering compares candidates present in consecutive decisions for the same physical resource. The CO₂ indicator converts engine-on queue time using stated idling fuel and emission factors. It excludes travel, cold starts, dust, electricity and fuel life-cycle effects, and will be labelled exploratory.
 
 \subsection{Safety, traceability and validity}
 
-A deterministic independent audit will check final recommendations against hard constraints (A1). Structural checks will assess all decision records for required fields and replay consistency. A separate human review must assess the legibility and reconstructibility of a defined sample (A2). Automatic acceptance in the current simulator is labelled synthetic and does not demonstrate human decision making. Face validation of parameters and scenarios is also a distinct prerequisite. [Describe completed approvals, reviewer sample, audit outcomes and any deviations only after the corresponding receipts exist.]
+A deterministic independent audit will check final recommendations against hard constraints (A1). Structural checks will assess all decision records for required fields and replay consistency. A separate human review must assess the legibility and reconstructibility of a defined sample (A2). Automatic acceptance in the current simulator is labelled synthetic and does not demonstrate human decision making. Face validation of parameters and scenarios is also a distinct prerequisite. \pending{Describe approvals, the reviewer sample, audit outcomes and deviations only after the corresponding receipts exist.}
 
 The audit has different units from the performance analysis. Decision records support safety and structural traceability checks; policy-days supply waiting and throughput measurements. For A1, an independent validator examines persisted decisions, including adversarial cases, for violation of hard constraints. For A2, automatic checks cover the records' required fields and whether the state can be reconstructed. A prespecified sample of at least 50 decisions or 10\% of decisions per scenario, whichever is larger, is reserved for human assessment of rule clarity, FIFO departures and any admissible human intervention. The current governance record marks that human assessment pending. A passing structural check will therefore not be described as a passing human review.
 
 Potential errors have different consequences. A wrong simulator transition could favor a policy even if its ranking rule is correct; deterministic validators and replay address this risk. A synthetic input distribution could misrepresent real queues even if every program invariant passes; face validation and sensitivity analyses address plausibility within the chosen domain. Triangular service-time inputs, in particular, may fail to represent long right tails. Pairing seeds controls exogenous variation in the comparison but cannot by itself establish transfer to a facility with different arrivals, equipment or work rules. The conclusion will be limited accordingly.
 
+Each policy-day is intended to retain its scenario and seed identity, configuration and protocol version, event log, metric record and file hashes. This chain permits the audit to reconstruct decisions and reconcile exported tables with the underlying runs. Engineering tests and synthetic operator trials are kept outside the confirmatory result set. A complete report will identify the exact accepted-run manifest and protocol version used for every table and figure; a passing software test is not a substitute for a completed campaign.
+
 \section{Results}
 
-\emph{[Pending. Use audited exports only. Begin with the complete run inventory and missingness, then stratified p95 and throughput comparisons, followed by A1/A2 and secondary outcomes. Do not insert predicted numbers or engineering smoke results as confirmatory findings. Planned source: \texttt{experimento-notebook/results/tables/table\_h1.csv} and companion exports.]}
+The confirmatory campaign and the associated human reviews are pending. No numerical comparison, acceptance outcome or claim of H1 support is available for this draft. The subsections below reserve the reporting order; each will be replaced by audited results rather than by pilot values or test fixtures.
+
+\subsection{Run inventory and scenario integrity}
+
+\pending{Report the accepted and rejected scenario--seed pairs, reasons for rejection, completed policy-days, missing runs and the source manifest/hash. Reconcile the observed inventory with the 18,000 planned runs and the three prespecified congestion strata.}
+
+\subsection{Primary waiting and throughput comparisons}
+
+\pending{Insert the six medium/high stratum--comparator contrasts: feasible FIFO, local priority and fixed score in each stratum. For every contrast report paired $n$, comparator and lexicographic p95, median $g_{i,c}$ with 95\% paired interval, throughput contrast and guard, component $p$-values, IUT decision and the two Holm-adjusted stratum decisions. Show the low-load control separately. Source: audited H1 and throughput exports.}
+
+\subsection{Safety, traceability and secondary outcomes}
+
+\pending{Report A1 independently validated constraint violations; A2 structural coverage, replay reconstruction and the status of the human-reviewed sample separately. Then present system time with censoring, utilization/idleness by resource, reordering and exploratory idling CO$_2$ only where the corresponding audit is complete.}
 
 \section{Discussion}
 
-\emph{[Pending. Interpret the observed H1 decision, compare it with verified related work, and state the synthetic-data, congestion-stratum, model-input and human review limits. Keep the DES outcome separate from the planned Unreal replay.]}
+\pending{Begin with the observed H1 decision in each substantive stratum. Explain whether the waiting change remains useful after the throughput guard, and distinguish the comparison with each operational policy. Relate only verified findings to the receiving-yard and rescheduling literature.}
+
+Even a favorable simulation result would describe performance under the registered synthetic arrivals, service distributions, equipment capacities and disruption regimes. The medium-congestion cases occupy one nominal load level with three different limiting-resource configurations; they do not sample a continuous range of moderate loads. The planned face review of inputs is still pending, and no field calibration or external facility test is available. These boundaries must accompany any operational interpretation of the estimates.
+
+Constraint compliance and interpretability are different claims. An independent A1 audit can establish whether persisted recommendations obey the hard rules in the tested scenarios. Structural completeness and replay of decision records address only part of A2; human legibility requires the specified review by people. The simulator's automatic acceptance cannot demonstrate operator understanding, authorization or effective intervention. The planned Unreal replay is also outside the evidence for H1 and must not be presented as an evaluated field interface.
+
+\pending{After the results are available, identify any failure modes or trade-offs visible in the audited logs, describe the sensitivity analyses separately from H1 and calibrate the practical implications to the observed uncertainty.}
 
 \section{Conclusions}
 
-\emph{[Pending. Answer the research question only to the extent supported by the completed campaign and audits.]}
+The study specifies a constrained online dispatching rule, a paired discrete-event comparison against three feasible operational policies and separate audits for safety and traceability. Those elements define what can be tested; they do not yet establish a waiting-time benefit or operational readiness.
 
-\section{Artificial Intelligence Use Statement}
+\pending{After the confirmatory campaign and audits, answer H1 by stratum, state the A1 and A2 outcomes separately, and close with the limits supported by the observed evidence.}
 
-An initial outline and draft language were prepared with OpenAI Codex. [Before submission, the authors must verify the precise tool disclosure, describe any subsequent AI-assisted tasks, and confirm their review of all included text.]
+\section*{Artificial Intelligence Use Statement}
 
+An initial outline and draft language were prepared and revised with OpenAI Codex. \pending{Before submission, the authors must verify the final disclosure, describe any further AI-assisted tasks and confirm their review of all included text.}
+
+\clearpage
 \printbibliography[title={References}]
 \end{document}
