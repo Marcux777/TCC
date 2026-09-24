@@ -9,6 +9,12 @@ __pycache__/
 build/
 dist/
 TCC_experimentos_executado.ipynb
+dataset/
+results/*/
+!results/raw/
+!results/processed/
+!results/tables/
+!results/figures/
 
 runs/*
 !runs/.gitkeep
