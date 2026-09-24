@@ -668,6 +668,12 @@ class _DaySimulation:
                     operation=None if len(operations) > 1 else operations[0],
                     queue_length=len(candidates),
                     allowed_cargo_types=resource.allowed_cargo_types,
+                    affinity_target=next((
+                        snapshot.trucks[event.payload["truck_id"]].cargo_type
+                        for event in reversed(self.events)
+                        if event.kind == "SERVICE_COMPLETED"
+                        and event.payload.get("resource_id") == resource_id
+                    ), None) if self.policy.name == "batch_by_cargo" else None,
                 )
                 # Strict FIFO inspects the actual stage queue head before any
                 # eligibility filtering; the other policies receive the

@@ -151,8 +151,15 @@ def _parse_scenario_specs(
         raise AuditError("manifest matrix policies must contain non-empty strings")
     if len(set(policies)) != len(policies):
         raise AuditError("manifest matrix policies must be unique")
-    if any(policy not in config.policies for policy in policies):
+    from .profiles import phase_policies
+    if any(policy not in phase_policies(config, manifest.get("phase")) for policy in policies):
         raise AuditError("manifest matrix policies must belong to configuration policies")
+    if manifest.get("phase") in {"sensitivity", "exploratory"}:
+        from .config import factorial_scenarios
+        if (policies != list(phase_policies(config, manifest["phase"]))
+                or seeds != list(config.seeds)
+                or scenario_ids != [s.scenario_id for s in factorial_scenarios(config)]):
+            raise AuditError("exploratory scientific matrix is incomplete")
     expected_rows = manifest.get("expected_rows")
     expected_product = len(scenarios) * len(seeds) * len(policies)
     if expected_rows != expected_product:
@@ -186,10 +193,15 @@ _JUSTIFICATION_RULES = frozenset(
         "affinity_order",
         "fifo_order",
         "fifo_override",
+        "slack_order",
+        "cargo_batch",
     }
 )
 
 _POLICY_JUSTIFICATION_RULES: dict[str, tuple[str, ...]] = {
+    "myopic_predicted_delay": ("waiting_window", "slack_order"),
+    "window_without_stability": ("priority_order", "waiting_window", "affinity_order"),
+    "batch_by_cargo": ("waiting_window", "cargo_batch"),
     "fifo_strict": (),
     "fifo_flow_faithful": ("waiting_window",),
     "priority_local": ("priority_order",),
@@ -251,7 +263,7 @@ def _observed_exclusion(item: Mapping[str, Any], context: Mapping[str, Any]) -> 
     return None
 
 
-def _validate_decision_observation(recommendation, event_time, truck_facts, resources, statuses) -> bool:
+def _validate_decision_observation(recommendation, event_time, truck_facts, resources, statuses, last_cargo=None) -> bool:
     """Bind FIFO/cargo evidence to preceding events, not just to itself."""
     context = recommendation["context"]
     resource_id = context["resource_id"]
@@ -261,6 +273,9 @@ def _validate_decision_observation(recommendation, event_time, truck_facts, reso
     if (context["resource_status"] != statuses[resource_id]
             or context["allowed_cargo_types"] != list(resource.allowed_cargo_types)):
         return False
+    if recommendation.get("policy") == "batch_by_cargo":
+        if context["affinity_target"] != (last_cargo or {}).get(resource_id):
+            return False
     evidence = recommendation["candidate_order"] + [item["candidate"] for item in recommendation["excluded"]]
     for candidate in evidence:
         observed = truck_facts.get(candidate["truck_id"])
@@ -899,6 +914,32 @@ def _derived_log_metrics(details: Any) -> dict[str, int | float]:
 def _validate_a2_manifest(manifest: Mapping[str, Any]) -> bool:
     """Validate the explicit automated/human A2 status contract."""
 
+    from .governance import COMPUTATIONAL_PROTOCOL, study_scope
+    configuration = _required_manifest_mapping(manifest, "configuration")
+    if manifest.get("protocol_version") != configuration.get("protocol_version"):
+        raise AuditError("manifest protocol_version disagrees with configuration")
+    if configuration.get("protocol_version") == COMPUTATIONAL_PROTOCOL:
+        config = ExperimentConfig(**dict(configuration))
+        if manifest.get("study_scope") != study_scope(config):
+            raise AuditError("v2 study_scope differs from the computational protocol")
+        if manifest.get("phase") != "validation":
+            provenance = _required_manifest_mapping(manifest, "input_provenance")
+            expected_face = {"status": "NOT_EVALUATED", "required": False,
+                             "scope": study_scope(config)}
+            if provenance.get("face_validation") != expected_face:
+                raise AuditError("v2 scientific provenance must identify face as NOT_EVALUATED")
+        a2 = _required_manifest_mapping(manifest, "a2")
+        if (manifest.get("human_audit_status") != "not_evaluated"
+                or a2.get("human_audit_status") != "not_evaluated"):
+            raise AuditError("v2 human_audit_status must be not_evaluated; complete requires a verified human review")
+        if (a2.get("structural_status") != "automated"
+                or a2.get("required_fields") != list(LOG_REQUIRED_FIELDS)):
+            raise AuditError("v2 A2 requires all canonical automated structural fields")
+        if (manifest.get("operator_mode") != "synthetic_auto_accept"
+                or manifest.get("global_acceptance_status") != "pending"
+                or manifest.get("human_review_evidence") is not None):
+            raise AuditError("v2 computational audit cannot approve human or global acceptance")
+        return False
     root_status = manifest.get("human_audit_status")
     if root_status not in {"pending", "complete"}:
         raise AuditError(
@@ -1049,6 +1090,7 @@ class AuditReport:
             "replay_pass": self.replay_pass,
             "a2_structural_pass": self.a2_structural_pass,
             "a2_human_audit_pending": self.a2_human_audit_pending,
+            "human_evaluation_status": "pending" if self.a2_human_audit_pending else "not_evaluated",
             "overall_pass": self.overall_pass,
             "acceptance_scope": "automated_structural_checks_only",
             "global_acceptance_status": "pending",
@@ -1090,6 +1132,34 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
     provenance, instances = _validate_input_provenance(
         manifest, {(scenario_id, seed) for scenario_id in scenarios for seed in matrix_seeds},
     )
+    projections = {}
+    if provenance["kind"] == "frozen_dataset":
+        from .dataset import load_frozen_dataset, derive_controlled_projection
+        from .domain import ExecutionControls
+        from .profiles import sensitivity_bootstrap
+        frozen = load_frozen_dataset(provenance["dataset_path"],
+            expected_dataset_root_hash=provenance["dataset_root_hash"])
+        controls = ExecutionControls(**dict(provenance["controls"]))
+        if (frozen.manifest["config_hash"] != config_checksum
+                or frozen.event_latents.event_latents_sha256 != provenance["event_latents_sha256"]):
+            raise AuditError("frozen dataset identity differs from scientific provenance")
+        if manifest.get("phase") in {"sensitivity", "exploratory"}:
+            if manifest.get("descriptive_bootstrap") != sensitivity_bootstrap(controls):
+                raise AuditError("descriptive bootstrap identity differs from controls/ledger")
+        for source in frozen.instances:
+            pair = (source.scenario_id, source.seed)
+            if pair not in instances:
+                continue
+            if source.instance_hash != instances[pair]["instance_hash"]:
+                raise AuditError("scientific source instance differs from frozen dataset")
+            projection = derive_controlled_projection(source, frozen.event_latents, controls)
+            projections[pair] = {
+                "controlled_view_hash": projection.controlled_view_hash,
+                "event_overlay_hash": projection.event_overlay_hash,
+                "execution_instance_hash": projection.instance.instance_hash,
+            }
+        if set(projections) != set(instances):
+            raise AuditError("scientific provenance has instances absent from frozen dataset")
     # ``decision_logs`` is the canonical manifest field.  A secondary alias
     # must not become a recovery path if the canonical inventory is damaged.
     log_mapping_value = manifest.get("decision_logs")
@@ -1256,11 +1326,16 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
         }
         observed_resources = details.initial_snapshot.resources
         resource_statuses = {identifier: resource.status for identifier, resource in observed_resources.items()}
+        last_cargo = {}
         for line_number, (line, event) in enumerate(zip(details.lines, details.events), start=1):
             for field in _INPUT_IDENTITY_FIELDS:
                 if line.get(field) != row[field]:
                     raise AuditError(f"log input provenance mismatch: {log_name} line={line_number} field={field}")
             if event.kind == "RUN_STARTED":
+                if projections:
+                    expected_projection = projections[(row["scenario_id"], row["seed"])]
+                    if any(event.payload.get(key) != value for key, value in expected_projection.items()):
+                        raise AuditError(f"RUN_STARTED projection differs from frozen controls/ledger: {log_name}")
                 if event.payload.get("operator_mode") != manifest["operator_mode"]:
                     raise AuditError(f"RUN_STARTED operator mode mismatch: {log_name}")
                 if event.to_dict()["payload"].get("execution_controls") != provenance["controls"]:
@@ -1280,7 +1355,7 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
                     "decision" if event.kind == "DECISION_RECORDED" else "recommendation"
                 ]
                 if not _validate_decision_observation(
-                    recommendation, event.time, truck_facts, observed_resources, resource_statuses,
+                    recommendation, event.time, truck_facts, observed_resources, resource_statuses, last_cargo,
                 ):
                     raise AuditError(f"A2 decision observation disagrees with events: {log_name} line={line_number}")
             elif event.kind == "TRUCK_ARRIVED":
@@ -1290,6 +1365,8 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
                 }
             elif event.kind in {"DOCUMENT_RELEASED", "SERVICE_STARTED", "SERVICE_COMPLETED"}:
                 truck_facts[event.payload["truck_id"]]["stage_entry_time"] = event.time
+                if event.kind == "SERVICE_COMPLETED":
+                    last_cargo[event.payload["resource_id"]] = truck_facts[event.payload["truck_id"]]["cargo_type"]
             if event.kind in {"SERVICE_STARTED", "SERVICE_COMPLETED", "RESOURCE_FAILED", "RESOURCE_RECOVERED"}:
                 resource_statuses[event.payload["resource_id"]] = {
                     "SERVICE_STARTED": "busy", "SERVICE_COMPLETED": "available",

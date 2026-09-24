@@ -298,15 +298,16 @@ def test_audit_rejects_invented_rule_or_overlapping_exclusion(tmp_path: Path) ->
         audit_run(bundle.run_dir)
 
 
-def test_pending_human_audit_is_not_an_approved_a2_result(tmp_path: Path) -> None:
+def test_computational_a2_does_not_claim_human_evaluation(tmp_path: Path) -> None:
     report = audit_run(_build_bundle(tmp_path).run_dir)
 
     assert report.a2_structural_pass is True
-    assert report.a2_human_audit_pending is True
+    assert report.a2_human_audit_pending is False
     serialized = report.to_dict()
     assert "a2_pass" not in serialized
     assert serialized["a2_structural_pass"] is True
-    assert serialized["a2_human_audit_pending"] is True
+    assert serialized["a2_human_audit_pending"] is False
+    assert serialized["human_evaluation_status"] == "not_evaluated"
 
 
 @pytest.mark.parametrize("field", ["instance_hash", "execution_instance_hash", "control_hash", "controls"])

@@ -6,6 +6,11 @@ protocolo experimental, os parâmetros, as tabelas e os limites das conclusões.
 Uma implementação ou cópia mantida em outro repositório não substitui o texto
 canônico daqui.
 
+Para desenvolver e executar a pesquisa, abra o
+[notebook central](experimento-notebook/TCC_experimentos.ipynb). Ele reúne o plano,
+as pendências, os insumos, a execução, a auditoria e a leitura dos resultados.
+As [instruções de ambiente](experimento-notebook/README.md) usam uv no Windows.
+
 ## Fontes normativas do projeto
 
 - `main.tex`: texto e protocolo canônicos.
@@ -67,9 +72,11 @@ Concluído ou especificado:
 
 Ainda necessário no TCC II:
 
-- realizar e documentar a validação de face com orientadora/especialista;
-- aplicar o auditor independente A1/A2 à matriz completa e concluir a auditoria humana de A2;
+- manter explícito o escopo computacional sintético da [emenda v2](experimento-notebook/docs/protocol-v2-amendment.md): parâmetros são hipóteses de engenharia, sem validação humana realizada;
+- congelar o dataset e executar o piloto com seus diagnósticos de estabilidade;
+- aplicar o auditor independente A1/A2 à matriz completa (rastreabilidade automatizada; avaliação humana fora dos requisitos v2);
 - executar a matriz confirmatória completa e analisar H1;
+- executar e verificar em escala integral o estresse multivariado e as políticas exploratórias, agora orquestrados pelo notebook;
 - construir a cena e os ativos do pátio no Unreal Engine 5.8;
 - implementar, validar e demonstrar o replay de eventos JSONL;
 - substituir resultados previstos por resultados observados;

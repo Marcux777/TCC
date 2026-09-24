@@ -39,6 +39,8 @@ from .metrics import compute_policy_day_metrics, METRIC_SCALAR_FIELDS, INTEGER_M
 from .manifest import build_manifest, create_run_directory
 from .policies import DispatchPolicy
 from .statistics import canonical_scenario_metadata
+from .governance import COMPUTATIONAL_PROTOCOL, human_audit_status, study_scope
+from .profiles import SCIENTIFIC_PHASES, phase_policies
 
 INPUT_IDENTITY_FIELDS = (
     "instance_id", "instance_hash", "execution_instance_hash",
@@ -74,6 +76,8 @@ EXECUTION_PHASES: tuple[str, ...] = (
     "validation",
     "pilot",
     "execute-confirmatory",
+    "sensitivity",
+    "exploratory",
 )
 
 LOG_REQUIRED_FIELDS: tuple[str, ...] = (
@@ -245,6 +249,7 @@ def _normalise_seeds(seeds: Iterable[int]) -> tuple[int, ...]:
 def _normalise_policies(
     policies: Iterable[str | DispatchPolicy],
     config: ExperimentConfig,
+    *, phase: str = "validation",
 ) -> tuple[str | DispatchPolicy, ...]:
     if isinstance(policies, (str, bytes, bytearray)):
         raise TypeError("policies must be an iterable of policy names")
@@ -262,7 +267,7 @@ def _normalise_policies(
             name = value
         else:
             raise TypeError("policies must contain names or DispatchPolicy values")
-        if name not in config.policies:
+        if name not in phase_policies(config, phase):
             raise ValueError(f"policy is not in the configured panel: {name!r}")
         _path_component("policy", name)
         names.append(name)
@@ -738,10 +743,11 @@ def _manifest_for_run(
             },
             "a2": {
                 "structural_status": "automated",
-                "human_audit_status": "pending",
+                "human_audit_status": human_audit_status(config),
                 "required_fields": list(LOG_REQUIRED_FIELDS),
             },
-            "human_audit_status": "pending",
+            "human_audit_status": human_audit_status(config),
+            "study_scope": study_scope(config),
             "operator_mode": "synthetic_auto_accept",
             "global_acceptance_status": "pending",
             "human_review_evidence": None,
@@ -782,8 +788,8 @@ def run_experiment_matrix(
 ) -> RunBundle:
     """Execute scientific cells exclusively from a revalidated, pinned freeze.
 
-    Pilot and confirmation require human face evidence and a current capacity
-    receipt. All prerequisites are checked before creating a run namespace.
+    Protocol v2 is a computational synthetic study; v1 retains its face gate.
+    Both require pinned inputs and current capacity before creating a namespace.
     Engineering fixtures use the explicitly non-confirmatory validation API.
     """
     from .dataset import load_frozen_dataset, select_pilot_configurations
@@ -793,10 +799,10 @@ def run_experiment_matrix(
         raise TypeError("config must be an ExperimentConfig")
     validate_confirmatory_config(config)
     if phase not in EXECUTION_PHASES:
-        raise ValueError("phase must be one of validation, pilot, execute-confirmatory")
+        raise ValueError(f"phase must be one of {EXECUTION_PHASES}")
     scenarios = _normalise_scenarios(scenarios)
     seeds = _normalise_seeds(seeds)
-    policies = _normalise_policies(policies, config)
+    policies = _normalise_policies(policies, config, phase=phase)
     if phase == "execute-confirmatory":
         if any(isinstance(policy, DispatchPolicy) for policy in policies):
             raise ValueError("execute-confirmatory requires canonical policy names, not policy objects")
@@ -806,6 +812,10 @@ def run_experiment_matrix(
     if phase == "pilot" and (scenarios != select_pilot_configurations(config)
                              or seeds != config.seeds or policies != config.policies):
         raise ValueError("pilot requires the canonical 15 scenarios, 50 seeds and five policies")
+    if phase in {"sensitivity", "exploratory"} and (
+            scenarios != factorial_scenarios(config) or seeds != config.seeds
+            or policies != phase_policies(config, phase)):
+        raise ValueError("exploratory phases require the complete canonical factorial and phase panel")
     dataset = load_frozen_dataset(dataset_path, expected_dataset_root_hash=expected_dataset_root_hash)
     if dataset.manifest["config_hash"] != config_hash(config):
         raise ValueError("frozen dataset configuration does not match execution configuration")
@@ -815,27 +825,37 @@ def run_experiment_matrix(
         raise ValueError("controls source_dataset_root_hash does not match pinned dataset")
     if dataset.event_latents is None or controls.event_latents_sha256 != dataset.event_latents.event_latents_sha256:
         raise ValueError("controls event_latents_sha256 does not match frozen dataset")
-    if (controls.ordinary_window != config.ordinary_window
+    if phase != "sensitivity" and (controls.ordinary_window != config.ordinary_window
             or controls.buffer_capacity != config.buffer_capacity
             or controls.threshold_multiplier != Decimal("1.00") or controls.intensity != "base"):
         raise ValueError("matrix executor requires explicit canonical baseline controls")
+    if phase == "sensitivity" and (
+            controls.ordinary_window not in {4, 6, 8}
+            or controls.buffer_capacity not in {8, 12, 16}
+            or controls.threshold_multiplier not in {Decimal("0.75"), Decimal("1.00"), Decimal("1.25")}):
+        raise ValueError("sensitivity controls are outside the prospective 54-cell grid")
     selected_keys = {(scenario.scenario_id, seed) for scenario in scenarios for seed in seeds}
     instances = tuple(item for item in dataset.instances if (item.scenario_id, item.seed) in selected_keys)
     evidence = {"dataset_path": str(dataset.path.resolve())}
     workload = None
-    if phase in {"pilot", "execute-confirmatory"}:
-        if face_receipt_path is None:
-            raise ValueError("face_receipt_path is required before scientific execution")
-        face = validate_face_validation_receipt(
-            face_receipt_path, config, Path(__file__).resolve().parents[3] / "main.pdf"
-        )
-        if not face.approved:
-            raise ValueError(f"scientific execution blocked: FACE_VALIDATION={face.status}; {face.cause}")
+    if phase in SCIENTIFIC_PHASES:
+        if config.protocol_version != COMPUTATIONAL_PROTOCOL:
+            if face_receipt_path is None:
+                raise ValueError("face_receipt_path is required before scientific execution")
+            face = validate_face_validation_receipt(
+                face_receipt_path, config, Path(__file__).resolve().parents[3] / "main.pdf"
+            )
+            if not face.approved:
+                raise ValueError(f"scientific execution blocked: FACE_VALIDATION={face.status}; {face.cause}")
+            evidence["face_validation"] = face.as_dict()
+        else:
+            evidence["face_validation"] = {"status": "NOT_EVALUATED", "required": False,
+                                           "scope": study_scope(config)}
         if capacity_receipt is None:
             raise ValueError("capacity_receipt is required before scientific execution")
         from .profiles import ConfirmatoryWorkload
-        workload = ConfirmatoryWorkload.from_dataset(dataset, config, phase=phase)
-        evidence["face_validation"] = face.as_dict()
+        workload = ConfirmatoryWorkload.from_dataset(dataset, config, phase=phase,
+            controls=controls if phase in {"sensitivity", "exploratory"} else None)
         evidence["capacity_receipt"] = capacity_receipt.to_dict()
     return _run_materialized_matrix(
         scenarios, seeds, policies, config, runs_root, phase, now_utc,
@@ -909,7 +929,7 @@ def _run_materialized_matrix(
     phase_component = _path_component("phase", phase)
     if phase_component not in EXECUTION_PHASES:
         raise ValueError(
-            "phase must be one of validation, pilot, execute-confirmatory; "
+            f"phase must be one of {EXECUTION_PHASES}; "
             "load-confirmatory is a load-only profile"
         )
     if phase_component == "execute-confirmatory":
@@ -924,7 +944,7 @@ def _run_materialized_matrix(
             "seeds are outside the configured protocol: "
             f"{unknown_seeds}"
         )
-    policy_values = _normalise_policies(policies, config)
+    policy_values = _normalise_policies(policies, config, phase=phase_component)
     policy_names = tuple(
         value.name if isinstance(value, DispatchPolicy) else value
         for value in policy_values
@@ -969,7 +989,7 @@ def _run_materialized_matrix(
                     or instance.scenario_index != scenario.scenario_index):
                 raise ValueError("frozen instance dimensions do not match requested scenario")
     commit, checkout_clean = _git_metadata()
-    if phase_component in {"pilot", "execute-confirmatory"}:
+    if phase_component in SCIENTIFIC_PHASES:
         from .capacity import require_capacity
         require_capacity(capacity_receipt, workload=workload, requirements=config.capacity, run_root=root)
     run_dir = create_run_directory(
@@ -1059,6 +1079,9 @@ def _run_materialized_matrix(
     )
     manifest["schema_version"] = 3
     manifest["input_provenance"] = dict(input_provenance)
+    if phase_component in {"sensitivity", "exploratory"}:
+        from .profiles import sensitivity_bootstrap
+        manifest["descriptive_bootstrap"] = sensitivity_bootstrap(controls)
     manifest["non_confirmatory"] = phase_component != "execute-confirmatory"
     _atomic_write_text(run_dir / "results.csv", _csv_text(result_rows))
     _atomic_write_json(run_dir / "manifest.json", manifest)

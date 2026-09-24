@@ -494,7 +494,7 @@ def _canonical_nested_fields() -> dict[str, Any]:
 CANONICAL_CONFIRMATORY_FIELDS: Mapping[str, Any] = MappingProxyType(
     {
         "project_name": "PequiFlux - Experimento Reprodutivel",
-        "protocol_version": "1.0.0",
+        "protocol_version": "2.0.0",
         "hypothesis": "H1",
         "seeds": _SEEDS,
         "horizon_minutes": 720,
@@ -522,6 +522,10 @@ def validate_confirmatory_config(config: ExperimentConfig) -> ExperimentConfig:
         name: list(value) if isinstance(value, tuple) else value
         for name, value in CANONICAL_CONFIRMATORY_FIELDS.items()
     }
+    # The historical v1 configuration remains valid with its original face gate.
+    # Dataset loading deliberately targets the active protocol, not old freezes.
+    if config.protocol_version == "1.0.0":
+        expected["protocol_version"] = "1.0.0"
     if observed != expected:
         for field_name in CONFIG_KEYS:
             if observed.get(field_name) != expected.get(field_name):

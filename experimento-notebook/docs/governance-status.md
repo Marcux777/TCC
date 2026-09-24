@@ -1,5 +1,43 @@
 # Governança e estado das entregas
 
+## Protocolo vigente: 2.0.0 (24 de setembro de 2026)
+
+A [emenda prospectiva](protocol-v2-amendment.md) reformula a avaliação como
+estudo computacional sintético. Parâmetros são hipóteses de engenharia;
+face e revisão por pessoas são `NOT_EVALUATED` e não impedem campanhas v2.
+A2 exige rastreabilidade e reconstruibilidade automatizadas. Não se alega
+validação humana, legibilidade ou validade operacional externa.
+
+O recibo v1 permanece `PENDING`. Novos artefatos identificam v2 e seu hash,
+mantendo A1, CRN, capacidade, integridade e critérios de H1. Piloto, principal,
+estresse, painel exploratório, Unreal e redação continuam necessários.
+O notebook central reúne a execução e seu estado efetivo.
+
+### Execução integral tentada em 24/09/2026
+
+O notebook foi iniciado com o plano integral e interrompido antes da geração
+por insuficiência de armazenamento: mínimo principal de 93.842.309.120 bytes,
+ainda sem dataset, contra 37.021.134.848 bytes livres no momento da tentativa.
+O registro original é `results/20260924T100138Z-99c6f704/storage.json`; a exceção
+está nas saídas do notebook. Nenhuma campanha científica foi concluída.
+
+A [consulta técnica em ChatGPT 6 Pro](https://chatgpt.com/c/6ab4f23b-4f58-83e9-8eab-dee4911731a4),
+uma consulta enviada e respondida, confirmou a consequência aritmética do gate:
+compressão ou execução em lotes não suprem capacidade livre exigida pela
+fórmula vigente. A recomendação foi confrontada com `capacity.py` e adotada
+somente para preservar o bloqueio, sem apagar dados ou mudar o protocolo.
+
+O notebook agora orquestra todas as fases e as políticas exploratórias têm
+implementação. Verificações de software não equivalem à campanha integral;
+execução científica, cena/replay Unreal e integração dos resultados no texto
+continuam pendentes. Face e revisão humana não são pendências obrigatórias v2.
+
+## Registro histórico do protocolo 1.0.0
+
+O registro abaixo documenta requisitos anteriores, substituídos somente nos
+pontos humanos indicados na emenda v2. Não autoriza preencher aprovações ou
+reinterpretar resultados antigos.
+
 Estado documental em 7 de setembro de 2026. O protocolo científico continua em
 [main.tex](../../main.tex); este registro distingue evidência disponível de
 aprovação ou entrega pendente. Testes e fixtures não são resultados da campanha principal.

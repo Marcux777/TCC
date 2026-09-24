@@ -37,6 +37,9 @@ JUSTIFICATION_FIELDS: tuple[str, ...] = (
 # Policy-specific evidence is kept closed as well.  A persisted decision may
 # only claim a ranking/restriction that this dispatcher actually applies.
 _POLICY_JUSTIFICATION_RULES: dict[str, tuple[str, ...]] = {
+    "myopic_predicted_delay": ("waiting_window", "slack_order"),
+    "window_without_stability": ("priority_order", "waiting_window", "affinity_order"),
+    "batch_by_cargo": ("waiting_window", "cargo_batch"),
     "fifo_strict": (),
     "fifo_flow_faithful": ("waiting_window",),
     "priority_local": ("priority_order",),

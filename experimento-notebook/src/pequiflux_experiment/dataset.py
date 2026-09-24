@@ -1422,6 +1422,14 @@ def _create_staging_directory(destination: Path) -> Path:
         ) from exc
 
 
+def _validate_generation_scope(face_report: Any, config: ExperimentConfig) -> None:
+    from .governance import COMPUTATIONAL_PROTOCOL, study_scope
+    study_scope(config)
+    if config.protocol_version == COMPUTATIONAL_PROTOCOL and face_report is None:
+        return
+    _validate_approved_face(face_report, config)
+
+
 def _validate_approved_face(face_report: Any, config: ExperimentConfig) -> FaceValidationReport:
     if not isinstance(face_report, FaceValidationReport):
         raise FaceValidationError(
@@ -1785,7 +1793,7 @@ def _generate_until_rejection(
 
 def generate_synthetic_dataset(
     config: ExperimentConfig,
-    face_report: FaceValidationReport,
+    face_report: FaceValidationReport | None,
     dataset_root: str | Path,
     *,
     now_utc: datetime | str | None = None,
@@ -1794,7 +1802,7 @@ def generate_synthetic_dataset(
     """Materialize and freeze the complete 3,600-instance synthetic dataset."""
 
     validate_confirmatory_config(config)
-    _validate_approved_face(face_report, config)
+    _validate_generation_scope(face_report, config)
     if not isinstance(generator_version, str) or not generator_version.strip():
         raise ValueError("generator_version must be a non-empty string")
     plan = plan_synthetic_dataset(config)
@@ -1998,7 +2006,7 @@ def _generate_one_candidate(
 
 def resample_synthetic_dataset(
     config: ExperimentConfig,
-    face_report: FaceValidationReport,
+    face_report: FaceValidationReport | None,
     source_staging_path: str | Path,
     source_staging_root_hash: str,
     exact_rejected_ids: Iterable[str],
@@ -2010,7 +2018,7 @@ def resample_synthetic_dataset(
     """Perform one explicit resample action and publish only a complete freeze."""
 
     validate_confirmatory_config(config)
-    _validate_approved_face(face_report, config)
+    _validate_generation_scope(face_report, config)
     if not isinstance(generator_version, str) or not generator_version.strip():
         raise ValueError("generator_version must be a non-empty string")
     timestamp = _as_utc(now_utc)
@@ -2976,8 +2984,7 @@ def probe_generation_attempt(
     """Diagnose candidate shortages without writing a namespace or authorizing action."""
 
     validate_confirmatory_config(config)
-    if getattr(face_report, "status", None) != "APPROVED":
-        raise FaceValidationError("probe_generation_attempt requires FACE_VALIDATION=APPROVED")
+    _validate_generation_scope(face_report, config)
     if isinstance(generation_attempt, bool) or not isinstance(generation_attempt, int) or generation_attempt < 0:
         raise ValueError("generation_attempt must be a non-negative integer")
     plan = plan_synthetic_dataset(config)

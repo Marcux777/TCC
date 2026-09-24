@@ -116,12 +116,48 @@ class LexicographicPolicy(DispatchPolicy):
         )
 
 
+EXPLORATORY_POLICIES = (
+    "myopic_predicted_delay", "window_without_stability", "batch_by_cargo",
+)
+STRESS_POLICIES = ("lexicographic", "fifo_flow_faithful", "priority_local", "fixed_score")
+
+
+class MyopicPredictedDelayPolicy(DispatchPolicy):
+    name = "myopic_predicted_delay"
+
+    def rank_key(self, candidate, context, candidates=()):
+        # Prospective exploratory panel uses baseline thresholds only.
+        threshold = (60, 30, 10)[min(candidate.priority, 2)]
+        return (threshold - candidate.waiting_time, -candidate.priority,
+                candidate.stage_entry_time, candidate.truck_id)
+
+
+class WindowWithoutStabilityPolicy(LexicographicPolicy):
+    name = "window_without_stability"
+
+    def rank_key(self, candidate, context, candidates=()):
+        key = super().rank_key(candidate, context, candidates)
+        return key[:2] + key[3:]
+
+
+class BatchByCargoPolicy(DispatchPolicy):
+    name = "batch_by_cargo"
+
+    def rank_key(self, candidate, context, candidates=()):
+        return (-int(context.affinity_target is not None
+                     and candidate.cargo_type == context.affinity_target),
+                candidate.stage_entry_time, candidate.truck_id)
+
+
 _POLICY_TYPES = {
     "fifo_strict": FifoStrictPolicy,
     "fifo_flow_faithful": FifoFlowFaithfulPolicy,
     "priority_local": PriorityLocalPolicy,
     "fixed_score": FixedScorePolicy,
     "lexicographic": LexicographicPolicy,
+    "myopic_predicted_delay": MyopicPredictedDelayPolicy,
+    "window_without_stability": WindowWithoutStabilityPolicy,
+    "batch_by_cargo": BatchByCargoPolicy,
 }
 
 

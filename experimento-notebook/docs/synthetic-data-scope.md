@@ -2,8 +2,10 @@
 
 Este contrato complementa a [especificação experimental](superpowers/specs/2026-09-02-notebook-experimental-completo-design.md)
 e o [catálogo de parâmetros](synthetic-input-catalog.md). Plausibilidade sintética
-não equivale a calibração com dados reais. A aprovação real de face continua
-sujeita ao [recibo e à rubrica](governance-status.md).
+não equivale a calibração com dados reais. A [emenda v2](protocol-v2-amendment.md)
+trata parâmetros como hipóteses de engenharia e registra avaliação humana não
+realizada. O recibo de face v1 permanece histórico; sua aprovação não é requisito
+de geração ou execução v2.
 
 ## Unidade e dimensão previstas
 

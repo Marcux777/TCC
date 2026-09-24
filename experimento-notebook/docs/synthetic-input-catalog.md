@@ -5,7 +5,9 @@ cria novos parâmetros, não emenda a configuração e não registra geração d
 dataset ou execução de políticas. As tabelas abaixo descrevem um **desenho
 sintético de engenharia**: os valores não são medições de um pátio, estimativas
 ajustadas a observações reais nem calibração empírica validada. A validação de
-face continua [PENDING](../inputs/face_validation_receipt.json).
+face v1 permanece [PENDING](../inputs/face_validation_receipt.json) como histórico.
+A [emenda v2](protocol-v2-amendment.md) mantém os parâmetros como hipóteses de
+engenharia e não exige revisores para a avaliação computacional.
 
 ## Fontes e natureza do suporte
 
@@ -124,7 +126,7 @@ não sejam confundidos com medidas operacionais.
 | Piloto | `ceil(0,20×72)=15` configurações; 50 sementes e cinco políticas: 3.750 policy-days | H/R/A; M/S/G | Sanidade prévia com seleção determinística por hash. | Reutiliza entradas da grade completa; não remove casos da confirmação nem recalibra parâmetros. |
 | Configuração declarada de validação | Índices `[20,12,24]`, semente `[101]`, cinco políticas | R; [validation.json](../config/validation.json) | Recorte declarado para checks, distinto da campanha principal e da demonstração mínima do notebook. | O notebook usa uma fixture de quatro caminhões e duas sementes. Nenhum desses recortes comprova materialização das 3.600 entradas ou execução dos 18.000 policy-days. |
 | Guarda de throughput | `throughput_margin_rate=0,02`; mínimo 2 caminhões/dia; `delta(N)=max(2,0,02N)` | H/R; C/M | Definir a margem de não inferioridade por par. | Critério de decisão estatística, não variação da entrada para favorecer política. |
-| Identificação | `project_name="PequiFlux - Experimento Reprodutivel"`; `protocol_version="1.0.0"`; `hypothesis="H1"` | I; C | Vincular manifestos à especificação. | Nomes e versões não demonstram validade científica ou aprovação humana. |
+| Identificação | `project_name="PequiFlux - Experimento Reprodutivel"`; `protocol_version="2.0.0"`; `hypothesis="H1"` | I; C | Vincular manifestos à especificação. | Nomes e versões não demonstram validade científica ou aprovação humana. |
 | `capacity.min_free_ram_gib` e `reserve_ram_gib` | 4 GiB livres mínimos; reserva de 2 GiB | I; C/S | Verificar capacidade antes da execução científica. | Limites de engenharia, não resultados observados da simulação. |
 | `capacity.max_workers` e `receipt_ttl_seconds` | Até 4 workers; recibo válido por 60 s | I; C/S | Vincular concorrência autorizada à inspeção recente. | Workers também limitados pela CPU e RAM livres; não autorizam reduzir grade, sementes ou precisão. |
 | `capacity.disk_margin` e `disk_reserve_gib` | Fator 1,25; reserva de 5 GiB | I; C/S | Margem sobre a estimativa de armazenamento da carga completa da fase. | Estimativa não comprova espaço realmente livre; exige inspeção. |
@@ -210,8 +212,9 @@ Em particular, a mistura 50/50 e a especialização das moegas estão codificada
 em G/D, fora dos campos de C; sua origem é uma decisão estrutural de engenharia.
 
 A tabela de fatos operacionais de M registra categorias de origem, mas não
-constitui medição desses parâmetros. A aprovação humana de face ainda falta e
-não deve ser substituída por fixtures. Também não foi gerado ou simulado o
+constitui medição desses parâmetros. A avaliação humana de face não foi realizada
+e está fora dos requisitos da v2; o recibo v1 pendente é mantido como histórico.
+Também não foi gerado ou simulado o
 dataset principal nesta revisão. Qualquer futura mudança de valor, distribuição
 ou semântica deve seguir a emenda do protocolo e as gates existentes, sem
 reclassificar os valores atuais como dados calibrados.

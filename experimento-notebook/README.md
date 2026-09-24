@@ -1,207 +1,103 @@
-# Notebook de experimentos PequiFlux
+# PequiFlux — experimento central do TCC
 
-Este diretório contém a interface linear para a validação do modelo digital do
-despacho online de caminhões. O notebook [TCC_experimentos.ipynb](TCC_experimentos.ipynb)
-orquestra as APIs públicas de `pequiflux_experiment`; as regras permanecem nos
-módulos em `src/`.
+O [TCC_experimentos.ipynb](TCC_experimentos.ipynb) é o ponto operacional único:
+plano, geração/congelamento, piloto completo, principal, auditoria, H1, estresse,
+políticas exploratórias, tabelas e pendências. Não contém testes, demonstrações
+reduzidas ou fallback para amostras.
 
-## Ambiente deliberado
+## Protocolo vigente
 
-O projeto requer Python 3.12 ou superior: os pins de NumPy e SciPy no lock
-exigem esse mínimo. O interpretador escolhido para a instalação local é
-CPython 3.13.3 (Windows x64). O `pyproject.toml` declara as
-dependências com intervalos de versão; `requirements.lock` fixa as versões
-aprovadas para o experimento. Prepare o ambiente isolado com o lock:
+A [emenda prospectiva v2](docs/protocol-v2-amendment.md), autorizada em
+24/09/2026 antes das campanhas científicas, define uma comparação computacional
+com dados sintéticos. Parâmetros são hipóteses de engenharia. Face e avaliação
+humana são NOT_EVALUATED, fora dos requisitos v2; não foram aprovadas.
+A1 verifica restrições modeladas e A2 verifica rastreabilidade/reconstruibilidade
+automatizadas. Nenhum resultado estabelece validade operacional externa.
 
-```text
-rtk proxy py -3.13 --version
-rtk proxy py -3.13 -m venv .venv
-rtk proxy .\.venv\Scripts\python.exe -m pip install -r requirements.lock
-rtk proxy .\.venv\Scripts\python.exe -m pip check
-rtk proxy .\.venv\Scripts\python.exe -m ipykernel install --sys-prefix --name python3 --display-name "PequiFlux (Python 3.13)"
+H1, CRN, cenários, sementes, painel principal, IUT/Holm, hashes e capacidade
+permanecem preservados. A configuração v1 e seu recibo real pendente continuam
+nos arquivos históricos; o carregador de datasets usa a versão vigente.
+
+## Windows nativo com uv
+
+Em PowerShell, dentro desta pasta:
+
+```powershell
+uv sync --locked
+uv run --locked python -m ipykernel install --sys-prefix --name python3 --display-name "PequiFlux (Python 3.13.3)"
+uv run --locked python tools/execute_notebook.py
 ```
 
-`requirements.lock` reproduz as versões exatas do ambiente validado e já inclui
-o pacote local como `-e .`. O lock inclui `numpy`, `pandas`, `scipy`, `pyarrow`,
-`matplotlib`, `pytest`, `nbformat`, `nbclient`, `nbconvert` e todas as transitivas
-instaladas. `ipykernel` fornece o kernel nativo local usado pela execução do
-notebook. Não substitua o lock por uma instalação solta com versões divergentes;
-o notebook não instala dependências durante a execução.
+CPython 3.13.3 e os 64 pins de `requirements.lock` são preservados por
+`uv.lock` e pelas constraints de `pyproject.toml`. O grupo `provenance`
+instala setuptools, exigido pelo recibo. `ipykernel` fornece o kernel nativo local.
+O notebook não instala dependências. Pode iniciar na raiz do TCC ou nesta pasta.
 
-## Testes
+O executor roda todas as células em ordem, com sete dias de limite por célula,
+e salva outputs no próprio notebook inclusive quando uma falha o interrompe.
+Não gera outro notebook e não aceita perfil reduzido. Falhas permanecem falhas,
+não há continuação automática após erro. Os testes de software ficam fora:
 
-No diretório `experimento-notebook/`, o comando de teste é:
-
-```text
-rtk .\.venv\Scripts\python.exe -m pytest -q
+```powershell
+uv run --locked pytest -q
 ```
 
-`tests/test_notebook.py` sempre valida a estrutura JSON com a biblioteca padrão.
-Quando `nbformat`, `nbclient` e `nbconvert` estão disponíveis, o teste de execução
-executa o notebook inteiro em uma raiz temporária e exige zero outputs de erro e
-`results/tables/table_audit.csv`. Se algum desses três módulos estiver ausente,
-o teste falha explicitamente com `BLOCKED execution gate`; isso não é convertido
-em `skip` ou em sucesso.
+## Campanha integral
 
-O notebook executa uma seleção explícita de testes rápidos das seis áreas do
-pacote, seguida de sua própria demonstração, matriz de validação, replay e
-auditoria persistida. A seleção não repete os testes de materialização e
-proveniência de datasets; esses permanecem na suíte completa do comando acima.
+| Fase | Policy-days |
+| --- | ---: |
+| Piloto prescrito (15 cenários, 50 sementes, 5 políticas) | 3.750 |
+| Principal (72 cenários, 50 sementes, 5 políticas) | 18.000 |
+| Estresse (54 controles, 72 cenários, 50 sementes, 4 políticas) | 777.600 |
+| Exploratório (72 cenários, 50 sementes, 3 políticas) | 10.800 |
+| Total | 810.150 |
 
-## Execução limpa canônica
+O piloto relata ganhos pareados por estrato, IQR e IC95%, sem tuning.
+Somente o principal entra em H1. Estresse exige ganho e guarda de throughput
+positivos contra os três comparadores simultaneamente em pelo menos 75% das
+54 células completas. Incompletude é INVALID_INPUT, nunca NON_ROBUST.
 
-Depois da instalação deliberada, execute a partir deste diretório:
+O painel exploratório implementa slack previsto, janela sem estabilidade e
+agrupamento por última carga servida no recurso, com controles base e
+análise descritiva. CO₂ continua exploratório, com a faixa 0,5–1,0 galão/h
+já incluída nas métricas. Nenhum vencedor exploratório é promovido a H1.
 
-```text
-rtk .\.venv\Scripts\python.exe -m jupyter nbconvert --to notebook --execute TCC_experimentos.ipynb --output TCC_experimentos_executado.ipynb --ExecutePreprocessor.timeout=600
-```
+## Entradas e armazenamento
 
-O notebook usa a constante `RUN_PROFILE = "validation"` por padrão. Os outros
-perfis documentados têm guards explícitos e não são ativados nesta rodada. As
-variáveis opcionais `PEQUIFLUX_RUNS_ROOT` e `PEQUIFLUX_RESULTS_ROOT` apenas
-alteram as raízes de saída. Elas não selecionam perfil, não procuram o run mais
-recente e não ativam uma rota alternativa.
+O padrão `DATASET_ACTION="generate"` usa um destino novo e gera todas as
+3.600 instâncias. Para `"load"`, informe caminho e SHA-256 externo explícitos.
+O notebook não infere o pin lendo o próprio dataset. Rejeições estruturais
+preservam staging e exigem a ação explícita de reamostragem do contrato.
 
-## Perfis
+`PEQUIFLUX_RUNS_ROOT` e `PEQUIFLUX_RESULTS_ROOT` redirecionam saídas para
+armazenamento local suficiente. A raiz de resultados deve ser inexistente;
+por padrão é `results/<sessão>/`. Nenhuma evidência anterior é sobrescrita.
 
-- `validation`: duas sementes, cenário mínimo e as cinco políticas; produz
-  manifesto, resultados, logs, replay, auditoria e `table_audit.csv`. É
-  evidência de engenharia, com fixtures materializadas explicitamente por
-  `build_validation_inputs` e consumidas por `run_validation_matrix`.
-- `pilot`: 15 cenários pré-especificados, 50 sementes e cinco políticas (3.750
-  células), em namespace próprio. O executor exige dataset congelado, aprovação
-  de face e recibo de capacidade vigente antes de criar o namespace.
-- `load-confirmatory`: carrega somente o namespace identificado por
-  `CONFIRMATORY_RUN_ID`, definido explicitamente na célula de identificação.
-  ID ausente ou inexistente falha claramente. O pacote carregado é reauditado
-  integralmente por `audit_run`; se qualquer artefato persistido estiver
-  ausente, inconsistente ou fora do namespace, a auditoria falha sem fallback.
-  Após a auditoria, `evaluate_h1` recebe diretamente o `RunBundle` persistido;
-  a API valida a grade canônica, deriva os estratos medium/high e
-  `export_analysis` regenera as tabelas e figuras em `PEQUIFLUX_RESULTS_ROOT`.
-  Não há descoberta de resultado mais recente nem fallback para execução.
-- `execute-confirmatory`: reservado à matriz confirmatória completa, após gates
-  de protocolo e capacidade no núcleo da API. Exige exatamente 18.000 células,
-  dataset congelado validado, aprovação de face e recibo de capacidade vigente.
+Em 24/09/2026, o único volume tinha cerca de 42 GiB livres. O gate principal
+exige **pelo menos 87,4 GiB**, ainda sem dataset. A campanha integral continua
+bloqueada por espaço; o estresse requer espaço adicional muito maior para
+retenção. O notebook mede novamente o destino e salva `storage.json`.
+Pela fórmula vigente, as quatro fases somam 3.186.622.464.000 bytes estimados
+de saídas, antes dos datasets e das margens: aproximadamente 3,19 TB decimais.
+Isso é estimativa do protocolo, não volume medido de uma campanha realizada.
+Essa antecipação é somente a condição necessária do gate existente; cada fase
+ainda exige inspeção atual, no mesmo processo, com TTL de 60 segundos.
+Não se reduz a campanha, elimina logs ou altera margens para fazê-la caber.
 
-`run_experiment_matrix` recebe `dataset_path`, `expected_dataset_root_hash`,
-`controls`, `face_receipt_path` e `capacity_receipt`. O hash externo fixa a
-origem; o executor revalida os seis payloads e usa suas instâncias no
-`run_day(instance, policy, controls, event_latents)`. Não há geração interna
-no DES. Resultados e logs registram os hashes da instância original, da projeção
-executada, dos controles e do dataset. O esquema de resultados/logs é versão 3;
-artefatos antigos precisam ser identificados como antigos, sem converter sua
-proveniência em consumo de entradas congeladas.
+## Evidência e pendências
 
-Para preparar uma execução científica, carregue o dataset com
-`dataset.load_frozen_dataset(path, expected_dataset_root_hash=pin)`, construa
-`ExecutionControls.build(ordinary_window=6, buffer_capacity=12,
-threshold_multiplier=Decimal('1.00'), intensity='base',
-source_dataset_root_hash=pin, event_latents_sha256=dataset.event_latents.event_latents_sha256)`
-e use `ConfirmatoryWorkload.from_dataset(dataset, CONFIG, phase=RUN_PROFILE)`.
-`inspect_capacity(workload, CONFIG.capacity, RUNS_ROOT)` persiste a inspeção;
-seu objeto de retorno preenche `CAPACITY_RECEIPT` no notebook. O executor
-revalida o recibo imediatamente antes do namespace: TTL de 60 segundos,
-hashes, processo, dependências, RAM, disco e concorrência devem continuar
-válidos. A inspeção é uma estimativa de capacidade, não uma medição da campanha.
+Cada namespace em `runs/` retém manifesto, resultados, logs JSONL, métricas
+e auditoria. `results/<sessão>/` reúne identidade documental, registros de
+capacidade, tabelas e resumo. As implementações reutilizáveis ficam em
+`src/pequiflux_experiment/`; a execução e interpretação permanecem no notebook.
 
-Os caminhos e controles científicos são explícitos na célula inicial do
-notebook. Sem evidência válida, a chamada falha no executor também quando
-feita fora do notebook. Aprovações humanas pendentes não são preenchidas
-automaticamente. Fixtures, piloto e instalação limpa não comprovam a campanha
-confirmatória nem autorizam conclusões de H1.
+O código das fases adicionais tem verificações de software, mas a campanha
+integral e seu replay permanecem **não executados** por capacidade. Não há
+métricas científicas finais. A cena Unreal, integração técnica do replay e
+redação de resultados/discussão também permanecem pendentes. H1 negativa pode
+concluir uma pesquisa; ausência de resultados não pode.
 
-Não há seleção de perfil por variável de ambiente ou por descoberta de arquivos.
-Cada execução canônica deve receber uma `PEQUIFLUX_RESULTS_ROOT` nova e vazia;
-uma colisão no mesmo namespace é erro fail-closed, não idempotência. O cwd
-canônico é `experimento-notebook/`, de onde o notebook resolve `src/` e `config/`.
-
-## Escopo dos dados sintéticos
-
-O [escopo fechado](docs/synthetic-data-scope.md) conserva as quatro operações,
-o fatorial, as chaves CRN e os seis payloads. O
-[catálogo de entradas](docs/synthetic-input-catalog.md) explicita unidades,
-valores, origem, justificativa e limites das hipóteses. As 432.000 linhas de
-caminhões e 1.728.000 durações são quantidades previstas, não evidência de uma
-geração executada. Planos, fixtures e resultados principais têm estados distintos.
-
-## Layout de artefatos
-
-```text
-experimento-notebook/
-├── TCC_experimentos.ipynb
-├── README.md
-├── config/confirmatory.json
-├── src/pequiflux_experiment/
-├── tests/
-├── runs/
-│   └── <run_id>/{manifest.json,results.csv,logs/*.jsonl,audit.json}
-└── results/
-    ├── raw/
-    ├── processed/
-    ├── tables/table_audit.csv
-    └── figures/
-```
-
-Cada run recebe uma pasta nova; colisão de namespace interrompe a operação.
-Logs completos ficam em `runs/<run_id>/logs/`. A tabela de auditoria da
-validação é produzida por `export_audit_table(audit_json_path, output_path)`,
-que lê exclusivamente o `audit.json` persistido, valida campos e estado, e
-publica o CSV atomicamente sem sobrescrever colisões. Tabelas estatísticas,
-Parquet e figuras de H1 só podem ser regenerados por `export_analysis` a partir
-de uma grade confirmatória persistida e auditada.
-
-## Fronteiras científicas
-
-O esquema de execução 3 deriva `results.csv` exclusivamente de logs já
-persistidos por `compute_policy_day_metrics`. Cada dia inclui `metrics/*.json`
-com SHA-256, definições e detalhes por recurso/caminhão; a auditoria recalcula
-e reconcilia todos os valores. `scale_occupancy_peak` mede ocupação simultânea.
-Utilização bruta/líquida e ociosidade são temporais, com paradas sobrepostas
-contadas uma vez. Espera, tempo total e censura, estabilidade entre filas,
-quebras de FIFO, comandos e intervenções também são derivados dos eventos.
-CO2 é exploratório: espera acumulada em horas × 0,8 gal/h × 10,18 kg/gal,
-com sensibilidade de 0,5 a 1,0 gal/h; não representa emissões medidas.
-
-`export_metrics` publica `table_metrics.csv`, detalhes por recurso e caminhão,
-agregados por classe e médias aritméticas de dias por cenário/estrato
-(`_day_mean`). As utilizações agregadas (`_pooled`) dividem somas de
-recurso-minutos, preservando a ponderação por capacidade. `export_analysis` inclui
-essas tabelas na publicação confirmatória. Na validação, os dados descritivos
-são de fixtures e ficam em `descriptive_metrics/`. Valores ausentes ou
-indefinidos interrompem a derivação; não recebem zero ou NaN.
-
-A matriz científica usa `operator_mode=synthetic_auto_accept`; `operator_decision` no log
-não representa uma pessoa. `overall_pass` cobre somente verificações
-automáticas, e `global_acceptance_status` permanece `pending`. O executor
-não transforma `human_audit_status` em `complete`. A aprovação real de face,
-a revisão humana de A2 e o consumidor Unreal continuam pendentes.
-`run_synthetic_operator_trial` exercita aceitar, rejeitar e override admissível
-em instâncias de validação, com origem simulada explícita e replay de JSONL.
-Esses ensaios não integram a campanha nem demonstram participação humana.
-Veja [governança](docs/governance-status.md).
-
-Os intervalos pareados usam 5.000 reamostragens e registram a quantidade.
-A matriz RHFS e seus hashes estão em `../data/`; a análise auxiliar é uma
-âncora exploratória de um Wilcoxon isolado, sem comprovar poder da regra
-completa de H1. Veja [proveniência](../data/power_analysis_provenance.md).
-
-O artefato é chamado de **modelo digital**. Não há ativo físico individual
-pareado, telemetria contínua ou sincronização bidirecional operacional; portanto
-“gêmeo digital” não é uma conclusão válida. H1 continua sendo uma hipótese
-comparativa confirmatória. A1 e A2 são critérios de aceitação do artefato, e a
-equivalência de replay é somente um diagnóstico de engenharia, não um novo A3.
-
-A fase `validation` não preenche observações ausentes, não fabrica uma decisão
-de H1 e não pode ser apresentada como campanha confirmatória. Resultados
-observados, quando autorizados, devem permanecer ligados ao manifesto, ao hash
-de configuração, à grade pareada, aos logs e à auditoria correspondente.
-
-## Estado deste checkout
-
-No preflight inicial de 2026-09-02, `nbformat`, `nbclient` e `nbconvert` estavam
-ausentes e a gate top-to-bottom ficou `BLOCKED` até a instalação deliberada.
-Depois, o ambiente `.venv` foi instalado pelo `requirements.lock`, incluindo
-`ipykernel==7.3.0`; o gate canônico passou com `2 passed` em 54,76 s. O warning
-de IDs ausentes do nbformat foi corrigido nesta rodada. Permanece somente o
-warning ambiental residual do ZMQ no Windows; ele não indica erro do notebook.
+Fontes canônicas: [main.tex](../main.tex), [governança](docs/governance-status.md),
+[catálogo sintético](docs/synthetic-input-catalog.md) e
+[especificação técnica](docs/superpowers/specs/2026-09-02-notebook-experimental-completo-design.md),
+com os requisitos humanos substituídos pela emenda v2.

@@ -1,5 +1,12 @@
 # PequiFlux — especificação vinculante do notebook experimental completo
 
+**Emenda vigente (2026-09-24):** o [protocolo 2.0.0](../../protocol-v2-amendment.md)
+substitui os requisitos de face e revisão humana obrigatórias por avaliação
+computacional sintética e A2 automatizado. As seções humanas abaixo descrevem
+o desenho v1 e ficam como referência futura; nenhum recibo é promovido a
+aprovado. Piloto, principal, sensibilidade, CRN, integridade e capacidade são
+preservados. A execução central não contém smokes nem matriz reduzida.
+
 **Data:** 2026-09-02  
 **Escopo:** `C:\p\PequiFlux\TCC\experimento-notebook`  
 **Status:** desenho arquitetural aprovado; este documento é o contrato de implementação  
@@ -423,7 +430,7 @@ O painel exploratório roda somente a configuração base, em namespace separado
 
 Reportar medianas, IQR e bootstrap descritivo de 95%; não aplicar Holm, não usar p-valores para H1 e não promover uma variante vencedora a política principal. A sensibilidade de CO2 (`0,5–1,0 galão/h`) também é exploratória. Qualquer conclusão forte vira hipótese futura e requer nova versão/pré-registro.
 
-Para a grade de estresse, publicar o resumo `ROBUST` somente pela fração **conjunta** das 54 células na ordem canônica `H0 → buffer → threshold_multiplier → intensity`. Cada célula completa deve conter exatamente os 3.600 pares `(scenario_index, seed)` e quatro políticas (`lexicographic` e os três comparadores). `instance_hash`, `source_dataset_root_hash` e `event_latents_sha256` são estáveis em todas as células; `controlled_view_hash`/`event_overlay_hash` são derivados do controle, únicos por célula e idênticos nas quatro políticas daquela célula. O ganho mediano de p95 deve ser `>0` contra **todos** os três comparadores e o throughput deve usar, para cada par, `d'=(T_lex-T_comp)+delta(N)`, exigindo mediana `d'>0` (a mesma guarda de H1); a mesma célula conta uma única vez, e a fração conjunta deve ser `≥75%` das células completas. Reportar essa fração/contagem conjunta como decisão; frações e contagens por comparador são apenas diagnóstico. A regra é não confirmatória, não altera H1/IUT/Holm, não calcula p-valores e não usa bootstrap para decidir; pacote ou qualquer célula incompleta é `INVALID_INPUT`, nunca `NON_ROBUST`. A saída é gravada em namespace separado com manifesto que referencia `source_dataset_root_hash`, `event_latents_sha256`, `grid_hash`, `base_control_hash` e `high_control_hash`; nenhum resultado ou hash de sensibilidade pode entrar no namespace confirmatório.
+Para a grade de estresse, publicar o resumo `ROBUST` somente pela fração **conjunta** das 54 células na ordem canônica `H0 → buffer → threshold_multiplier → intensity`. Cada célula completa deve conter exatamente os 3.600 pares `(scenario_index, seed)` e quatro políticas (`lexicographic` e os três comparadores). `instance_hash`, `source_dataset_root_hash` e `event_latents_sha256` são estáveis em todas as células; `controlled_view_hash` identifica o controle completo e é único por célula; `event_overlay_hash` identifica os eventos exógenos por instância/intensidade e pode repetir quando só H0, buffer ou limiar mudam. Ambos devem casar com a projeção rederivada dos insumos e ser idênticos nas quatro políticas do mesmo par/célula. O ganho mediano de p95 deve ser `>0` contra **todos** os três comparadores e o throughput deve usar, para cada par, `d'=(T_lex-T_comp)+delta(N)`, exigindo mediana `d'>0` (a mesma guarda de H1); a mesma célula conta uma única vez, e a fração conjunta deve ser `≥75%` das células completas. Reportar essa fração/contagem conjunta como decisão; frações e contagens por comparador são apenas diagnóstico. A regra é não confirmatória, não altera H1/IUT/Holm, não calcula p-valores e não usa bootstrap para decidir; pacote ou qualquer célula incompleta é `INVALID_INPUT`, nunca `NON_ROBUST`. A saída é gravada em namespace separado com manifesto que referencia `source_dataset_root_hash`, `event_latents_sha256`, `grid_hash`, `base_control_hash` e `high_control_hash`; nenhum resultado ou hash de sensibilidade pode entrar no namespace confirmatório.
 
 ## 11. Gates de capacidade e execução pesada
 
@@ -440,7 +447,7 @@ A receipt registra:
 
 O gate bloqueia se capacidade mínima, espaço, executável/dependência ou propriedade de recursos não puderem ser provados. Outro processo Python/Jupyter/pytest vivo que aponte ao projeto bloqueia, exceto o kernel atual e seus descendentes registrados na receipt. Não se troca algoritmo, precisão, escopo, sementes, iterações ou validação para caber. A receipt expira em 60 segundos (`TTL=60s`); ela é revalidada imediatamente antes de criar o namespace da campanha, e os hashes de dataset, configuração e workload devem casar exatamente. Não há espera ativa, retry, kill de processo ou fallback automático. O erro inclui operação, recurso, workload e causa original.
 
-`validation`, `pilot` e `sensitivity` são executáveis sem iniciar a carga confirmatória; a campanha completa nunca é executada como efeito colateral de `Run All` padrão.
+Na operação vigente v2, por solicitação explícita do autor, `Run All` executa a campanha integral (piloto, principal, estresse e exploratório), sujeito aos gates de capacidade. A API de validação permanece somente para verificações de software externas ao notebook; não há fallback reduzido.
 
 Os ICs descritivos de sensibilidade, quando publicados, usam exatamente 5.000 reamostragens pareadas; os Ã­ndices sÃ£o derivados deterministicamente de `sensitivity-bootstrap.v1` e dos hashes de cÃ©lula/ledger (seed/version registrados no manifesto), sem chamar o RNG da simulaÃ§Ã£o. Bootstrap nunca decide `ROBUST` e qualquer falha de entrada invalida a cÃ©lula.
 

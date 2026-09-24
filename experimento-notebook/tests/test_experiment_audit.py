@@ -42,8 +42,9 @@ def test_scientific_executor_requires_frozen_inputs_before_namespace(tmp_path, m
 
 
 @pytest.mark.parametrize("phase", ["pilot", "execute-confirmatory"])
-@pytest.mark.parametrize("missing", ["face", "approved_face", "capacity"])
-def test_scientific_prerequisites_cannot_be_bypassed_by_direct_api(tmp_path, monkeypatch, phase, missing):
+@pytest.mark.parametrize("protocol,missing", [("1.0.0", "face"), ("1.0.0", "approved_face"),
+                                              ("1.0.0", "capacity"), ("2.0.0", "capacity")])
+def test_scientific_prerequisites_cannot_be_bypassed_by_direct_api(tmp_path, monkeypatch, phase, protocol, missing):
     from types import SimpleNamespace
     from pequiflux_experiment.config import factorial_scenarios, config_hash
     from pequiflux_experiment.validation_fixtures import build_validation_fixture
@@ -51,7 +52,7 @@ def test_scientific_prerequisites_cannot_be_bypassed_by_direct_api(tmp_path, mon
     import pequiflux_experiment.face_validation as faces
     import pequiflux_experiment.experiment as execution
 
-    config = load_config(CONFIG_PATH)
+    config = load_config(CONFIG_PATH if protocol == "2.0.0" else PROJECT_ROOT / "config/archive/confirmatory.v1.json")
     fixture = build_validation_fixture()
     # The loader itself has separate full-payload tests. Here its validated
     # output is held fixed to isolate the executor's human/capacity boundary.
@@ -65,7 +66,7 @@ def test_scientific_prerequisites_cannot_be_bypassed_by_direct_api(tmp_path, mon
     monkeypatch.setattr(execution, "run_day", forbidden)
     if missing == "capacity":
         monkeypatch.setattr(faces, "validate_face_validation_receipt",
-                            lambda *args: SimpleNamespace(approved=True))
+                            lambda *args: SimpleNamespace(approved=True, as_dict=lambda: {"status": "APPROVED"}))
     scenarios = datasets.select_pilot_configurations(config) if phase == "pilot" else factorial_scenarios(config)
     message = {"face": "face_receipt_path", "approved_face": "FACE_VALIDATION=PENDING",
                "capacity": "capacity_receipt"}[missing]
@@ -137,7 +138,8 @@ def test_validation_bundle_is_complete_replayable_and_auditable(tmp_path: Path):
 
     assert report.a1_pass is True
     assert report.a2_structural_pass is True
-    assert report.a2_human_audit_pending is True
+    assert report.a2_human_audit_pending is False
+    assert report.to_dict()["human_evaluation_status"] == "not_evaluated"
     assert report.replay_pass is True
     assert bundle.manifest["schema_version"] == 3
     assert bundle.manifest["operator_mode"] == "synthetic_auto_accept"
