@@ -36,7 +36,7 @@ from .dataset import derive_controlled_projection
 from .domain import YardSnapshot, FrozenInstance, ExecutionControls, EventLatentLedger
 from .emulator import DayResult, run_day
 from .events import EventRecord
-from .metrics import compute_policy_day_metrics, METRIC_SCALAR_FIELDS, INTEGER_METRIC_FIELDS
+from .metrics import MetricRow, compute_policy_day_metrics, METRIC_SCALAR_FIELDS, INTEGER_METRIC_FIELDS
 from .manifest import build_manifest, create_run_directory
 from .policies import DispatchPolicy
 from .statistics import canonical_scenario_metadata
@@ -386,8 +386,10 @@ def _normalise_row(row: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("scale_count must be positive")
     if normalised["completed_trucks"] > normalised["total_trucks"]:
         raise ValueError("completed_trucks cannot exceed total_trucks")
-    if normalised["throughput"] > normalised["completed_trucks"]:
-        raise ValueError("throughput cannot exceed completed_trucks")
+    if normalised["throughput"] != normalised["completed_trucks"]:
+        raise ValueError("throughput must equal trucks completed within the horizon")
+    if normalised["remaining_trucks"] != normalised["total_trucks"] - normalised["completed_trucks"]:
+        raise ValueError("remaining_trucks must reconcile with the observed truck population")
     for key in (field for field in METRIC_SCALAR_FIELDS if field not in INTEGER_METRIC_FIELDS):
         if isinstance(normalised[key], bool):
             raise ValueError(f"{key} must be numeric, not bool")
@@ -622,10 +624,14 @@ def _result_row(
     final_hash: str,
     replay_hash: str,
     a2_fields_complete: bool,
-    persisted_metrics,
+    persisted_metrics: MetricRow,
     metrics_file: str,
     metrics_sha256: str,
 ) -> dict[str, Any]:
+    if not isinstance(persisted_metrics, MetricRow):
+        raise TypeError("persisted_metrics must be a complete canonical MetricRow")
+    if persisted_metrics.log_sha256 != log_sha256:
+        raise RuntimeError("canonical metrics reference different persisted event bytes")
     metrics = persisted_metrics.scalars
     if not isinstance(scenario_metadata, Mapping):
         raise TypeError("scenario_metadata must be a mapping")
@@ -639,7 +645,7 @@ def _result_row(
         raise RuntimeError(
             f"scenario metadata has invalid total_trucks: scenario_id={result.scenario_id}"
         )
-    observed_total_trucks = metrics.get("total_trucks")
+    observed_total_trucks = metrics["total_trucks"]
     if observed_total_trucks != expected_total_trucks:
         raise RuntimeError(
             "simulation total_trucks does not match canonical scenario metadata: "
@@ -1080,7 +1086,7 @@ def _run_materialized_matrix(
         log_entries=log_entries,
         now_utc=now_utc,
     )
-    manifest["schema_version"] = 3
+    manifest["schema_version"] = 4
     manifest["input_provenance"] = dict(input_provenance)
     manifest["non_confirmatory"] = phase_component != "execute-confirmatory"
     _atomic_write_text(run_dir / "results.csv", _csv_text(result_rows))

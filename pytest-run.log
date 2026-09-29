@@ -1,0 +1,141 @@
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 55%]
+.............................................F................F......... [ 74%]
+F....................................................................... [ 93%]
+..........................                                               [100%]
+================================== FAILURES ===================================
+_________ test_validation_bundle_is_complete_replayable_and_auditable _________
+
+tmp_path = WindowsPath('C:/Users/marcu/AppData/Local/Temp/pytest-of-marcu/pytest-1357/test_validation_bundle_is_comp0')
+
+    def test_validation_bundle_is_complete_replayable_and_auditable(tmp_path: Path):
+        bundle = build_validation_bundle(tmp_path)
+    
+        assert len(bundle.results) == 10
+        assert bundle.manifest_path.exists()
+        assert bundle.results_path.exists()
+        assert bundle.logs_dir.exists()
+        assert len(tuple(bundle.logs_dir.glob("*.jsonl"))) == 10
+        from pequiflux_experiment.experiment import INPUT_IDENTITY_FIELDS
+        for seed in (101, 102):
+            paired = [row for row in bundle.results if row["seed"] == seed]
+            assert {row["policy"] for row in paired} == set(POLICY_NAMES)
+            for field in INPUT_IDENTITY_FIELDS:
+                assert len({row[field] for row in paired}) == 1, field
+    
+        report = audit_run(bundle.run_dir)
+    
+        assert report.a1_pass is True
+        assert report.a2_structural_pass is True
+        assert report.a2_human_audit_pending is True
+        assert report.replay_pass is True
+        assert bundle.manifest["schema_version"] == 4
+        assert bundle.manifest["operator_mode"] == "synthetic_auto_accept"
+        assert report.to_dict()["global_acceptance_status"] == "pending"
+        assert report.to_dict()["acceptance_scope"] == "automated_structural_checks_only"
+        from pequiflux_experiment.export import export_metrics
+        paths = export_metrics(bundle, tmp_path / "descriptive")
+        with paths["table_metrics.csv"].open(encoding="utf-8", newline="") as handle:
+            exported = list(csv.DictReader(handle))
+        assert len(exported) == 10
+        assert float(exported[0]["co2_estimated_kg"]) == bundle.results[0]["co2_estimated_kg"]
+        assert paths["table_metrics_resources.csv"].is_file()
+        assert paths["table_metrics_trucks.csv"].is_file()
+        with paths["table_metrics_resource_classes.csv"].open(encoding="utf-8", newline="") as handle:
+            classes = list(csv.DictReader(handle))
+        assert len(classes) == 30
+        assert float(classes[0]["net_utilization"]) == round(float(classes[0]["busy_minutes"]) / float(classes[0]["available_minutes"]), 12)
+        for row in classes:
+            assert float(row["gross_idle_fraction"]) == round(float(row["idle_minutes"]) / float(row["gross_minutes"]), 12)
+        for filename in ("table_metrics_by_scenario.csv", "table_metrics_by_stratum.csv"):
+            with paths[filename].open(encoding="utf-8", newline="") as handle:
+                pooled = list(csv.DictReader(handle))
+            for row in pooled:
+>               assert float(row["gross_idle_fraction_pooled"]) == round(
+                    float(row["resource_idle_minutes_total"]) / float(row["resource_gross_minutes_total"]), 12,
+                )
+E               AssertionError: assert 0.937799319092375 == 0.937799319092
+E                +  where 0.937799319092375 = float('0.937799319092375')
+E                +  and   0.937799319092 = round((4051.29305847906 / 4320.0), 12)
+E                +    where 4051.29305847906 = float('4051.29305847906')
+E                +    and   4320.0 = float('4320.0')
+
+tests\test_experiment_audit.py:164: AssertionError
+___________ test_audit_derives_accumulated_wait_and_active_horizon ____________
+
+tmp_path = WindowsPath('C:/Users/marcu/AppData/Local/Temp/pytest-of-marcu/pytest-1357/test_audit_derives_accumulated0')
+
+    def test_audit_derives_accumulated_wait_and_active_horizon(tmp_path: Path):
+        scenario = tiny_scenario(truck_count=120, hoppers=1, scales=1)
+        from pequiflux_experiment.validation_fixtures import build_validation_fixture
+        fixture = build_validation_fixture(scenario, 101)
+        result = run_day(fixture.instance, make_policy("fifo_strict"), fixture.controls, fixture.event_latents)
+        log_text, *_ = _log_lines(
+            result,
+            run_id="active-horizon",
+            checksum="0" * 64,
+        )
+        log_path = tmp_path / "active-horizon.jsonl"
+        log_path.write_text(log_text, encoding="utf-8", newline="\n")
+    
+        details = audit_module._replay_log(log_path)
+        assert details.final_snapshot.clock == 720.0
+        assert any(resource.status == "busy" for resource in details.final_snapshot.resources.values())
+    
+        derived = audit_module._derived_log_metrics(details)
+        from pequiflux_experiment.metrics import compute_policy_day_metrics
+        persisted_metrics = compute_policy_day_metrics(log_path)
+>       assert derived.to_dict() == persisted_metrics.to_dict()
+E       AssertionError: assert {'schema_vers...6, ...}], ...} == {'schema_vers...6, ...}], ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Differing items:
+E         {'scalars': {'decision_count': 153, 'fifo_break_count': 0, 'raw_fifo_break_count': 0, 'avoidable_fifo_break_count': 0, ...}} != {'scalars': {'event_count': 944, 'total_trucks': 120, 'completed_trucks': 32, 'remaining_trucks': 88, ...}}
+E         Use -v to get more diff
+
+tests\test_experiment_audit.py:455: AssertionError
+_ test_audit_rejects_result_metadata_that_disagrees_with_manifest[total_trucks-999] _
+
+tmp_path = WindowsPath('C:/Users/marcu/AppData/Local/Temp/pytest-of-marcu/pytest-1357/test_audit_rejects_result_meta2')
+field = 'total_trucks', replacement = 999
+
+    @pytest.mark.parametrize(
+        ("field", "replacement"),
+        [
+            ("stratum", "high"),
+            ("regime", "peak"),
+            ("total_trucks", 999),
+            ("hopper_count", 99),
+            ("scale_count", 99),
+        ],
+    )
+    def test_audit_rejects_result_metadata_that_disagrees_with_manifest(
+        tmp_path: Path, field: str, replacement: object
+    ):
+        bundle = build_validation_bundle(tmp_path)
+        rows = list(csv.DictReader(bundle.results_path.open("r", encoding="utf-8", newline="")))
+        rows[0][field] = str(replacement)
+        with bundle.results_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=rows[0].keys(), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(rows)
+    
+>       with pytest.raises(AuditError, match=f"canonical scenario metadata.*{field}"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'canonical scenario metadata.*total_trucks'
+E         Actual message: 'cannot load run bundle for audit: C:\\Users\\marcu\\AppData\\Local\\Temp\\pytest-of-marcu\\pytest-1357\\test_audit_rejects_result_meta2\\validation__20260901T120000Z__d2ead46__353e8d73a213: remaining_trucks must reconcile with the observed truck population'
+
+tests\test_experiment_audit.py:575: AssertionError
+============================== warnings summary ===============================
+tests/test_notebook.py::test_notebook_validation_profile_executes_cleanly
+  C:\p\PequiFlux\TCC\experimento-notebook\.venv\Lib\site-packages\zmq\_future.py:718: RuntimeWarning: Proactor event loop does not implement add_reader family of methods required for zmq. Registering an additional selector thread for add_reader support via tornado. Use `asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())` to avoid this warning.
+    self._get_loop()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_experiment_audit.py::test_validation_bundle_is_complete_replayable_and_auditable
+FAILED tests/test_experiment_audit.py::test_audit_derives_accumulated_wait_and_active_horizon
+FAILED tests/test_experiment_audit.py::test_audit_rejects_result_metadata_that_disagrees_with_manifest[total_trucks-999]
+3 failed, 383 passed, 1 warning in 1349.25s (0:22:29)

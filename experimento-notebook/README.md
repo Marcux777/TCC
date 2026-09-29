@@ -162,17 +162,25 @@ de uma grade confirmatória persistida e auditada.
 
 ## Fronteiras científicas
 
-O esquema de execução 3 deriva `results.csv` exclusivamente de logs já
+O esquema de execução 4 deriva `results.csv` exclusivamente de logs já
 persistidos por `compute_policy_day_metrics`. Cada dia inclui `metrics/*.json`
-com SHA-256, definições e detalhes por recurso/caminhão; a auditoria recalcula
-e reconcilia todos os valores. `scale_occupancy_peak` mede ocupação simultânea.
+com SHA-256, definições e detalhes por recurso/caminhão; a auditoria reconstrói
+todos os valores por implementação independente e os reconcilia. `DayResult`
+contém eventos e estado, sem métricas. `scale_occupancy_peak` mede ocupação simultânea.
 Utilização bruta/líquida e ociosidade são temporais, com paradas sobrepostas
 contadas uma vez. Espera, tempo total e censura, estabilidade entre filas,
 quebras de FIFO, comandos e intervenções também são derivados dos eventos.
-CO2 é exploratório: espera acumulada em horas × 0,8 gal/h × 10,18 kg/gal,
-com sensibilidade de 0,5 a 1,0 gal/h; não representa emissões medidas.
+Throughput é a contagem concluída até 720 minutos; `throughput_per_hour` divide
+por 12 horas. `observed_makespan_minutes` termina na última conclusão de qualquer
+etapa observada, sem estimar o atendimento da fila remanescente.
+CO2 é exploratório: espera elegível acumulada em horas × fração de motor ligado
+assumida em 1,0 × 0,8 galão americano/h × 10,18 kg/galão americano. Os cenários de
+0,5 e 1,0 galão americano/h são hipóteses, não limites de emissões medidas.
+As definições, unidades, populações, janelas e fontes constam no
+[contrato das métricas](docs/canonical-metrics.md) e no catálogo de cada `MetricRow`.
 
-`export_metrics` publica `table_metrics.csv`, detalhes por recurso e caminhão,
+`export_metrics` publica `table_metrics.csv`, `table_metric_catalog.csv`,
+`table_metric_assumptions.csv`, detalhes por recurso e caminhão,
 agregados por classe e médias aritméticas de dias por cenário/estrato
 (`_day_mean`). As utilizações agregadas (`_pooled`) dividem somas de
 recurso-minutos, preservando a ponderação por capacidade. `export_analysis` inclui

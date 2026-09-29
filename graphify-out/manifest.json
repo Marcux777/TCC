@@ -40,8 +40,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/audit.py": {
-    "mtime": 1788824584.8781855,
-    "ast_hash": "794f15458fbc0d6f0a04cd12ee05fdc9",
+    "mtime": 1788828930.0731945,
+    "ast_hash": "45ffe687854e545403e8b6fa1ba0c129",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/config.py": {
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/emulator.py": {
-    "mtime": 1788827770.5690384,
-    "ast_hash": "95cce0b5a563a7f690e6cb9ebad86f1b",
+    "mtime": 1788828613.961229,
+    "ast_hash": "478fcdc268da39845fa2843bd91de590",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/events.py": {
@@ -80,13 +80,13 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/experiment.py": {
-    "mtime": 1788826453.36974,
-    "ast_hash": "c052dadfbefe83078dd993e05f7946dc",
+    "mtime": 1788828656.6733177,
+    "ast_hash": "46811237853c6c1b542ac3c9f42a4c72",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/export.py": {
-    "mtime": 1788821181.7937882,
-    "ast_hash": "1adad6cc88a0addb91e3d204a0d64148",
+    "mtime": 1789409058.8114316,
+    "ast_hash": "b5895781e52fb80ff33baf5da4d93fb4",
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/face_validation.py": {
@@ -110,8 +110,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/statistics.py": {
-    "mtime": 1788820648.010759,
-    "ast_hash": "a485d81ef005e42bb34b7bdaf33350c2",
+    "mtime": 1788828581.8237557,
+    "ast_hash": "10099ab38518ad1b0a417c09717ec773",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_a2_structural.py": {
@@ -130,13 +130,13 @@
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_dispatch_emulator.py": {
-    "mtime": 1788827913.0367835,
-    "ast_hash": "68cd911b80843358e444fc0a8ef65b70",
+    "mtime": 1788828638.8644829,
+    "ast_hash": "5f35751ba95c945c0dbd78f8f11b8d6a",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_experiment_audit.py": {
-    "mtime": 1788821620.4162412,
-    "ast_hash": "73a67fbca379a9e90f099cae28c9f7cb",
+    "mtime": 1789409061.2053578,
+    "ast_hash": "b9eb12a614d03674d8853b10a2222feb",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_notebook.py": {
@@ -145,8 +145,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_statistics_export.py": {
-    "mtime": 1788820845.785701,
-    "ast_hash": "ea3bd157907f3eeb3873468fc5ad792f",
+    "mtime": 1788828461.5374253,
+    "ast_hash": "daddc1f8949c139463d3df139f735912",
     "semantic_hash": ""
   },
   "scripts/figura_poder_protocolo.R": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "experimento-notebook/README.md": {
-    "mtime": 1788822453.8002613,
-    "ast_hash": "e1471f817d7e66f623fc81d86e912f5d",
+    "mtime": 1788828950.5668442,
+    "ast_hash": "03616530b71513ef08919f31934ec590",
     "semantic_hash": ""
   },
   "experimento-notebook/docs/superpowers/plans/2026-09-01-experimento-notebook-implementation.md": {
@@ -250,13 +250,13 @@
     "semantic_hash": ""
   },
   "experimento-notebook/src/pequiflux_experiment/metrics.py": {
-    "mtime": 1788827701.8570707,
-    "ast_hash": "d465147111d4ee9fa1f5dac7a6ebf296",
+    "mtime": 1789409055.3089328,
+    "ast_hash": "46abef355b133d2b3a0135c98f6675b9",
     "semantic_hash": ""
   },
   "experimento-notebook/tests/test_metrics.py": {
-    "mtime": 1788821006.7843494,
-    "ast_hash": "9a63c8ecab0acce221b06cbbe56ed3af",
+    "mtime": 1788829066.1234992,
+    "ast_hash": "d7d1bec91aa66198f7ce153db1db1bda",
     "semantic_hash": ""
   },
   "data/power_analysis_provenance.md": {
@@ -372,6 +372,46 @@
   "experimento-notebook/docs/closure/evidence/verify_environment.py.txt": {
     "mtime": 1788822510.1875763,
     "ast_hash": "fb180fbd78bda88453b28d862992c1b9",
+    "semantic_hash": ""
+  },
+  "experimento-notebook/docs/canonical-metrics.md": {
+    "mtime": 1788828884.2521255,
+    "ast_hash": "ac7308b6321a617756f0cce36d3d7abd",
+    "semantic_hash": ""
+  },
+  "paper/README.md": {
+    "mtime": 1789508767.3169758,
+    "ast_hash": "e85cce762463d6ac49115091b396d1a4",
+    "semantic_hash": ""
+  },
+  "paper/manuscript.pdf": {
+    "mtime": 1789508910.7149096,
+    "ast_hash": "4be550b26f86073206697fa13c885a86",
+    "semantic_hash": ""
+  },
+  "production/TEMPLATE_INSTRUCTIONS.md": {
+    "mtime": 1789509136.7767177,
+    "ast_hash": "a882e36e577c60da525babb2475e78d0",
+    "semantic_hash": ""
+  },
+  "production/conflict_of_interest.pdf": {
+    "mtime": 1789509158.5443158,
+    "ast_hash": "b6229871846506959c1648f07202d6eb",
+    "semantic_hash": ""
+  },
+  "production/cover_letter.pdf": {
+    "mtime": 1789509156.2712245,
+    "ast_hash": "37fac8751a3170ff689973bd931bcb7b",
+    "semantic_hash": ""
+  },
+  "production/manuscript_anonymous.pdf": {
+    "mtime": 1789509151.615501,
+    "ast_hash": "b7ca7f56c1dc6326316d3c8dfa4b6b6d",
+    "semantic_hash": ""
+  },
+  "production/title_page.pdf": {
+    "mtime": 1789509153.986643,
+    "ast_hash": "4d80a5f2a1562ee849ee8b04f4543190",
     "semantic_hash": ""
   }
 }

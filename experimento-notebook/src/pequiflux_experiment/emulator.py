@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 import heapq
 import math
-from types import MappingProxyType
 from typing import Any, Mapping
 
 from .config import (
@@ -59,10 +58,6 @@ def _validate_regime(regime: object) -> str:
     return regime
 
 
-def _round_metric(value: float) -> float:
-    return round(float(value), 12)
-
-
 @dataclass(frozen=True, slots=True)
 class _Scheduled:
     time: float
@@ -93,14 +88,12 @@ class _TruckState:
     active_resource: str | None = None
     active_operation: str | None = None
     service_started: list[tuple[str, float]] = field(default_factory=list)
-    waiting_total: float = 0.0
-    completed_at: float | None = None
     stage_entry_time: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
 class DayResult:
-    """Canonical output identifying its frozen input, controls and policy."""
+    """Observed events and physical evidence; metrics require a persisted log."""
 
     scenario: ScenarioConfig
     seed: int
@@ -112,7 +105,6 @@ class DayResult:
     controlled_view_hash: str
     event_overlay_hash: str
     events: tuple[EventRecord, ...]
-    metrics: Mapping[str, float | int]
     hard_constraint_violations: int
     max_scale_occupancy: int
     initial_snapshot: YardSnapshot
@@ -139,9 +131,6 @@ class DayResult:
         if any(not isinstance(event, EventRecord) for event in events):
             raise TypeError("events must contain EventRecord values")
         object.__setattr__(self, "events", events)
-        if not isinstance(self.metrics, Mapping):
-            raise TypeError("metrics must be a mapping")
-        object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))
         if isinstance(self.hard_constraint_violations, bool) or not isinstance(
             self.hard_constraint_violations, int
         ):
@@ -182,10 +171,6 @@ class DayResult:
     @property
     def scenario_id(self) -> str:
         return self.scenario.scenario_id
-
-    @property
-    def completed_trucks(self) -> int:
-        return int(self.metrics.get("completed_trucks", 0))
 
     @property
     def commands(self) -> tuple[EventRecord, ...]:
@@ -247,6 +232,7 @@ class _DaySimulation:
         self.scenario = scenario
         self.seed = seed
         self.policy = policy
+        self.admission_mode = "full_queue" if policy.name == "fifo_strict" else "mandatory_window"
         self.schedule: list[tuple[float, int, str, str, int, _Scheduled]] = []
         self.next_schedule_sequence = 0
         self.next_event_sequence = 1
@@ -264,10 +250,7 @@ class _DaySimulation:
         self.active_disruptions: dict[str, dict[str, float]] = {}
         self.scale_occupancy = 0
         self.max_scale_occupancy = 0
-        self.waits: list[float] = []
         self.realized_durations: dict[tuple[str, str], float] = {}
-        self.first_arrival_time: float | None = None
-        self.last_completion_time: float | None = None
         self.buffer_occupancy: dict[str, int] = {
             operation: 0 for operation in ("scale_in", "unload", "scale_out")
         }
@@ -684,7 +667,7 @@ class _DaySimulation:
                 # protocol's admissible window after hard filtering.
                 dispatch_candidates = (
                     candidates
-                    if self.policy.name == "fifo_strict"
+                    if self.admission_mode == "full_queue"
                     else self._admissible_candidates(
                         candidates,
                         allowed_cargo_types=resource.allowed_cargo_types,
@@ -862,9 +845,6 @@ class _DaySimulation:
         state.active_operation = operation
         state.stage_entry_time = self.clock
         state.service_started.append((operation, self.clock))
-        wait = max(0.0, self.clock - selected.stage_entry_time)
-        state.waiting_total += wait
-        self.waits.append(wait)
         if operation in {"scale_in", "scale_out"}:
             self.scale_occupancy += 1
             self.max_scale_occupancy = max(self.max_scale_occupancy, self.scale_occupancy)
@@ -971,10 +951,6 @@ class _DaySimulation:
             if state.arrived:
                 raise RuntimeError(f"duplicate arrival for {state.truck_id}")
             state.arrived = True
-            if self.first_arrival_time is None:
-                self.first_arrival_time = self.clock
-            else:
-                self.first_arrival_time = min(self.first_arrival_time, self.clock)
             self._emit(
                 "TRUCK_ARRIVED",
                 {
@@ -1021,10 +997,6 @@ class _DaySimulation:
                 "SERVICE_COMPLETED",
                 {"truck_id": state.truck_id, "resource_id": item.resource_id, "operation": item.operation},
             )
-            if self.last_completion_time is None:
-                self.last_completion_time = self.clock
-            else:
-                self.last_completion_time = max(self.last_completion_time, self.clock)
             if item.operation in {"scale_in", "scale_out"}:
                 self.scale_occupancy -= 1
                 if self.scale_occupancy < 0:
@@ -1035,7 +1007,6 @@ class _DaySimulation:
             next_index = _OPERATIONS.index(item.operation) + 1
             if next_index >= len(_OPERATIONS):
                 state.operation = "done"
-                state.completed_at = self.clock
             else:
                 state.operation = _OPERATIONS[next_index]
                 state.ready_time = self.clock
@@ -1054,29 +1025,6 @@ class _DaySimulation:
             self._update_buffer_occupancy()
             return
         raise RuntimeError(f"unknown scheduled event kind: {item.kind}")
-
-    def _wait_metrics(self) -> tuple[float, float, float]:
-        """Return mean/p95 accumulated wait per truck and censored residual."""
-
-        waits: list[float] = []
-        censored = 0.0
-        for truck_id in sorted(self.states):
-            state = self.states[truck_id]
-            value = state.waiting_total
-            if (
-                state.arrived
-                and state.document_ok
-                and state.active_operation is None
-                and state.operation != "done"
-            ):
-                residual = max(0.0, self.clock - state.ready_time)
-                value += residual
-                censored += residual
-            waits.append(value)
-        ordered = sorted(waits)
-        index = max(0, min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1)) if ordered else 0
-        mean = sum(waits) / len(waits) if waits else 0.0
-        return mean, ordered[index] if ordered else 0.0, censored
 
     def run(self) -> DayResult:
         initial_snapshot = self._initial_snapshot()
@@ -1098,6 +1046,7 @@ class _DaySimulation:
                 "event_latents_sha256": self.controls.event_latents_sha256,
                 "execution_controls": self.controls.to_dict(),
                 "operator_mode": self.operator_mode,
+                "admission_mode": self.admission_mode,
                 "event_semantics_version": EVENT_SEMANTICS_VERSION,
                 "event_ranks": dict(EVENT_RANKS),
                 "resources": initial_snapshot.canonical_dict()["resources"],
@@ -1147,39 +1096,6 @@ class _DaySimulation:
                 f"fields={differing}; physical={physical_dict}; digital={digital_dict}"
             )
 
-        completed = sum(state.operation == "done" for state in self.states.values())
-        remaining = len(self.states) - completed
-        mean_wait, p95_wait, censored_wait = self._wait_metrics()
-        if self.first_arrival_time is None:
-            raise RuntimeError(
-                "cannot derive makespan: no TRUCK_ARRIVED event before the hard horizon"
-            )
-        if self.last_completion_time is None:
-            raise RuntimeError(
-                "cannot derive makespan: no SERVICE_COMPLETED event before the hard horizon"
-            )
-        makespan = self.last_completion_time - self.first_arrival_time
-        if not math.isfinite(makespan) or makespan <= 0.0:
-            raise RuntimeError(
-                "cannot derive makespan: last SERVICE_COMPLETED is not after first TRUCK_ARRIVED"
-            )
-        metrics: dict[str, float | int] = {
-            "total_trucks": len(self.states),
-            "completed_trucks": completed,
-            "remaining_trucks": remaining,
-            "throughput": completed,
-            "mean_wait_minutes": _round_metric(mean_wait),
-            "p95_wait_minutes": _round_metric(p95_wait),
-            "censored_wait_minutes": _round_metric(censored_wait),
-            "makespan_minutes": _round_metric(makespan),
-            "horizon_minutes": int(HORIZON_MINUTES),
-            "throughput_rate": _round_metric(completed / makespan) if makespan > 0 else 0.0,
-            "scale_occupancy_peak": self.max_scale_occupancy,
-            "max_buffer_occupancy": self.max_buffer_occupancy,
-            "max_buffer_reservation": self.max_buffer_reservation,
-            "buffer_capacity": self.controls.buffer_capacity,
-            "hard_constraint_violations": 0,
-        }
         return DayResult(
             scenario=self.scenario,
             seed=self.seed,
@@ -1191,7 +1107,6 @@ class _DaySimulation:
             controlled_view_hash=self.projection.controlled_view_hash,
             event_overlay_hash=self.projection.event_overlay_hash,
             events=tuple(self.events),
-            metrics=metrics,
             hard_constraint_violations=0,
             max_scale_occupancy=self.max_scale_occupancy,
             initial_snapshot=initial_snapshot,

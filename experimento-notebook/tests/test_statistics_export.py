@@ -62,7 +62,7 @@ def synthetic_paired_rows(
             offsets[stratum] += 1
             baseline_artifact = 100.0
             treatment_artifact = baseline_artifact * (1.0 - artifact_improvement)
-            baseline_throughput = 100.0
+            baseline_throughput = float(min(100, scenario.truck_count))
             treatment_throughput = baseline_throughput - throughput_loss
             if p95_differences is not None:
                 baseline_p95 = 500.0
@@ -124,7 +124,7 @@ def canonical_confirmatory_rows() -> list[dict[str, object]]:
                         **common,
                         "policy": policy,
                         "artifact_count": 100.0,
-                        "throughput": 100.0,
+                        "throughput": float(min(100, scenario.truck_count)),
                         "p95_wait_minutes": 100.0,
                     }
                 )
@@ -442,19 +442,27 @@ def test_holm_uses_iut_maximum_of_p95_and_throughput_pvalues(monkeypatch):
     assert report.h1_overall == "NOT_SUPPORTED"
 
 
-@pytest.mark.parametrize("mutation", ["missing", "nan", "infinite"])
-def test_missing_or_malformed_p95_is_rejected(mutation):
+@pytest.mark.parametrize("metric,mutation", [
+    ("p95_wait_minutes", "missing"), ("p95_wait_minutes", "nan"), ("p95_wait_minutes", "infinite"),
+    ("throughput", "missing"), ("throughput", "nan"), ("throughput", "infinite"),
+    ("throughput", "fractional"), ("throughput", "above_inventory"),
+])
+def test_missing_or_malformed_h1_metric_is_rejected(metric, mutation):
     rows = synthetic_paired_rows(artifact_improvement=0.20, throughput_loss=0)
     if mutation == "missing":
         for row in rows:
-            row.pop("p95_wait_minutes")
+            row.pop(metric)
     elif mutation == "nan":
-        rows[0]["p95_wait_minutes"] = float("nan")
+        rows[0][metric] = float("nan")
+    elif mutation == "fractional":
+        rows[0][metric] = 0.5
+    elif mutation == "above_inventory":
+        rows[0][metric] = rows[0]["total_trucks"] + 1
     else:
-        rows[0]["p95_wait_minutes"] = float("inf")
+        rows[0][metric] = float("inf")
 
-    with pytest.raises(PairingError, match="p95_wait_minutes"):
-        evaluate_h1(rows, load_config(CONFIG_PATH))
+    with pytest.raises(PairingError, match=metric):
+        statistics_module._extract_pair_frame(pd.DataFrame(rows), load_config(CONFIG_PATH))
 
 
 def test_throughput_total_trucks_is_required_and_consistent_within_pair():

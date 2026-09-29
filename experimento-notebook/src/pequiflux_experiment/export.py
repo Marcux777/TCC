@@ -44,6 +44,8 @@ class ExportedArtifacts:
     throughput_waiting_tradeoff_figure: Path
     p95_figure_png: Path | None = None
     table_metrics: Path | None = None
+    table_metric_catalog: Path | None = None
+    table_metric_assumptions: Path | None = None
 
     @property
     def h1_csv(self) -> Path:
@@ -70,6 +72,10 @@ class ExportedArtifacts:
             values["p95_figure_png"] = self.p95_figure_png
         if self.table_metrics is not None:
             values["table_metrics"] = self.table_metrics
+        if self.table_metric_catalog is not None:
+            values["table_metric_catalog"] = self.table_metric_catalog
+        if self.table_metric_assumptions is not None:
+            values["table_metric_assumptions"] = self.table_metric_assumptions
         return {key: str(value) for key, value in values.items()}
 
 
@@ -350,8 +356,8 @@ def _figure_tradeoff(summary: pd.DataFrame) -> Any:
                 label=stratum,
             )
     axis.axvline(0.0, color="black", linewidth=1)
-    axis.set_xlabel("throughput loss")
-    axis.set_ylabel("paired p95 waiting difference")
+    axis.set_xlabel("throughput loss (trucks per 720-minute day)")
+    axis.set_ylabel("paired p95 waiting difference (minutes)")
     axis.set_title("Throughput / p95 waiting trade-off")
     axis.legend()
     figure.tight_layout()
@@ -738,6 +744,8 @@ def _export_analysis_core(
         throughput_waiting_tradeoff_figure=published_figures / "throughput_waiting_tradeoff.pdf",
         p95_figure_png=published_figures / "p95_by_policy.png",
         table_metrics=published_tables / "table_metrics.csv" if metric_bundle is not None else None,
+        table_metric_catalog=published_tables / "table_metric_catalog.csv" if metric_bundle is not None else None,
+        table_metric_assumptions=published_tables / "table_metric_assumptions.csv" if metric_bundle is not None else None,
     )
 
 
@@ -763,7 +771,7 @@ def export_analysis(
 
 def _metric_frames(bundle):
     """Materialize audited day metrics and explicit arithmetic means of days."""
-    from .metrics import METRIC_SCALAR_FIELDS
+    from .metrics import METRIC_SCALAR_FIELDS, METRICS_SCHEMA_VERSION, canonical_metric_definitions
     from .experiment import INPUT_IDENTITY_FIELDS
     scope = {key: bundle.manifest[key] for key in ("run_id", "phase", "non_confirmatory", "operator_mode", "global_acceptance_status")}
     frame = pd.DataFrame([{**scope, **dict(row)} for row in bundle.results])
@@ -777,15 +785,21 @@ def _metric_frames(bundle):
         totals = grouped[["resource_busy_minutes", "resource_gross_minutes", "resource_available_minutes", "resource_idle_minutes"]].sum()
         for field in totals:
             aggregate[f"{field}_total"] = totals[field]
-        aggregate["gross_utilization_pooled"] = totals["resource_busy_minutes"] / totals["resource_gross_minutes"]
-        aggregate["net_utilization_pooled"] = totals["resource_busy_minutes"] / totals["resource_available_minutes"]
-        aggregate["net_idle_fraction_pooled"] = totals["resource_idle_minutes"] / totals["resource_available_minutes"]
+        aggregate["gross_utilization_pooled"] = (totals["resource_busy_minutes"] / totals["resource_gross_minutes"]).round(12)
+        aggregate["net_utilization_pooled"] = (totals["resource_busy_minutes"] / totals["resource_available_minutes"]).round(12)
+        aggregate["net_idle_fraction_pooled"] = (totals["resource_idle_minutes"] / totals["resource_available_minutes"]).round(12)
+        aggregate["gross_idle_fraction_pooled"] = (totals["resource_idle_minutes"] / totals["resource_gross_minutes"]).round(12)
         for key, value in scope.items():
             aggregate[key] = value
         tables[f"table_metrics_by_{label}.csv"] = aggregate.reset_index()
     resource_rows, truck_rows = [], []
+    expected_definitions = canonical_metric_definitions()
+    definitions = None
     for row in bundle.results:
         payload = json.loads((bundle.run_dir / row["metrics_file"]).read_text(encoding="utf-8"))
+        if payload.get("schema_version") != METRICS_SCHEMA_VERSION or payload.get("definitions") != expected_definitions:
+            raise ValueError(f"metrics definition contract is missing or inconsistent: {row['metrics_file']}")
+        definitions = payload["definitions"]
         source_row = {**scope, **row}
         identifiers = {key: source_row[key] for key in identity}
         resource_rows.extend({**identifiers, **record} for record in payload["resources"])
@@ -798,8 +812,22 @@ def _metric_frames(bundle):
     classes["gross_utilization"] = classes["busy_minutes"] / classes["gross_minutes"]
     classes["net_utilization"] = classes["busy_minutes"] / classes["available_minutes"]
     classes["net_idle_fraction"] = classes["idle_minutes"] / classes["available_minutes"]
-    classes["gross_idle_fraction"] = (classes["gross_minutes"] - classes["busy_minutes"]) / classes["gross_minutes"]
+    classes["gross_idle_fraction"] = classes["idle_minutes"] / classes["gross_minutes"]
     tables["table_metrics_resource_classes.csv"] = classes.round(12).reset_index()
+    if definitions is None:
+        raise ValueError("metrics export requires persisted metric definitions")
+    definition_scope = {**scope, "metrics_schema_version": METRICS_SCHEMA_VERSION}
+    tables["table_metric_catalog.csv"] = pd.DataFrame([
+        {**definition_scope, "namespace": namespace, "metric": metric, **record}
+        for namespace, catalog in definitions["catalog"].items()
+        for metric, record in catalog.items()
+    ])
+    tables["table_metric_assumptions.csv"] = pd.DataFrame([
+        {**definition_scope, "section": section, "key": key,
+         "value_json": json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)}
+        for section in ("conventions", "co2_assumptions")
+        for key, value in definitions[section].items()
+    ])
     for frame in tables.values():
         if frame.empty or frame.isna().any().any():
             raise ValueError("metrics export contains absent evidence; no zero/NaN substitution is permitted")

@@ -12,7 +12,6 @@ import uuid
 from typing import Any, Mapping
 
 from .config import ExperimentConfig, ScenarioConfig, config_hash
-from .domain import TRUCK_STAGE_SERVICE_COMPLETED, TRUCK_STAGE_SERVICE_STARTED
 from .dispatch import DecisionJustification
 from .experiment import LOG_REQUIRED_FIELDS, RESULT_HEADERS, RunBundle, load_run_bundle
 from .events import EventRecord
@@ -22,12 +21,6 @@ from .replay import ReplayError, _replay_log, snapshot_hash
 class AuditError(RuntimeError):
     """Raised when persisted evidence cannot be audited fail-closed."""
 
-
-# Makespan and throughput-rate are retained as derived floating-point metrics;
-# their comparison allows only the final binary representation of the
-# producer's documented twelve-place rounding.  Canonical wait summaries below
-# are compared exactly and do not use this tolerance.
-_DERIVED_FLOAT_TOLERANCE = 1e-12
 
 _CANONICAL_SCENARIO_METADATA_FIELDS: tuple[str, ...] = (
     "scenario_id",
@@ -634,264 +627,452 @@ def _raise_missing_decision_log(path: Path, name: str) -> None:
     raise AuditError(f"missing decision log: {name}")
 
 
-def _derived_log_metrics(details: Any) -> dict[str, int | float]:
-    """Derive the canonical metrics from the replay evidence.
+def _metric_interval_union(intervals, horizon):
+    """Construct occupied spans by integrating endpoint multiplicities."""
+    endpoints = {}
+    for begin, end in intervals:
+        begin, end = max(0.0, begin), min(horizon, end)
+        if end <= begin:
+            continue
+        endpoints[begin] = endpoints.get(begin, 0) + 1
+        endpoints[end] = endpoints.get(end, 0) - 1
+    spans, occupancy, opened = [], 0, None
+    for instant, change in sorted(endpoints.items()):
+        previous = occupancy
+        occupancy += change
+        if previous == 0 and occupancy > 0:
+            opened = instant
+        elif previous > 0 and occupancy == 0:
+            spans.append((opened, instant))
+        if occupancy < 0:
+            raise AuditError("metric interval accounting has negative occupancy")
+    if occupancy:
+        raise AuditError("metric interval accounting is not closed")
+    return spans
 
-    Waiting is accumulated per truck at each of the four service starts.  A
-    truck that is released, waiting, and still incomplete at the hard horizon
-    contributes the residual ``horizon - ready_time`` once; an in-flight
-    service does not receive a speculative residual.  This mirrors the DES
-    state machine while keeping the audit independent of producer metrics.
+
+def _derived_log_metrics(details: Any):
+    """Reconstruct every metric from event facts, independently of metrics.py.
+
+    Only the declarative metric schema and immutable result DTO are shared.
+    Truck time partitions, resource interval unions, queue observations and
+    admission diagnostics are rebuilt here; no producer reducer or CSV value
+    supplies an expected measurement.
     """
+    from .config import CANONICAL_CONFIRMATORY_FIELDS
+    from .domain import ExecutionControls
+    from .metrics import INTEGER_METRIC_FIELDS, METRIC_DEFINITIONS, MetricRow
 
-    final_snapshot = details.final_snapshot
-    total_trucks = len(final_snapshot.trucks)
-    if total_trucks <= 0:
-        raise AuditError("persisted decision log has no trucks in final snapshot")
+    events = tuple(details.events)
+    if not events or events[0].kind != "RUN_STARTED" or events[-1].kind != "END_OF_DAY":
+        raise AuditError("metric evidence requires a closed RUN_STARTED/END_OF_DAY log")
+    horizon = events[-1].payload["horizon_minutes"]
+    if type(horizon) not in (int, float) or horizon != 720 or events[-1].time != horizon or events[0].time != 0:
+        raise AuditError("metric evidence does not cover the canonical 720-minute horizon")
+    horizon = float(horizon)
+    for sequence, event in enumerate(events, 1):
+        if event.sequence != sequence or not 0 <= event.time <= horizon:
+            raise AuditError("metric evidence sequence or observation window is invalid")
+        if sequence > 1 and event.time < events[sequence - 2].time:
+            raise AuditError("metric evidence time regresses")
+        if (event.kind == "RUN_STARTED" and sequence != 1) or (event.kind == "END_OF_DAY" and sequence != len(events)):
+            raise AuditError("metric evidence has repeated observation boundaries")
+    start = events[0].to_dict()["payload"]
+    initial = start["initial_snapshot"]
+    trucks, resources = initial["trucks"], initial["resources"]
+    if not isinstance(trucks, Mapping) or not trucks or not isinstance(resources, Mapping) or not resources:
+        raise AuditError("metric reconstruction requires nonempty initial inventories")
+    controls = ExecutionControls(**start["execution_controls"])
+    admission_mode = start["admission_mode"]
+    if admission_mode not in {"full_queue", "mandatory_window"}:
+        raise AuditError("metric evidence has an invalid admission_mode")
 
-    # The public log terminates at the fixed protocol boundary.  Requiring the
-    # explicit payload prevents an arbitrary earlier/later END_OF_DAY from
-    # silently changing censored metrics.
-    end_events = [event for event in details.events if event.kind == "END_OF_DAY"]
-    if len(end_events) != 1 or details.events[-1].kind != "END_OF_DAY":
-        raise AuditError("persisted decision log must contain one terminal END_OF_DAY")
-    end_event = end_events[0]
-    end_payload = end_event.to_dict()["payload"]
-    horizon_value = end_payload.get("horizon_minutes")
-    if (
-        isinstance(horizon_value, bool)
-        or not isinstance(horizon_value, (int, float))
-        or not math.isfinite(float(horizon_value))
-        or float(horizon_value) != 720.0
-        or float(end_event.time) != 720.0
-        or float(final_snapshot.clock) != 720.0
-        or not final_snapshot.ended
-        or final_snapshot.running
-    ):
-        raise AuditError("END_OF_DAY does not match the canonical 720-minute horizon")
-    horizon = 720.0
+    operations = ("gate", "scale_in", "unload", "scale_out")
+    kinds = {"gate": "gate", "scale_in": "scale", "unload": "hopper", "scale_out": "scale"}
+    threshold = tuple(CANONICAL_CONFIRMATORY_FIELDS["priority_thresholds"])
+    facts = {}
+    for identifier, item in trucks.items():
+        if (not isinstance(identifier, str) or not identifier or item["arrived"] is not False
+                or item["next_operation"] != "gate" or type(item["document_ok"]) is not bool
+                or type(item["priority"]) is not int or item["priority"] not in (0, 1, 2)
+                or not isinstance(item["cargo_type"], str) or not item["cargo_type"]
+                or type(item["arrival_time"]) not in (int, float)
+                or not 0 <= item["arrival_time"] <= horizon):
+            raise AuditError(f"invalid initial metric truck facts: {identifier}")
+        facts[identifier] = {
+            "arrival": item["arrival_time"], "arrived": False, "document": item["document_ok"],
+            "priority": item["priority"], "cargo": item["cargo_type"], "operation": "gate",
+            "entered": item["arrival_time"], "ready": None, "departure": None,
+            "waits": [], "services": [], "document_hold": 0.0,
+        }
+    statuses = {}
+    for identifier, item in resources.items():
+        cargo = item["allowed_cargo_types"]
+        if (not isinstance(identifier, str) or not identifier or item["status"] != "available"
+                or item["kind"] not in {"gate", "scale", "hopper"} or not isinstance(cargo, (list, tuple))
+                or not cargo or len(set(cargo)) != len(cargo)
+                or any(not isinstance(value, str) or not value for value in cargo)):
+            raise AuditError(f"invalid initial metric resource facts: {identifier}")
+        statuses[identifier] = "available"
 
-    ready_times: dict[str, float] = {}
-    arrived_ids: set[str] = set()
-    released_ids: set[str] = set()
-    completed_ids: set[str] = set()
-    accumulated_wait: dict[str, float] = {
-        truck_id: 0.0 for truck_id in final_snapshot.trucks
-    }
-    active_services: dict[str, tuple[str, str]] = {}
-    active_resources: dict[str, str] = {}
-    scale_occupancy = 0
-    max_scale_occupancy = 0
-    first_arrival_time: float | None = None
-    scale_capacity = sum(
-        resource.kind == "scale" for resource in final_snapshot.resources.values()
-    )
-    if scale_capacity <= 0:
-        raise AuditError("final snapshot has no physical scale resource")
-    completion_times: list[float] = []
+    active, occupied, recorded, accepted, previous_orders = {}, {}, {}, {}, {}
+    service_spans = {identifier: [] for identifier in resources}
+    failure_spans = {identifier: [] for identifier in resources}
+    cause_spans = {identifier: [] for identifier in resources}
+    failed_at, cause_ids = {}, set()
+    completions, comparison_displacements = [], []
+    counters = {name: 0 for name in (
+        "decision_count", "fifo_break_count", "raw_fifo_break_count", "avoidable_fifo_break_count",
+        "queue_comparison_count", "comparable_candidate_count", "queue_inversion_count",
+        "max_queue_displacement", "replanning_count", "ordinary_window_activation_count",
+        "mandatory_candidate_count", "mandatory_decision_count",
+        "critical_expansion_candidate_count", "critical_expansion_decision_count",
+        "operator_accept_count", "operator_reject_count", "dispatch_block_count", "command_count",
+        "scale_occupancy_peak", "max_queue_length", "max_buffer_occupancy", "max_buffer_reservation",
+    )}
 
-    for event in details.events:
-        payload = event.to_dict()["payload"]
-        truck_id = payload.get("truck_id")
-        operation = payload.get("operation")
-        if event.kind == "TRUCK_ARRIVED":
-            if not isinstance(truck_id, str) or truck_id not in final_snapshot.trucks:
-                raise AuditError(
-                    f"arrival references unknown truck at event {event.sequence}:{event.kind}"
-                )
-            arrival_time = float(payload["arrival_time"])
-            if first_arrival_time is None:
-                first_arrival_time = arrival_time
-            else:
-                first_arrival_time = min(first_arrival_time, arrival_time)
-            arrived_ids.add(truck_id)
-            # A document-blocked truck is not eligible for service waiting
-            # until its explicit release event.
-            if payload.get("document_ok") is True:
-                ready_times[truck_id] = float(payload["arrival_time"])
-                released_ids.add(truck_id)
-            else:
-                ready_times.pop(truck_id, None)
-            continue
+    def occupancy():
+        queues = {operation: 0 for operation in operations}
+        inbound = outbound = 0
+        for identifier, fact in facts.items():
+            if not fact["arrived"] or fact["operation"] == "done":
+                continue
+            operation = fact["operation"]
+            serving = identifier in active
+            if not serving:
+                queues[operation] += 1
+            inbound += operation in {"scale_in", "unload"}
+            outbound += (operation == "unload" and serving) or (operation == "scale_out" and not serving)
+        return queues, inbound, outbound
 
-        if event.kind == "DOCUMENT_RELEASED":
-            if not isinstance(truck_id, str) or truck_id not in arrived_ids:
-                raise AuditError(
-                    f"document release precedes arrival at event {event.sequence}:{event.kind}"
-                )
-            ready_times[truck_id] = float(event.time)
-            released_ids.add(truck_id)
-            continue
-
-        if event.kind == "SERVICE_STARTED":
-            if (
-                not isinstance(truck_id, str)
-                or truck_id not in ready_times
-                or truck_id in active_services
-            ):
-                raise AuditError(
-                    "cannot derive waiting time for service start: "
-                    f"event {event.sequence}:{event.kind}"
-                )
-            if not isinstance(operation, str) or operation not in {
-                "gate",
-                "scale_in",
-                "unload",
-                "scale_out",
-            }:
-                raise AuditError(
-                    f"service start has no canonical operation at event {event.sequence}:{event.kind}"
-                )
-            resource_id = payload.get("resource_id")
-            if not isinstance(resource_id, str) or resource_id not in final_snapshot.resources:
-                raise AuditError(
-                    f"service start references unknown resource at event {event.sequence}:{event.kind}"
-                )
-            if resource_id in active_resources:
-                raise AuditError(
-                    "replayed resource occupancy became invalid at "
-                    f"event {event.sequence}:{event.kind}"
-                )
-            wait = max(0.0, float(event.time) - ready_times[truck_id])
-            if not math.isfinite(wait):
-                raise AuditError(
-                    f"derived waiting time is not finite at event {event.sequence}:{event.kind}"
-                )
-            accumulated_wait[truck_id] += wait
-            active_services[truck_id] = (operation, resource_id)
-            active_resources[resource_id] = truck_id
-            if operation in {"scale_in", "scale_out"}:
-                scale_occupancy += 1
-                max_scale_occupancy = max(max_scale_occupancy, scale_occupancy)
-                if scale_occupancy > scale_capacity:
-                    raise AuditError(
-                        "replayed scale capacity exceeded at "
-                        f"event {event.sequence}:{event.kind}"
-                    )
-            continue
-
-        if event.kind == "SERVICE_COMPLETED":
-            if not isinstance(truck_id, str) or truck_id not in active_services:
-                raise AuditError(
-                    "service completion has no matching active service at "
-                    f"event {event.sequence}:{event.kind}"
-                )
-            resource_id = payload.get("resource_id")
-            expected_operation, expected_resource = active_services[truck_id]
-            if (
-                operation != expected_operation
-                or resource_id != expected_resource
-            ):
-                raise AuditError(
-                    "service completion does not match active service at "
-                    f"event {event.sequence}:{event.kind}"
-                )
-            del active_services[truck_id]
-            del active_resources[expected_resource]
-            if operation in {"scale_in", "scale_out"}:
-                scale_occupancy -= 1
-                if scale_occupancy < 0:
-                    raise AuditError(
-                        "replayed scale occupancy became negative at "
-                        f"event {event.sequence}:{event.kind}"
-                    )
-            completion_times.append(float(event.time))
-            if operation == "scale_out":
-                completed_ids.add(truck_id)
-            else:
-                ready_times[truck_id] = float(event.time)
-                released_ids.add(truck_id)
-
-    # Every terminal busy resource must correspond to one in-flight service;
-    # active services are explicitly valid at the hard observation horizon.
-    final_active_resources = {
-        resource_id
-        for resource_id, resource in final_snapshot.resources.items()
-        if resource.status == "busy"
-    }
-    if final_active_resources != set(active_resources):
-        raise AuditError(
-            "final resource occupancy is incoherent with replayed services: "
-            f"expected={sorted(active_resources)} observed={sorted(final_active_resources)}"
+    def queue_for(resource_id):
+        if resource_id not in resources:
+            raise AuditError(f"metric decision references unknown resource {resource_id}")
+        resource = resources[resource_id]
+        _, inbound, outbound = occupancy()
+        raw = sorted(
+            (identifier for identifier, fact in facts.items()
+             if fact["arrived"] and identifier not in active and fact["operation"] != "done"
+             and kinds[fact["operation"]] == resource["kind"]),
+            key=lambda identifier: (facts[identifier]["entered"], identifier),
         )
-    for truck_id, (_, resource_id) in active_services.items():
-        truck = final_snapshot.trucks.get(truck_id)
-        if (
-            truck is None
-            or truck.stage != TRUCK_STAGE_SERVICE_STARTED
-            or truck.resource_id != resource_id
-        ):
-            raise AuditError(
-                f"final active service is incoherent for truck {truck_id}"
+        feasible = []
+        for identifier in raw:
+            fact = facts[identifier]
+            operation = fact["operation"]
+            capacity_ok = (
+                inbound < controls.buffer_capacity if operation == "gate" else
+                inbound <= controls.buffer_capacity if operation == "scale_in" else
+                outbound < controls.buffer_capacity if operation == "unload" else True
             )
-    if scale_occupancy != sum(
-        1
-        for truck_id, (operation, _) in active_services.items()
-        if operation in {"scale_in", "scale_out"}
-    ):
-        raise AuditError("final scale occupancy is incoherent with active services")
+            if fact["document"] and fact["cargo"] in resource["allowed_cargo_types"] and capacity_ok:
+                feasible.append(identifier)
+        return raw, feasible
 
-    completed_trucks = sum(
-        truck.stage == TRUCK_STAGE_SERVICE_COMPLETED
-        for truck in final_snapshot.trucks.values()
-    )
-    final_completed_ids = {
-        truck_id
-        for truck_id, truck in final_snapshot.trucks.items()
-        if truck.stage == TRUCK_STAGE_SERVICE_COMPLETED
-    }
-    if final_completed_ids != completed_ids:
-        raise AuditError(
-            "final completed-truck state is incoherent with replayed completions"
+    for event in events[1:-1]:
+        payload, now, kind = event.to_dict()["payload"], event.time, event.kind
+        identifier = payload.get("truck_id")
+        resource_id = payload.get("resource_id")
+        if identifier is not None and identifier not in facts:
+            raise AuditError(f"metric event references unknown truck {identifier}")
+        if resource_id is not None and resource_id not in resources:
+            raise AuditError(f"metric event references unknown resource {resource_id}")
+        if kind == "TRUCK_ARRIVED":
+            fact = facts[identifier]
+            if (fact["arrived"] or now != fact["arrival"] or payload["arrival_time"] != now
+                    or payload["priority"] != fact["priority"] or payload["cargo_type"] != fact["cargo"]
+                    or payload["document_ok"] is not fact["document"]):
+                raise AuditError("metric arrival evidence disagrees with the initial inventory")
+            fact["arrived"] = True
+            if fact["document"]:
+                fact["ready"] = now
+        elif kind == "DOCUMENT_RELEASED":
+            fact = facts[identifier]
+            if not fact["arrived"] or fact["document"] or fact["operation"] != "gate":
+                raise AuditError("metric document release is not a valid blocked-truck transition")
+            fact.update(document=True, ready=now, entered=now, document_hold=now-fact["arrival"])
+        elif kind == "PRIORITY_CHANGED":
+            priority = payload["priority"]
+            if type(priority) is not int or priority not in (0, 1, 2) or facts[identifier]["operation"] == "done":
+                raise AuditError("metric priority observation is invalid")
+            facts[identifier]["priority"] = priority
+        elif kind == "DECISION_RECORDED":
+            recommendation = payload["decision"]
+            resource_id = recommendation["resource_id"]
+            raw, feasible = queue_for(resource_id)
+            if statuses[resource_id] != "available":
+                raise AuditError("metric decision requires an available resource")
+            order = tuple(candidate["truck_id"] for candidate in recommendation["candidate_order"])
+            if not order or len(set(order)) != len(order) or tuple(recommendation["candidate_ids"]) != order:
+                raise AuditError("metric decision candidate identities are incomplete or duplicated")
+            mandatory = [truck for truck in feasible if facts[truck]["priority"] == 2]
+            admitted = feasible
+            if admission_mode == "mandatory_window":
+                if mandatory:
+                    admitted = mandatory
+                    counters["mandatory_candidate_count"] += len(mandatory)
+                    counters["mandatory_decision_count"] += 1
+                else:
+                    prefix = feasible[:controls.ordinary_window]
+                    beyond = [
+                        truck for truck in feasible[controls.ordinary_window:]
+                        if now-facts[truck]["entered"] > threshold[facts[truck]["priority"]]*float(controls.threshold_multiplier)
+                    ]
+                    admitted = prefix + beyond
+                    counters["ordinary_window_activation_count"] += len(feasible) > controls.ordinary_window
+                    counters["critical_expansion_candidate_count"] += len(beyond)
+                    counters["critical_expansion_decision_count"] += bool(beyond)
+            if set(order) != set(admitted):
+                raise AuditError("metric candidate set disagrees with independently reconstructed admission")
+            for candidate in recommendation["candidate_order"]:
+                fact = facts[candidate["truck_id"]]
+                if candidate["stage_entry_time"] != fact["entered"] or candidate["operation"] != fact["operation"]:
+                    raise AuditError("metric candidate position disagrees with its event-derived stage")
+            selected = recommendation["selected"]
+            selected_id = selected["truck_id"]
+            if selected_id not in order or selected["resource_id"] != resource_id:
+                raise AuditError("metric selection is outside the admitted queue")
+            fifo = min(order, key=lambda truck: (facts[truck]["entered"], truck))
+            broke_fifo = selected_id != fifo
+            if recommendation["justification"]["fifo_break"] is not broke_fifo:
+                raise AuditError("metric FIFO justification disagrees with reconstructed order")
+            counters["decision_count"] += 1
+            counters["fifo_break_count"] += broke_fifo
+            raw_break = selected_id != raw[0]
+            counters["raw_fifo_break_count"] += raw_break
+            counters["avoidable_fifo_break_count"] += (
+                raw_break and raw[0] in feasible
+                and (admission_mode == "full_queue" or not mandatory or raw[0] in mandatory)
+            )
+            if resource_id in previous_orders:
+                previous = previous_orders[resource_id]
+                shared = set(previous) & set(order)
+                left = {truck: index for index, truck in enumerate(truck for truck in previous if truck in shared)}
+                right = {truck: index for index, truck in enumerate(truck for truck in order if truck in shared)}
+                common = sorted(shared)
+                inversions = sum(
+                    (left[a]-left[b])*(right[a]-right[b]) < 0
+                    for index, a in enumerate(common) for b in common[index+1:]
+                )
+                movements = [abs(left[truck]-right[truck]) for truck in common]
+                counters["queue_comparison_count"] += 1
+                counters["comparable_candidate_count"] += len(common)
+                counters["queue_inversion_count"] += inversions
+                counters["replanning_count"] += bool(inversions)
+                counters["max_queue_displacement"] = max(counters["max_queue_displacement"], max(movements, default=0))
+                comparison_displacements.append(sum(movements)/len(movements) if movements else 0.0)
+            previous_orders[resource_id] = order
+            if selected_id in recorded or selected_id in accepted:
+                raise AuditError("metric recommendation overwrites a pending command")
+            recorded[selected_id] = recommendation
+        elif kind == "OPERATOR_DECISION":
+            recommendation = payload["recommendation"]
+            selected_id = recommendation["selected"]["truck_id"]
+            if recorded.pop(selected_id, None) != recommendation:
+                raise AuditError("metric operator response has no identical recorded recommendation")
+            if payload["decision"] == "accept":
+                counters["operator_accept_count"] += 1
+                accepted[selected_id] = recommendation["selected"]
+            elif payload["decision"] == "reject":
+                counters["operator_reject_count"] += 1
+            else:
+                raise AuditError("metric operator response is unsupported")
+        elif kind == "SERVICE_STARTED":
+            fact, operation, duration = facts[identifier], payload["operation"], payload["duration_minutes"]
+            if (identifier in active or resource_id in occupied or statuses[resource_id] != "available"
+                    or operation != fact["operation"] or identifier not in queue_for(resource_id)[1]
+                    or type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0
+                    or fact["ready"] is None or now < fact["ready"]):
+                raise AuditError("metric service start violates physical eligibility or time accounting")
+            command = accepted.pop(identifier, None)
+            if command is None or command["resource_id"] != resource_id or command["operation"] != operation:
+                raise AuditError("metric service start has no corresponding accepted command")
+            fact["waits"].append(now-fact["ready"])
+            fact["entered"] = now
+            active[identifier] = (operation, resource_id, now, duration)
+            occupied[resource_id] = identifier
+            statuses[resource_id] = "busy"
+            counters["command_count"] += 1
+            counters["scale_occupancy_peak"] = max(
+                counters["scale_occupancy_peak"], sum(resources[key]["kind"] == "scale" for key in occupied),
+            )
+        elif kind == "SERVICE_COMPLETED":
+            service = active.pop(identifier, None)
+            operation = payload["operation"]
+            if (service is None or service[:2] != (operation, resource_id)
+                    or occupied.get(resource_id) != identifier or now != service[2]+service[3]):
+                raise AuditError("metric completion does not match the observed service interval")
+            fact = facts[identifier]
+            fact["services"].append(now-service[2])
+            service_spans[resource_id].append((service[2], now))
+            position = operations.index(operation)
+            fact["operation"] = operations[position+1] if position < 3 else "done"
+            fact["entered"] = fact["ready"] = now
+            if fact["operation"] == "done":
+                fact["departure"] = now
+            del occupied[resource_id]
+            statuses[resource_id] = "available"
+            completions.append(now)
+        elif kind == "DISRUPTION_RECORDED":
+            identity = (resource_id, payload["latent_id"])
+            if identity in cause_ids or statuses[resource_id] == "busy":
+                raise AuditError("metric disruption is duplicated or preempts a service")
+            cause_ids.add(identity)
+            effective, recovery = payload["effective_failure_start"], payload["recovery_time"]
+            if effective != now or type(recovery) not in (int, float) or not math.isfinite(recovery):
+                raise AuditError("metric disruption interval is invalid")
+            if recovery > effective:
+                cause_spans[resource_id].append((effective, recovery))
+        elif kind == "RESOURCE_FAILED":
+            if statuses[resource_id] != "available":
+                raise AuditError("metric downtime begins on an unavailable resource")
+            failed_at[resource_id] = now
+            statuses[resource_id] = "failed"
+        elif kind == "RESOURCE_RECOVERED":
+            if statuses[resource_id] != "failed":
+                raise AuditError("metric recovery has no active failure")
+            failure_spans[resource_id].append((failed_at.pop(resource_id), now))
+            statuses[resource_id] = "available"
+        elif kind == "DISPATCH_BLOCKED":
+            if resource_id is None:
+                raise AuditError("metric blocked dispatch has no physical resource")
+            counters["dispatch_block_count"] += 1
+        else:
+            raise AuditError(f"metric reconstruction does not handle event {kind}")
+
+        queues, inbound, outbound = occupancy()
+        counters["max_queue_length"] = max(counters["max_queue_length"], *queues.values())
+        counters["max_buffer_occupancy"] = max(
+            counters["max_buffer_occupancy"], inbound, *(queues[operation] for operation in operations[1:]),
         )
-    if active_services and completed_trucks == total_trucks:
-        raise AuditError("all trucks are complete while a service remains active")
+        counters["max_buffer_reservation"] = max(counters["max_buffer_reservation"], inbound, outbound)
+        if max(counters["max_buffer_occupancy"], counters["max_buffer_reservation"]) > controls.buffer_capacity:
+            raise AuditError("metric event history exceeds a physical buffer capacity")
+    if recorded or accepted:
+        raise AuditError("metric observation ends with an unfinished decision/command")
+    if not counters["decision_count"] or not counters["queue_comparison_count"]:
+        raise AuditError("metric decision/stability denominator is undefined")
 
-    waits: list[float] = []
-    censored_wait = 0.0
-    for truck_id in sorted(final_snapshot.trucks):
-        value = accumulated_wait[truck_id]
-        if (
-            truck_id in arrived_ids
-            and truck_id in released_ids
-            and truck_id not in completed_ids
-            and truck_id not in active_services
-        ):
-            if truck_id not in ready_times:
-                raise AuditError(f"censored truck has no ready time: {truck_id}")
-            residual = max(0.0, horizon - ready_times[truck_id])
-            value += residual
-            censored_wait += residual
-        waits.append(value)
+    truck_rows, waits, complete_system, censored_system = {}, [], [], []
+    censored_waits, holds = [], []
+    for identifier in sorted(facts):
+        fact = facts[identifier]
+        if not fact["arrived"]:
+            raise AuditError(f"metric evidence is missing a scheduled arrival: {identifier}")
+        censored_wait = censored_service = 0.0
+        if identifier in active:
+            _, resource_id, begin, duration = active[identifier]
+            if begin+duration <= horizon:
+                raise AuditError("metric evidence is missing a completion inside the horizon")
+            censored_service = horizon-begin
+            fact["services"].append(censored_service)
+            service_spans[resource_id].append((begin, horizon))
+        elif fact["document"] and fact["departure"] is None:
+            censored_wait = horizon-fact["ready"]
+            fact["waits"].append(censored_wait)
+        if not fact["document"]:
+            fact["document_hold"] = horizon-fact["arrival"]
+        wait, service, hold = sum(fact["waits"]), sum(fact["services"]), fact["document_hold"]
+        censored = fact["departure"] is None
+        observed = (horizon if censored else fact["departure"])-fact["arrival"]
+        if not math.isclose(observed, wait+service+hold, rel_tol=0, abs_tol=1e-8):
+            raise AuditError(f"metric truck time partition does not reconcile: {identifier}")
+        waits.append(wait)
+        holds.append(hold)
+        censored_waits.append(censored_wait)
+        (censored_system if censored else complete_system).append(observed)
+        truck_rows[identifier] = {
+            "wait_minutes": round(float(wait), 12), "censored_wait_minutes": round(float(censored_wait), 12),
+            "service_minutes": round(float(service), 12), "censored_service_minutes": round(float(censored_service), 12),
+            "document_hold_minutes": round(float(hold), 12), "observed_system_time_minutes": round(float(observed), 12),
+            "system_time_censored": censored,
+        }
+    if not complete_system:
+        raise AuditError("completed-system-time metric denominator is undefined")
+    if not completions:
+        raise AuditError("observed makespan is undefined without service completions")
 
-    ordered = sorted(waits)
-    p95_index = max(0, min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1))
-    mean_wait = round(sum(waits) / len(waits), 12)
-    p95_wait = round(ordered[p95_index], 12)
-    throughput = completed_trucks
-    if first_arrival_time is None:
-        raise AuditError("cannot derive makespan: no TRUCK_ARRIVED event before the hard horizon")
-    if not completion_times:
-        raise AuditError("cannot derive makespan: no SERVICE_COMPLETED event before the hard horizon")
-    makespan = max(completion_times) - first_arrival_time
-    if not math.isfinite(makespan) or makespan <= 0.0:
-        raise AuditError(
-            "cannot derive makespan: last SERVICE_COMPLETED is not after first TRUCK_ARRIVED"
-        )
-    makespan = round(makespan, 12)
-    throughput_rate = round(throughput / makespan, 12) if makespan > 0 else 0.0
-    return {
-        "event_count": len(details.events),
-        "total_trucks": total_trucks,
-        "completed_trucks": completed_trucks,
-        "throughput": throughput,
-        "scale_occupancy_peak": max_scale_occupancy,
-        "makespan_minutes": makespan,
-        "throughput_rate": throughput_rate,
-        "mean_wait_minutes": mean_wait,
-        "p95_wait_minutes": p95_wait,
-        "censored_wait_minutes": round(censored_wait, 12),
+    resource_rows, busy_values, down_values = {}, [], []
+    for resource_id in sorted(resources):
+        if resource_id in failed_at:
+            failure_spans[resource_id].append((failed_at[resource_id], horizon))
+        down_spans = _metric_interval_union(failure_spans[resource_id], horizon)
+        if down_spans != _metric_interval_union(cause_spans[resource_id], horizon):
+            raise AuditError(f"metric downtime disagrees with independent disruption union: {resource_id}")
+        busy_spans = _metric_interval_union(service_spans[resource_id], horizon)
+        if any(max(a, c) < min(b, d) for a, b in busy_spans for c, d in down_spans):
+            raise AuditError("metric service overlaps resource downtime")
+        busy = sum(end-begin for begin, end in busy_spans)
+        down = sum(end-begin for begin, end in down_spans)
+        available, idle = horizon-down, horizon-down-busy
+        if available <= 0 or idle < 0:
+            raise AuditError("metric net utilization denominator or idle interval is invalid")
+        busy_values.append(busy)
+        down_values.append(down)
+        values = {
+            "gross_minutes": horizon, "busy_minutes": busy, "down_minutes": down,
+            "available_minutes": available, "idle_minutes": idle,
+            "gross_utilization": busy/horizon, "net_utilization": busy/available,
+            "net_idle_fraction": idle/available, "gross_idle_fraction": idle/horizon,
+        }
+        resource_rows[resource_id] = {"kind": resources[resource_id]["kind"], **{
+            name: round(float(value), 12) for name, value in values.items()
+        }}
+
+    def percentile(values, probability):
+        ordered = sorted(values)
+        location = (len(ordered)-1)*probability
+        index = math.floor(location)
+        fraction = location-index
+        return ordered[index] + fraction*(ordered[min(index+1, len(ordered)-1)]-ordered[index])
+
+    def middle(values):
+        ordered = sorted(values)
+        index = len(ordered)//2
+        return ordered[index] if len(ordered) % 2 else (ordered[index-1]+ordered[index])/2
+
+    total_wait, busy, down = sum(waits), sum(busy_values), sum(down_values)
+    gross = horizon*len(resources)
+    available = gross-down
+    observed_makespan = max(completions)-min(fact["arrival"] for fact in facts.values())
+    if observed_makespan <= 0:
+        raise AuditError("observed makespan is not positive")
+    scalar = {
+        **counters, "event_count": len(events), "total_trucks": len(facts),
+        "completed_trucks": len(complete_system), "remaining_trucks": len(censored_system),
+        "throughput": len(complete_system), "throughput_per_hour": len(complete_system)/(horizon/60),
+        "horizon_minutes": int(horizon), "hard_constraint_violations": 0,
+        "mean_wait_minutes": total_wait/len(waits), "p50_wait_minutes": middle(waits),
+        "p95_wait_minutes": sorted(waits)[math.ceil(.95*len(waits))-1],
+        "iqr_wait_minutes": percentile(waits, .75)-percentile(waits, .25),
+        "total_wait_minutes": total_wait, "censored_wait_minutes": sum(censored_waits),
+        "document_hold_minutes": sum(holds), "observed_makespan_minutes": observed_makespan,
+        "median_system_time_minutes": middle(complete_system), "mean_system_time_minutes": sum(complete_system)/len(complete_system),
+        "iqr_system_time_minutes": percentile(complete_system, .75)-percentile(complete_system, .25),
+        "observed_system_time_minutes": sum(
+            (horizon if facts[key]["departure"] is None else facts[key]["departure"])-facts[key]["arrival"]
+            for key in sorted(facts)
+        ),
+        "censored_system_time_minutes": sum(censored_system), "censored_system_trucks": len(censored_system),
+        "completed_system_trucks": len(complete_system), "resource_busy_minutes": busy,
+        "resource_down_minutes": down, "resource_available_minutes": available,
+        "resource_idle_minutes": available-busy, "resource_gross_minutes": gross,
+        "gross_utilization": busy/gross, "net_utilization": busy/available,
+        "net_idle_fraction": (available-busy)/available, "gross_idle_fraction": (available-busy)/gross,
+        "fifo_break_rate": counters["fifo_break_count"]/counters["decision_count"],
+        "mean_queue_displacement": sum(comparison_displacements)/counters["queue_comparison_count"],
+        "replanning_frequency_per_hour": counters["replanning_count"]/(horizon/60),
+        "co2_estimated_kg": total_wait/60*1.0*.8*10.18,
+        "co2_sensitivity_low_kg": total_wait/60*1.0*.5*10.18,
+        "co2_sensitivity_high_kg": total_wait/60*1.0*1.0*10.18,
     }
+    # No field is defaulted from the producer's schema: an unimplemented field
+    # causes the DTO's exact-coverage validation to fail.
+    for name, value in scalar.items():
+        if isinstance(value, bool) or not math.isfinite(value) or value < 0:
+            raise AuditError(f"independently derived metric is invalid: {name}")
+    scalar = {name: value if name in INTEGER_METRIC_FIELDS else round(float(value), 12) for name, value in scalar.items()}
+    return MetricRow(_sha256(details.log_path), scalar, resource_rows, truck_rows, METRIC_DEFINITIONS)
 
 
 def _validate_a2_manifest(manifest: Mapping[str, Any]) -> bool:
@@ -937,8 +1118,8 @@ def _require_digest(value: object, label: str) -> None:
 
 
 def _validate_input_provenance(manifest, expected_pairs):
-    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 3:
-        raise AuditError("run manifest schema_version must be 3")
+    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 4:
+        raise AuditError("run manifest schema_version must be 4")
     provenance = _required_manifest_mapping(manifest, "input_provenance")
     if provenance.get("kind") not in {"frozen_dataset", "validation_fixture"}:
         raise AuditError("input provenance kind is invalid")
@@ -1299,11 +1480,10 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
                     f"event time regresses in decision log: {log_name} line {line_number}"
                 )
             previous_time = event.time
-        from .metrics import compute_policy_day_metrics
         try:
-            calculated = compute_policy_day_metrics(log_path)
-        except (ValueError, TypeError, KeyError) as exc:
-            raise AuditError(f"persisted metrics cannot be reconstructed: {log_name}") from exc
+            calculated = _derived_log_metrics(details)
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            raise AuditError(f"persisted metrics cannot be independently reconstructed: {log_name}") from exc
         expected_metrics_file = f"metrics/{log_name.removesuffix('.jsonl')}.json"
         if row["metrics_file"] != expected_metrics_file:
             raise AuditError(f"metrics artifact path mismatch: {log_name}")
@@ -1312,51 +1492,20 @@ def _audit_bundle(bundle: RunBundle) -> AuditReport:
             raise AuditError(f"metrics artifact escapes run directory: {log_name}")
         if _sha256(metrics_path) != row["metrics_sha256"]:
             raise AuditError(f"metrics artifact SHA-256 mismatch: {log_name}")
-        if json.loads(metrics_path.read_text(encoding="utf-8")) != calculated.to_dict():
-            raise AuditError(f"metrics artifact does not reconcile with log: {log_name}")
+        try:
+            observed_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            # Canonical JSON distinguishes booleans from numeric measurements
+            # and checks the complete scalar/detail/definition contract.
+            if _canonical_json(observed_metrics) != _canonical_json(calculated.to_dict()):
+                raise AuditError(f"metrics artifact does not reconcile with independently reconstructed log: {log_name}")
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
+            raise AuditError(f"metrics artifact is not a valid complete observation: {log_name}") from exc
         for metric, value in calculated.scalars.items():
             if row[metric] != value:
-                raise AuditError(f"persisted metric {metric} does not reconcile with log: {log_name} expected={value} observed={row[metric]}")
-        derived = _derived_log_metrics(details)
-        for metric in (
-            "event_count",
-            "total_trucks",
-            "completed_trucks",
-            "throughput",
-            "scale_occupancy_peak",
-        ):
-            if row.get(metric) != derived[metric]:
                 raise AuditError(
-                    f"persisted metric {metric} does not reconcile with log: {log_name} "
-                    f"expected={derived[metric]} observed={row.get(metric)}"
+                    f"persisted metric {metric} does not reconcile with independently reconstructed log: "
+                    f"{log_name} expected={value} observed={row[metric]}"
                 )
-        for metric in (
-            "mean_wait_minutes",
-            "p95_wait_minutes",
-            "censored_wait_minutes",
-        ):
-            # ``derived`` already applies the producer's round(..., 12).
-            # Equality on the parsed canonical float rejects every distinct
-            # persistible value, including sub-tolerance deltas.
-            if float(row.get(metric)) != float(derived[metric]):
-                raise AuditError(
-                    f"persisted metric {metric} does not reconcile with log: {log_name} "
-                    f"expected={derived[metric]} observed={row.get(metric)}"
-                )
-        if not math.isclose(
-            float(row.get("makespan_minutes")),
-            float(derived["makespan_minutes"]),
-            rel_tol=0.0,
-            abs_tol=_DERIVED_FLOAT_TOLERANCE,
-        ):
-            raise AuditError(f"persisted metric makespan_minutes does not reconcile with log: {log_name}")
-        if not math.isclose(
-            float(row.get("throughput_rate")),
-            float(derived["throughput_rate"]),
-            rel_tol=0.0,
-            abs_tol=_DERIVED_FLOAT_TOLERANCE,
-        ):
-            raise AuditError(f"persisted metric throughput_rate does not reconcile with log: {log_name}")
         replay_hash = snapshot_hash(details.final_snapshot)
         initial_hash = snapshot_hash(details.initial_snapshot)
         if (

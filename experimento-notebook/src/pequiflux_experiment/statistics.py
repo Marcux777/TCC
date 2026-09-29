@@ -403,6 +403,9 @@ def _extract_pair_frame(
     _validate_source_numeric(
         frame["throughput"], name="throughput", non_negative=True
     )
+    throughput_counts = pd.to_numeric(frame["throughput"])
+    if (throughput_counts % 1 != 0).any():
+        raise PairingError("throughput must count completed trucks as non-negative integers at 720 minutes")
 
     if len(frame) != expected_row_count:
         raise PairingError(
@@ -457,6 +460,12 @@ def _extract_pair_frame(
         observed_keys.add(key)
 
         expected = metadata[scenario_id]
+        if float(row["throughput"]) > expected["truck_count"]:
+            raise PairingError(
+                "throughput cannot exceed canonical total_trucks: "
+                f"scenario_id={scenario_id} throughput={row['throughput']!r} "
+                f"total_trucks={expected['truck_count']}"
+            )
         for field_name, aliases in metadata_columns.items():
             for column in aliases:
                 if column not in columns:
@@ -495,6 +504,7 @@ def _extract_pair_frame(
                 "scenario_id": scenario_id,
                 "seed": seed,
                 "policy": policy,
+                "throughput": int(float(row["throughput"])),
                 "stratum": expected["stratum"],
                 "total_trucks": expected["truck_count"],
                 "hopper_count": expected["hopper_count"],

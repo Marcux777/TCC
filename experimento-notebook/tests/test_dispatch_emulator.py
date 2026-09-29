@@ -35,12 +35,21 @@ from pequiflux_experiment.config import EVENT_RANKS, EVENT_SEMANTICS_VERSION
 from pequiflux_experiment.events import read_jsonl, write_jsonl
 from pequiflux_experiment.digital_model import replay_events
 from pequiflux_experiment.policies import make_policy
-from pequiflux_experiment.metrics import compute_policy_day_metrics
+from pequiflux_experiment.metrics import MetricsError, compute_policy_day_metrics
 
 
 def _run_fixture(scenario, seed, policy):
     fixture = build_validation_fixture(scenario, seed)
     return run_day(fixture.instance, policy, fixture.controls, fixture.event_latents)
+
+
+def _persisted_metrics(result, tmp_path):
+    events = list(result.events)
+    events[0] = replace(events[0], payload={**events[0].to_dict()["payload"],
+        "initial_snapshot": result.initial_snapshot.canonical_dict()})
+    path = tmp_path / "day.jsonl"
+    write_jsonl(path, events)
+    return compute_policy_day_metrics(path)
 
 
 def _simulation_fixture(scenario, seed, policy):
@@ -95,7 +104,7 @@ def test_policy_select_also_fails_closed_on_unavailable_resource(policy: str) ->
         )
 
 
-def test_same_seed_produces_identical_events_and_metrics() -> None:
+def test_same_seed_produces_identical_events_and_metrics(tmp_path) -> None:
     scenario = tiny_scenario(truck_count=8, hoppers=1, scales=1, regime="nominal")
     first = _run_fixture(scenario, 101, make_policy("lexicographic"))
     second = _run_fixture(scenario, 101, make_policy("lexicographic"))
@@ -103,7 +112,7 @@ def test_same_seed_produces_identical_events_and_metrics() -> None:
     assert [event.to_dict() for event in first.events] == [
         event.to_dict() for event in second.events
     ]
-    assert first.metrics == second.metrics
+    assert _persisted_metrics(first, tmp_path).to_dict() == _persisted_metrics(second, tmp_path).to_dict()
     assert first.hard_constraint_violations == 0
 
 
@@ -145,7 +154,7 @@ def test_parallel_pool_resources_do_not_assign_one_truck_twice(monkeypatch) -> N
         make_policy("lexicographic"),
     )
 
-    assert result.completed_trucks == 4
+    assert all(truck.next_operation == "done" for truck in result.final_snapshot.trucks.values())
     assert result.max_scale_occupancy == 2
     assert result.hard_constraint_violations == 0
     active = {}
@@ -299,13 +308,13 @@ def test_des_consumes_frozen_arrivals_documents_and_services_without_rng(monkeyp
             completions = {(event.payload["truck_id"], event.payload["operation"]): event.time
                            for event in result.events if event.kind == "SERVICE_COMPLETED"}
             assert {key: completed_at - starts[key] for key, completed_at in completions.items()} == durations
-            assert result.completed_trucks == 2
+            assert all(truck.next_operation == "done" for truck in result.final_snapshot.trucks.values())
             assert result.instance_id == instance.instance_id
             assert result.instance_hash == result.execution_instance_hash == instance.instance_hash
             assert result.dataset_root_hash == controls.source_dataset_root_hash
             assert result.control_hash == controls.control_hash
             assert result.controls == controls
-            assert result.metrics["buffer_capacity"] == 3
+            assert result.controls.buffer_capacity == 3
             assert result.events[0].payload["event_latents_sha256"] == fixture.event_latents.event_latents_sha256
             serialized = [event.to_dict() for event in result.events]
             if policy in events_by_policy:
@@ -539,9 +548,9 @@ def test_output_buffer_reserves_concurrent_unloads_and_drains_shared_scale(tmp_p
     assert not active_unloads and not output_queue and not active_scales
     assert peak_output == 2
     assert any(start >= releases[0] for start in subsequent_unloads)
-    assert result.metrics["max_buffer_reservation"] == 2
-    assert result.metrics["max_buffer_occupancy"] <= 2
     metrics = compute_policy_day_metrics(path)
+    assert metrics.scalars["max_buffer_reservation"] == 2
+    assert metrics.scalars["max_buffer_occupancy"] <= 2
     assert metrics.scalars["completed_trucks"] == 4
     assert metrics.resources["scale-1"]["busy_minutes"] == 44.0
     replayed = replay_events(events, physical=result.initial_snapshot, scenario=result.scenario)
@@ -712,7 +721,7 @@ def test_rain_blocks_exposed_hopper_with_failure_recovery_events() -> None:
     assert all(event.payload["resource_id"] == "hopper-1" for event in rain_recoveries)
 
 
-def test_horizon_censors_wait_and_reports_buffer_remnants() -> None:
+def test_horizon_censors_wait_and_reports_buffer_remnants(tmp_path) -> None:
     result = _run_fixture(
         tiny_scenario(truck_count=60, hoppers=1, scales=1, regime="nominal"),
         101,
@@ -720,15 +729,16 @@ def test_horizon_censors_wait_and_reports_buffer_remnants() -> None:
     )
     assert result.events[-1].kind == "END_OF_DAY"
     assert result.events[-1].time == 720.0
-    assert result.metrics["horizon_minutes"] == 720
-    assert result.metrics["makespan_minutes"] <= 720.0
-    assert result.completed_trucks < 60
-    assert result.metrics["remaining_trucks"] == 60 - result.completed_trucks
-    assert result.metrics["max_buffer_occupancy"] <= 12
-    assert result.metrics["censored_wait_minutes"] >= 0.0
+    metrics = _persisted_metrics(result, tmp_path).scalars
+    assert metrics["horizon_minutes"] == 720
+    assert metrics["observed_makespan_minutes"] <= 720.0
+    assert metrics["completed_trucks"] < 60
+    assert metrics["remaining_trucks"] == 60 - metrics["completed_trucks"]
+    assert metrics["max_buffer_occupancy"] <= 12
+    assert metrics["censored_wait_minutes"] >= 0.0
 
 
-def test_makespan_is_relative_to_first_arrival() -> None:
+def test_observed_makespan_is_relative_to_first_arrival(tmp_path) -> None:
     result = _run_fixture(
         tiny_scenario(truck_count=4, hoppers=1, scales=1, regime="nominal"),
         101,
@@ -745,21 +755,25 @@ def test_makespan_is_relative_to_first_arrival() -> None:
         if event.kind == "SERVICE_COMPLETED"
     )
     expected = round(last_completion - first_arrival, 12)
-    assert result.metrics["makespan_minutes"] == expected
-    assert result.metrics["throughput_rate"] == round(
-        result.completed_trucks / expected, 12
-    )
+    metrics = _persisted_metrics(result, tmp_path).scalars
+    assert metrics["observed_makespan_minutes"] == expected
+    assert metrics["throughput_per_hour"] == round(metrics["completed_trucks"] / 12, 12)
 
 
-def test_zero_completion_fails_closed_without_fabricated_makespan(monkeypatch) -> None:
-    # Even the shortest gate service cannot complete before the hard horizon.
+def test_zero_completion_is_persisted_before_undefined_metrics_fail(monkeypatch, tmp_path) -> None:
+    # The DES retains observations; only the canonical metric producer decides
+    # whether an observed population defines the complete measurement contract.
     _force_arrival_time(monkeypatch, 719.0)
-    with pytest.raises(RuntimeError, match="no SERVICE_COMPLETED|makespan"):
-        _run_fixture(
-            tiny_scenario(truck_count=1, hoppers=1, scales=1, regime="nominal"),
-            327,
-            make_policy("fifo_strict"),
-        )
+    result = _run_fixture(
+        tiny_scenario(truck_count=1, hoppers=1, scales=1, regime="nominal"),
+        327, make_policy("fifo_strict"),
+    )
+    assert result.events[-1].time == 720
+    assert not any(event.kind == "SERVICE_COMPLETED" for event in result.events)
+    assert not hasattr(result, "metrics")
+    with pytest.raises(MetricsError, match="completed.*undefined|no completed truck"):
+        _persisted_metrics(result, tmp_path)
+    assert (tmp_path / "day.jsonl").is_file()
 
 
 class _ScaleOutFirstPolicy(DispatchPolicy):
@@ -802,7 +816,7 @@ def test_reentrant_scale_pool_competes_scale_in_and_scale_out_in_one_dispatch(mo
 
 
 @pytest.mark.parametrize("truck_count", (120, 180))
-def test_buffer_reserves_upstream_trucks_destined_to_unload(truck_count: int) -> None:
+def test_buffer_reserves_upstream_trucks_destined_to_unload(truck_count: int, tmp_path) -> None:
     """The unload buffer includes upstream/in-flight reservations, not only its queue."""
 
     result = _run_fixture(
@@ -812,9 +826,10 @@ def test_buffer_reserves_upstream_trucks_destined_to_unload(truck_count: int) ->
     )
 
     assert result.hard_constraint_violations == 0
-    assert result.metrics["buffer_capacity"] == 12
-    assert result.metrics["max_buffer_occupancy"] <= 12
-    assert result.metrics["max_buffer_reservation"] <= 12
+    assert result.controls.buffer_capacity == 12
+    metrics = _persisted_metrics(result, tmp_path).scalars
+    assert metrics["max_buffer_occupancy"] <= 12
+    assert metrics["max_buffer_reservation"] <= 12
 
 
 def _per_truck_waits_from_events(result):
@@ -856,7 +871,7 @@ def _per_truck_waits_from_events(result):
     return waits, censored
 
 
-def test_wait_metrics_are_per_truck_and_include_censored_horizon_wait() -> None:
+def test_wait_metrics_are_per_truck_and_include_censored_horizon_wait(tmp_path) -> None:
     result = _run_fixture(
         tiny_scenario(truck_count=60, hoppers=1, scales=1, regime="nominal"),
         101,
@@ -866,9 +881,10 @@ def test_wait_metrics_are_per_truck_and_include_censored_horizon_wait() -> None:
     waits, censored = _per_truck_waits_from_events(result)
     ordered = sorted(waits)
     p95_index = max(0, min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1))
-    assert result.metrics["mean_wait_minutes"] == round(sum(waits) / len(waits), 12)
-    assert result.metrics["p95_wait_minutes"] == round(ordered[p95_index], 12)
-    assert result.metrics["censored_wait_minutes"] == round(censored, 12)
+    metrics = _persisted_metrics(result, tmp_path).scalars
+    assert metrics["mean_wait_minutes"] == round(sum(waits) / len(waits), 12)
+    assert metrics["p95_wait_minutes"] == round(ordered[p95_index], 12)
+    assert metrics["censored_wait_minutes"] == round(censored, 12)
 
 
 def test_common_random_numbers_are_policy_independent() -> None:

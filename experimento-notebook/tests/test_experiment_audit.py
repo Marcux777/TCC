@@ -139,7 +139,7 @@ def test_validation_bundle_is_complete_replayable_and_auditable(tmp_path: Path):
     assert report.a2_structural_pass is True
     assert report.a2_human_audit_pending is True
     assert report.replay_pass is True
-    assert bundle.manifest["schema_version"] == 3
+    assert bundle.manifest["schema_version"] == 4
     assert bundle.manifest["operator_mode"] == "synthetic_auto_accept"
     assert report.to_dict()["global_acceptance_status"] == "pending"
     assert report.to_dict()["acceptance_scope"] == "automated_structural_checks_only"
@@ -155,6 +155,37 @@ def test_validation_bundle_is_complete_replayable_and_auditable(tmp_path: Path):
         classes = list(csv.DictReader(handle))
     assert len(classes) == 30
     assert float(classes[0]["net_utilization"]) == round(float(classes[0]["busy_minutes"]) / float(classes[0]["available_minutes"]), 12)
+    for row in classes:
+        assert float(row["gross_idle_fraction"]) == round(float(row["idle_minutes"]) / float(row["gross_minutes"]), 12)
+    for filename in ("table_metrics_by_scenario.csv", "table_metrics_by_stratum.csv"):
+        with paths[filename].open(encoding="utf-8", newline="") as handle:
+            pooled = list(csv.DictReader(handle))
+        for row in pooled:
+            assert float(row["gross_idle_fraction_pooled"]) == round(
+                float(row["resource_idle_minutes_total"]) / float(row["resource_gross_minutes_total"]), 12,
+            )
+    metric_path = bundle.run_dir / bundle.results[0]["metrics_file"]
+    metric_payload = json.loads(metric_path.read_text(encoding="utf-8"))
+    with paths["table_metric_catalog.csv"].open(encoding="utf-8", newline="") as handle:
+        catalog_rows = list(csv.DictReader(handle))
+    catalog = {}
+    for row in catalog_rows:
+        assert int(row["metrics_schema_version"]) == metric_payload["schema_version"]
+        catalog.setdefault(row["namespace"], {})[row["metric"]] = {
+            name: row[name] for name in ("definition", "unit", "population", "window")
+        }
+    assert catalog == metric_payload["definitions"]["catalog"]
+    with paths["table_metric_assumptions.csv"].open(encoding="utf-8", newline="") as handle:
+        assumptions_rows = list(csv.DictReader(handle))
+    assumptions = {}
+    for row in assumptions_rows:
+        assumptions.setdefault(row["section"], {})[row["key"]] = json.loads(row["value_json"])
+    assert assumptions == {key: metric_payload["definitions"][key] for key in ("conventions", "co2_assumptions")}
+    del metric_payload["definitions"]["co2_assumptions"]["engine_on_fraction"]
+    metric_path.write_text(json.dumps(metric_payload), encoding="utf-8")
+    from pequiflux_experiment.export import _metric_frames
+    with pytest.raises(ValueError, match="definition contract"):
+        _metric_frames(bundle)
 
 
 @pytest.mark.parametrize("forgery", ["secondary_scalar", "secondary_details", "human_approval"])
@@ -179,6 +210,102 @@ def test_audit_rejects_secondary_metric_and_human_approval_forgery(tmp_path, for
         bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         expected = "complete requires a verified human review"
     with pytest.raises(AuditError, match=expected):
+        audit_run(bundle.run_dir)
+
+
+def test_audit_reconstructs_metrics_without_calling_the_producer(tmp_path, monkeypatch):
+    bundle = build_validation_bundle(tmp_path)
+    import pequiflux_experiment.metrics as producer
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("auditor called the metric producer")
+
+    monkeypatch.setattr(producer, "compute_policy_day_metrics", forbidden)
+    assert audit_run(bundle.run_dir).replay_pass
+
+
+def test_audit_independently_reconstructs_complete_analytic_metrics(tmp_path):
+    from types import SimpleNamespace
+    from test_metrics import _persisted_day
+    from pequiflux_experiment.events import EventRecord
+    from pequiflux_experiment.metrics import METRIC_SCALAR_FIELDS
+
+    path, rows = _persisted_day(tmp_path)
+    details = SimpleNamespace(events=tuple(EventRecord.from_dict(row) for row in rows), log_path=path)
+    derived = audit_module._derived_log_metrics(details)
+    expected = {
+        "event_count": 32, "total_trucks": 2, "completed_trucks": 1, "remaining_trucks": 1,
+        "throughput": 1, "throughput_per_hour": round(1/12, 12), "horizon_minutes": 720,
+        "mean_wait_minutes": 356, "p50_wait_minutes": 356, "p95_wait_minutes": 710,
+        "iqr_wait_minutes": 354, "total_wait_minutes": 712, "censored_wait_minutes": 671,
+        "document_hold_minutes": 0, "observed_makespan_minutes": 49,
+        "scale_occupancy_peak": 1, "max_queue_length": 2, "max_buffer_occupancy": 1,
+        "max_buffer_reservation": 1, "hard_constraint_violations": 0,
+        "median_system_time_minutes": 36, "iqr_system_time_minutes": 0, "mean_system_time_minutes": 36,
+        "observed_system_time_minutes": 755, "censored_system_time_minutes": 719,
+        "censored_system_trucks": 1, "completed_system_trucks": 1,
+        "resource_busy_minutes": 43, "resource_down_minutes": 40, "resource_available_minutes": 2120,
+        "resource_idle_minutes": 2077, "resource_gross_minutes": 2160,
+        "gross_utilization": round(43/2160, 12), "net_utilization": round(43/2120, 12),
+        "net_idle_fraction": round(2077/2120, 12), "gross_idle_fraction": round(2077/2160, 12),
+        "decision_count": 6, "fifo_break_count": 0, "fifo_break_rate": 0,
+        "raw_fifo_break_count": 0, "avoidable_fifo_break_count": 0,
+        "queue_comparison_count": 3, "comparable_candidate_count": 2, "queue_inversion_count": 0,
+        "max_queue_displacement": 0, "mean_queue_displacement": 0,
+        "replanning_count": 0, "replanning_frequency_per_hour": 0,
+        "ordinary_window_activation_count": 0, "mandatory_candidate_count": 0,
+        "mandatory_decision_count": 0, "critical_expansion_candidate_count": 0,
+        "critical_expansion_decision_count": 0, "operator_accept_count": 6, "operator_reject_count": 0,
+        "dispatch_block_count": 0, "command_count": 6,
+        "co2_estimated_kg": round(712/60*.8*10.18, 12),
+        "co2_sensitivity_low_kg": round(712/60*.5*10.18, 12),
+        "co2_sensitivity_high_kg": round(712/60*10.18, 12),
+    }
+    assert set(expected) == set(METRIC_SCALAR_FIELDS)
+    assert dict(derived.scalars) == expected
+    for resource_id, kind, busy, down in (("gate-1", "gate", 8, 0), ("scale-1", "scale", 15, 0), ("hopper-1", "hopper", 20, 40)):
+        available, idle = 720-down, 720-down-busy
+        assert dict(derived.resources[resource_id]) == {
+            "kind": kind, "gross_minutes": 720, "busy_minutes": busy, "down_minutes": down,
+            "available_minutes": available, "idle_minutes": idle,
+            "gross_utilization": round(busy/720, 12), "net_utilization": round(busy/available, 12),
+            "net_idle_fraction": round(idle/available, 12), "gross_idle_fraction": round(idle/720, 12),
+        }
+    assert {key: dict(value) for key, value in derived.trucks.items()} == {
+        "T1": {"wait_minutes": 2, "censored_wait_minutes": 0, "service_minutes": 34,
+               "censored_service_minutes": 0, "document_hold_minutes": 0,
+               "observed_system_time_minutes": 36, "system_time_censored": False},
+        "T2": {"wait_minutes": 710, "censored_wait_minutes": 671, "service_minutes": 9,
+               "censored_service_minutes": 0, "document_hold_minutes": 0,
+               "observed_system_time_minutes": 719, "system_time_censored": True},
+    }
+
+
+@pytest.mark.parametrize("namespace", ["scalars", "resources", "trucks"])
+def test_audit_rejects_semantic_metric_forgery_with_updated_receipts(tmp_path, monkeypatch, namespace):
+    bundle = build_validation_bundle(tmp_path)
+    rows = [dict(row) for row in bundle.results]
+    path = bundle.run_dir / rows[0]["metrics_file"]
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if namespace == "scalars":
+        payload[namespace]["co2_estimated_kg"] += 1
+        rows[0]["co2_estimated_kg"] = payload[namespace]["co2_estimated_kg"]
+    elif namespace == "resources":
+        payload[namespace][0]["busy_minutes"] += 1
+    else:
+        payload[namespace][0]["document_hold_minutes"] += 1
+    content = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+    path.write_text(content, encoding="utf-8", newline="\n")
+    rows[0]["metrics_sha256"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    from pequiflux_experiment.experiment import _csv_text
+    bundle.results_path.write_text(_csv_text(rows), encoding="utf-8", newline="\n")
+    import pequiflux_experiment.metrics as producer
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("semantic audit delegated reconstruction to the producer")
+
+    monkeypatch.setattr(producer, "compute_policy_day_metrics", forbidden)
+    with pytest.raises(AuditError, match="metrics artifact.*independently reconstructed"):
         audit_run(bundle.run_dir)
 
 
@@ -325,13 +452,9 @@ def test_audit_derives_accumulated_wait_and_active_horizon(tmp_path: Path):
     derived = audit_module._derived_log_metrics(details)
     from pequiflux_experiment.metrics import compute_policy_day_metrics
     persisted_metrics = compute_policy_day_metrics(log_path)
-    for metric, value in derived.items():
-        assert persisted_metrics.scalars[metric] == value
+    assert derived.to_dict() == persisted_metrics.to_dict()
     assert persisted_metrics.scalars["censored_system_trucks"] > 0
     assert any(row["censored_service_minutes"] > 0 for row in persisted_metrics.trucks.values())
-    assert derived["mean_wait_minutes"] == result.metrics["mean_wait_minutes"]
-    assert derived["p95_wait_minutes"] == result.metrics["p95_wait_minutes"]
-    assert derived["censored_wait_minutes"] == result.metrics["censored_wait_minutes"]
     first_arrival = min(
         float(event.payload["arrival_time"])
         for event in result.events
@@ -343,11 +466,10 @@ def test_audit_derives_accumulated_wait_and_active_horizon(tmp_path: Path):
         if event.kind == "SERVICE_COMPLETED"
     )
     expected_makespan = round(last_completion - first_arrival, 12)
-    expected_rate = round(result.completed_trucks / expected_makespan, 12)
-    assert derived["makespan_minutes"] == expected_makespan
-    assert result.metrics["makespan_minutes"] == expected_makespan
-    assert derived["throughput_rate"] == expected_rate
-    assert result.metrics["throughput_rate"] == expected_rate
+    completed = sum(event.kind == "SERVICE_COMPLETED" and event.payload["operation"] == "scale_out" for event in result.events)
+    expected_rate = round(completed / 12, 12)
+    assert derived.scalars["observed_makespan_minutes"] == expected_makespan
+    assert derived.scalars["throughput_per_hour"] == expected_rate
 
 
 @pytest.mark.parametrize(
@@ -445,6 +567,10 @@ def test_audit_rejects_result_metadata_that_disagrees_with_manifest(
     bundle = build_validation_bundle(tmp_path)
     rows = list(csv.DictReader(bundle.results_path.open("r", encoding="utf-8", newline="")))
     rows[0][field] = str(replacement)
+    if field == "total_trucks":
+        # Keep the row internally consistent so the audit fails on the
+        # disagreement with the canonical scenario metadata.
+        rows[0]["remaining_trucks"] = str(int(replacement) - int(rows[0]["completed_trucks"]))
     with bundle.results_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=rows[0].keys(), lineterminator="\n")
         writer.writeheader()
